@@ -13,8 +13,15 @@ public class StepCounterDisplay : MonoBehaviour
     private const float MinSecondsBetweenSteps = 0.42f;
     private const float MaxSecondsBetweenSteps = 2.20f;
     private const int RequiredRhythmEvents = 2;
+    private const float MinWalkingMotion = 0.07f;
+    private const float StillMotionThreshold = 0.025f;
+    private const float MaxShakeJerk = 8.0f;
+    private const float MinWalkingConfidence = 0.35f;
+    private const float CounterCorrectionGraceSeconds = 12f;
+    private const int MaxDetectorLeadBeforeCorrection = 6;
 
     private StepCounter stepCounter;
+    private Accelerometer accelerometer;
     private bool hasPermission = true;
     private bool needsActivityRecognitionPermission;
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -27,20 +34,33 @@ public class StepCounterDisplay : MonoBehaviour
     private bool checkedStepDetector;
     private bool stepDetectorAvailable;
     private bool stepDetectorRunning;
+    private bool accelerometerAvailable;
+    private bool hasAccelerationReading;
     private bool hasFirstReading;
     private int startingStepCount;
     private int rawStepCount;
     private int lastRawStepCount;
+    private int delayedCounterSessionSteps;
     private int sessionSteps;
     private int acceptedDetectorSteps;
+    private int pendingDetectorSteps;
     private int processedDetectorEvents;
     private int rejectedDetectorEvents;
+    private int counterUpCorrections;
+    private int counterDownCorrections;
     private int lastShownDetectorSteps;
     private int rhythmEventCount;
+    private Vector3 smoothedAcceleration;
+    private Vector3 previousAcceleration;
+    private float motionLevel;
+    private float shakeLevel;
+    private float walkingConfidence;
+    private float stillSeconds;
     private float lastRawChangeTime;
     private float lastCandidateStepTime = -1f;
     private float lastDetectorStepTime = -1f;
     private string detectorFilterStatus = "Waiting for walking rhythm...";
+    private string motionFilterStatus = "Motion filter starting...";
     private string status = "Starting step counter...";
 
     private void OnEnable()
@@ -60,6 +80,7 @@ public class StepCounterDisplay : MonoBehaviour
         RequestPermissionIfNeeded();
         StartStepDetectorIfPossible();
         TryEnableStepCounter();
+        TryEnableMotionSensors();
     }
 
     private void Update()
@@ -74,6 +95,8 @@ public class StepCounterDisplay : MonoBehaviour
 
         StartStepDetectorIfPossible();
         TryEnableStepCounter();
+        TryEnableMotionSensors();
+        UpdateMotionFilter();
         UpdateDelayedStepCounter();
 
         var detectorSteps = ReadDetectedStepEvents();
@@ -84,6 +107,7 @@ public class StepCounterDisplay : MonoBehaviour
         }
 
         ProcessNewDetectorEvents(detectorSteps);
+        ApplyStepCounterCorrection();
 
         if (stepDetectorRunning)
         {
@@ -111,6 +135,7 @@ public class StepCounterDisplay : MonoBehaviour
             RequestPermissionIfNeeded();
             StartStepDetectorIfPossible();
             TryEnableStepCounter();
+            TryEnableMotionSensors();
         }
     }
 
@@ -125,6 +150,7 @@ public class StepCounterDisplay : MonoBehaviour
         RequestPermissionIfNeeded();
         StartStepDetectorIfPossible();
         TryEnableStepCounter();
+        TryEnableMotionSensors();
     }
 
     private void UpdateDelayedStepCounter()
@@ -149,6 +175,88 @@ public class StepCounterDisplay : MonoBehaviour
             lastRawStepCount = rawStepCount;
             lastRawChangeTime = Time.realtimeSinceStartup;
         }
+
+        delayedCounterSessionSteps = Mathf.Max(0, rawStepCount - startingStepCount);
+    }
+
+    private void TryEnableMotionSensors()
+    {
+        accelerometer = Accelerometer.current ?? InputSystem.GetDevice<Accelerometer>();
+
+        if (accelerometer == null)
+        {
+            accelerometerAvailable = false;
+            motionFilterStatus = "Accelerometer missing; using rhythm filter only.";
+            return;
+        }
+
+        accelerometerAvailable = true;
+
+        if (!accelerometer.enabled)
+        {
+            InputSystem.EnableDevice(accelerometer);
+        }
+
+        accelerometer.MakeCurrent();
+    }
+
+    private void UpdateMotionFilter()
+    {
+        if (accelerometer == null)
+        {
+            return;
+        }
+
+        var acceleration = accelerometer.acceleration.ReadValue();
+        var deltaTime = Mathf.Max(Time.deltaTime, 0.001f);
+
+        if (!hasAccelerationReading)
+        {
+            smoothedAcceleration = acceleration;
+            previousAcceleration = acceleration;
+            hasAccelerationReading = true;
+            motionFilterStatus = "Motion filter ready.";
+            return;
+        }
+
+        var gravityBlend = 1f - Mathf.Exp(-deltaTime * 6f);
+        smoothedAcceleration = Vector3.Lerp(smoothedAcceleration, acceleration, gravityBlend);
+
+        var motion = (acceleration - smoothedAcceleration).magnitude;
+        var jerk = (acceleration - previousAcceleration).magnitude / deltaTime;
+        var levelBlend = 1f - Mathf.Exp(-deltaTime * 8f);
+
+        motionLevel = Mathf.Lerp(motionLevel, motion, levelBlend);
+        shakeLevel = Mathf.Lerp(shakeLevel, jerk, levelBlend);
+        previousAcceleration = acceleration;
+
+        if (motionLevel < StillMotionThreshold)
+        {
+            stillSeconds += deltaTime;
+        }
+        else
+        {
+            stillSeconds = 0f;
+        }
+
+        var motionLooksWalkable = motionLevel >= MinWalkingMotion && shakeLevel <= MaxShakeJerk;
+        var targetConfidence = motionLooksWalkable ? 1f : 0f;
+        var confidenceSpeed = motionLooksWalkable ? 2.0f : 1.5f;
+        walkingConfidence = Mathf.MoveTowards(walkingConfidence, targetConfidence, deltaTime * confidenceSpeed);
+
+        if (shakeLevel > MaxShakeJerk)
+        {
+            motionFilterStatus = $"Too shaky ({shakeLevel:0.0}); rejecting step events.";
+            return;
+        }
+
+        if (walkingConfidence >= MinWalkingConfidence)
+        {
+            motionFilterStatus = $"Walking-like motion ({walkingConfidence * 100f:0}% confidence).";
+            return;
+        }
+
+        motionFilterStatus = $"Low walking confidence ({walkingConfidence * 100f:0}%).";
     }
 
     private void ProcessNewDetectorEvents(int rawDetectorEvents)
@@ -173,6 +281,7 @@ public class StepCounterDisplay : MonoBehaviour
         {
             lastCandidateStepTime = now;
             rhythmEventCount = 1;
+            pendingDetectorSteps = 1;
             detectorFilterStatus = "First movement seen. Waiting for another step-like event.";
             return;
         }
@@ -180,10 +289,29 @@ public class StepCounterDisplay : MonoBehaviour
         var secondsSinceLastCandidate = now - lastCandidateStepTime;
         lastCandidateStepTime = now;
 
+        if (!MotionLooksLikeWalking())
+        {
+            rejectedDetectorEvents++;
+            rhythmEventCount = 0;
+            pendingDetectorSteps = 0;
+            detectorFilterStatus = "Ignored: motion does not look like steady walking.";
+            return;
+        }
+
+        if (stillSeconds > 1.0f)
+        {
+            rejectedDetectorEvents++;
+            rhythmEventCount = 0;
+            pendingDetectorSteps = 0;
+            detectorFilterStatus = "Ignored: phone looked still before this event.";
+            return;
+        }
+
         if (secondsSinceLastCandidate < MinSecondsBetweenSteps)
         {
             rejectedDetectorEvents++;
             rhythmEventCount = 0;
+            pendingDetectorSteps = 0;
             detectorFilterStatus = $"Ignored: too fast ({secondsSinceLastCandidate:0.00}s).";
             return;
         }
@@ -191,11 +319,13 @@ public class StepCounterDisplay : MonoBehaviour
         if (secondsSinceLastCandidate > MaxSecondsBetweenSteps)
         {
             rhythmEventCount = 1;
+            pendingDetectorSteps = 1;
             detectorFilterStatus = "New movement seen. Waiting for steady walking rhythm.";
             return;
         }
 
         rhythmEventCount = Mathf.Min(rhythmEventCount + 1, RequiredRhythmEvents);
+        pendingDetectorSteps++;
 
         if (rhythmEventCount < RequiredRhythmEvents)
         {
@@ -203,8 +333,50 @@ public class StepCounterDisplay : MonoBehaviour
             return;
         }
 
-        acceptedDetectorSteps++;
+        acceptedDetectorSteps += Mathf.Max(1, pendingDetectorSteps);
+        pendingDetectorSteps = 0;
         detectorFilterStatus = $"Accepted step ({secondsSinceLastCandidate:0.00}s cadence).";
+    }
+
+    private bool MotionLooksLikeWalking()
+    {
+        if (!accelerometerAvailable)
+        {
+            return true;
+        }
+
+        return walkingConfidence >= MinWalkingConfidence && shakeLevel <= MaxShakeJerk;
+    }
+
+    private void ApplyStepCounterCorrection()
+    {
+        if (!hasFirstReading)
+        {
+            return;
+        }
+
+        if (delayedCounterSessionSteps > acceptedDetectorSteps)
+        {
+            counterUpCorrections += delayedCounterSessionSteps - acceptedDetectorSteps;
+            acceptedDetectorSteps = delayedCounterSessionSteps;
+            pendingDetectorSteps = 0;
+            detectorFilterStatus = "Corrected upward from delayed StepCounter.";
+            return;
+        }
+
+        var detectorLead = acceptedDetectorSteps - delayedCounterSessionSteps;
+        var rawCounterDelay = Time.realtimeSinceStartup - lastRawChangeTime;
+        if (detectorLead <= MaxDetectorLeadBeforeCorrection || rawCounterDelay < CounterCorrectionGraceSeconds)
+        {
+            return;
+        }
+
+        var correctedSteps = delayedCounterSessionSteps + MaxDetectorLeadBeforeCorrection;
+        counterDownCorrections += acceptedDetectorSteps - correctedSteps;
+        acceptedDetectorSteps = correctedSteps;
+        pendingDetectorSteps = 0;
+        rhythmEventCount = 0;
+        detectorFilterStatus = "Corrected downward: detector was far ahead of delayed StepCounter.";
     }
 
     private void TryEnableStepCounter()
@@ -344,6 +516,11 @@ public class StepCounterDisplay : MonoBehaviour
         {
             TryEnableStepCounter();
         }
+
+        if (device is Accelerometer)
+        {
+            TryEnableMotionSensors();
+        }
     }
 
     private void RequestPermissionIfNeeded()
@@ -445,14 +622,17 @@ public class StepCounterDisplay : MonoBehaviour
         var stepDetectorState = stepDetectorAvailable
             ? $"available / running: {stepDetectorRunning}"
             : checkedStepDetector ? "missing" : "checking";
+        var accelerometerState = accelerometerAvailable
+            ? $"available / enabled: {accelerometer.enabled}"
+            : "missing";
 
         GUI.Label(new Rect(margin, margin, width, 54f * scale), $"Session Steps: {sessionSteps}", titleStyle);
-        GUI.Label(new Rect(margin, margin + (60f * scale), width, 250f * scale),
-            $"TYPE_STEP_DETECTOR: {stepDetectorState}\nRaw Detector Events: {lastShownDetectorSteps}\nAccepted: {acceptedDetectorSteps}\nRejected: {rejectedDetectorEvents}\nDetector changed: {detectorStepTime}\nRaw StepCounter: {rawStepCount}\nPermission: {hasPermission}\n{detectorFilterStatus}\n{status}",
+        GUI.Label(new Rect(margin, margin + (60f * scale), width, 360f * scale),
+            $"TYPE_STEP_DETECTOR: {stepDetectorState}\nRaw Detector Events: {lastShownDetectorSteps}\nAccepted: {acceptedDetectorSteps}  Pending: {pendingDetectorSteps}  Rejected: {rejectedDetectorEvents}\nDelayed StepCounter: {delayedCounterSessionSteps}  Raw: {rawStepCount}\nCorrections +{counterUpCorrections} / -{counterDownCorrections}\nAccelerometer: {accelerometerState}\nMotion: {motionLevel:0.00}  Shake: {shakeLevel:0.0}  Confidence: {walkingConfidence * 100f:0}%\nDetector changed: {detectorStepTime}  Counter changed: {secondsSinceRawChange:0.0}s ago\nPermission: {hasPermission}\n{motionFilterStatus}\n{detectorFilterStatus}\n{status}",
             bodyStyle);
 
 #if UNITY_ANDROID && !UNITY_EDITOR
-        if (!hasPermission && GUI.Button(new Rect(margin, margin + (320f * scale), width, 48f * scale), "Request Physical Activity Permission"))
+        if (!hasPermission && GUI.Button(new Rect(margin, margin + (440f * scale), width, 48f * scale), "Request Physical Activity Permission"))
         {
             requestedPermission = false;
             RequestPermissionIfNeeded();
