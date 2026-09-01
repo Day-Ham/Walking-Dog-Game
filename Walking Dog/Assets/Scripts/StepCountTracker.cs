@@ -1,12 +1,15 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.Controls;
+
+
+#if UNITY_ANDROID
+using UnityEngine.Android;
+#endif
 public class StepCountTracker : MonoBehaviour
 {
     //input action control
-    [SerializeField] private InputActionAsset controls;
-    [SerializeField] private string mapName;
-    private InputAction stepCountAction;
+
 
     [SerializeField]
     private int stepCount = 0;
@@ -14,7 +17,11 @@ public class StepCountTracker : MonoBehaviour
     [SerializeField]
     public TMPro.TextMeshProUGUI stepCountText;
 
+    [SerializeField]
+    public TMPro.TextMeshProUGUI StatusText;
+
     private int initialStepCount = 0;
+    private int sessionBaseSteps = -1;
 
 
     //for ANDROID
@@ -22,34 +29,64 @@ public class StepCountTracker : MonoBehaviour
 
     void Start()
     {
-        stepCountAction = controls.FindActionMap(mapName).FindAction("StepCount");
+#if UNITY_ANDROID
+        if (!Permission.HasUserAuthorizedPermission("android.permission.ACTIVITY_RECOGNITION"))
+        {
+            Permission.RequestUserPermission("android.permission.ACTIVITY_RECOGNITION");
+        }
+#endif
 
-        if (Gamepad.current != null)
-            Debug.Log("Connected");
-        else Debug.Log("Error: No Gamepad");
 
-        stepCountAction.Enable();
-        if(stepCountAction.enabled)
-            Debug.Log("StepCount Action Enabled");
-        else
-            Debug.Log("StepCount Action Not Enabled");
 
         if (StepCounter.current != null)
         {
             InputSystem.EnableDevice(StepCounter.current);
             Debug.Log("Step Counter detected!");
+            StatusText.text = "Step Counter detected!";
+        }
+        {
+            Debug.LogWarning("No Step Counter hardware found on this device.");
+            if (stepCountText != null)
+            {
+                stepCountText.text = "No Step Counter Found";
+            }
         }
 
-        initialStepCount = stepCountAction.ReadValue<int>();
+
     }
 
     // Update is called once per frame
     void Update()
     {
-      int rawCount = stepCountAction.ReadValue<int>();
 
-        stepCount = rawCount;
+        int StartStepCount = StepCounter.current.stepCounter.ReadValue();
 
-        stepCountText.text = stepCount.ToString();
+        //set startingBase
+        if (sessionBaseSteps == -1 && StartStepCount >= 0)
+        {
+            sessionBaseSteps = StartStepCount;
+        }
+
+
+        if (sessionBaseSteps != -1)
+        {
+            stepCount = StartStepCount - sessionBaseSteps;
+
+            // Update UI
+            if (stepCountText != null)
+            {
+                stepCountText.text = "Steps: " + stepCount.ToString();
+            }
+
+        }
     }
 }
+
+
+
+
+
+
+
+
+
