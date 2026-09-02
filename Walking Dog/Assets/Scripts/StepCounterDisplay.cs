@@ -63,6 +63,20 @@ public class StepCounterDisplay : MonoBehaviour
     private string motionFilterStatus = "Motion filter starting...";
     private string status = "Starting step counter...";
 
+    /// <summary>
+    /// Returns true if the user is currently taking steps or has taken a step very recently.
+    /// Used by GPSTracker to filter out GPS drift when standing still.
+    /// </summary>
+    public bool IsActivelyWalking
+    {
+        get
+        {
+            // If we have pending steps or a step was detected in the last 3 seconds, we are walking.
+            return pendingDetectorSteps > 0 || 
+                   (lastDetectorStepTime > 0f && Time.realtimeSinceStartup - lastDetectorStepTime < 3.0f);
+        }
+    }
+
     private void OnEnable()
     {
         InputSystem.onDeviceChange += OnDeviceChange;
@@ -625,10 +639,13 @@ public class StepCounterDisplay : MonoBehaviour
         var accelerometerState = accelerometerAvailable
             ? $"available / enabled: {accelerometer.enabled}"
             : "missing";
+            
+        var gpsTracker = GetComponent<GPSTracker>() ?? FindObjectOfType<GPSTracker>();
+        var gpsString = gpsTracker != null ? $"\nGPS: {gpsTracker.GPSStatus}" : "\nGPS: Not found";
 
         GUI.Label(new Rect(margin, margin, width, 54f * scale), $"Session Steps: {sessionSteps}", titleStyle);
         GUI.Label(new Rect(margin, margin + (60f * scale), width, 360f * scale),
-            $"TYPE_STEP_DETECTOR: {stepDetectorState}\nRaw Detector Events: {lastShownDetectorSteps}\nAccepted: {acceptedDetectorSteps}  Pending: {pendingDetectorSteps}  Rejected: {rejectedDetectorEvents}\nDelayed StepCounter: {delayedCounterSessionSteps}  Raw: {rawStepCount}\nCorrections +{counterUpCorrections} / -{counterDownCorrections}\nAccelerometer: {accelerometerState}\nMotion: {motionLevel:0.00}  Shake: {shakeLevel:0.0}  Confidence: {walkingConfidence * 100f:0}%\nDetector changed: {detectorStepTime}  Counter changed: {secondsSinceRawChange:0.0}s ago\nPermission: {hasPermission}\n{motionFilterStatus}\n{detectorFilterStatus}\n{status}",
+            $"TYPE_STEP_DETECTOR: {stepDetectorState}\nRaw Detector Events: {lastShownDetectorSteps}\nAccepted: {acceptedDetectorSteps}  Pending: {pendingDetectorSteps}  Rejected: {rejectedDetectorEvents}\nDelayed StepCounter: {delayedCounterSessionSteps}  Raw: {rawStepCount}\nCorrections +{counterUpCorrections} / -{counterDownCorrections}\nAccelerometer: {accelerometerState}\nMotion: {motionLevel:0.00}  Shake: {shakeLevel:0.0}  Confidence: {walkingConfidence * 100f:0}%\nDetector changed: {detectorStepTime}  Counter changed: {secondsSinceRawChange:0.0}s ago\nPermission: {hasPermission}\n{motionFilterStatus}\n{detectorFilterStatus}\n{status}{gpsString}",
             bodyStyle);
 
 #if UNITY_ANDROID && !UNITY_EDITOR
