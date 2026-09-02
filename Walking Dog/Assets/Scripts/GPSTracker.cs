@@ -10,14 +10,14 @@ public class GPSTracker : MonoBehaviour
 {
     [Header("GPS Settings")]
     [SerializeField]
-    private float desiredAccuracyInMeters = 1f; // how accurate the gps should be, measured in meaters
+    private float desiredAccuracyInMeters = 5f; // how accurate the gps should be, measured in meaters
 
     //update distance: distance needed for gps to update
     //update interval: time needed before gps updates
     [SerializeField]
-    private float updateDistance = .5f;
+    private float updateDistance = 3f;
     [SerializeField]
-    private float updateInterval = 1f;
+    private float updateInterval = 1.5f;
 
 
 
@@ -120,11 +120,7 @@ if (!Input.location.isEnabledByUser)
 
 #else
 
-        // This code is executed when running inside the Unity
-        // Editor or on a non-Android platform.
-        //
-        // We cannot test the real phone GPS inside the normal
-        // Unity Editor this way.
+       
         Debug.Log("GPS Tracker requires a physical Android device.");
 
         yield break;
@@ -147,16 +143,14 @@ if (!Input.location.isEnabledByUser)
         }
 
 
-        // --------------------------------------------------------
-        // GET LATEST LOCATION
-        // --------------------------------------------------------
+    // update latest location here 
 
         LocationInfo location = Input.location.lastData;
 
 
         float latitude = location.latitude;
         float longitude = location.longitude;
-
+        float horizontalAccuracy = location.horizontalAccuracy;
 
        
         Debug.Log(
@@ -164,13 +158,19 @@ if (!Input.location.isEnabledByUser)
         );
 
 
-   
+     if (horizontalAccuracy > 10f)
+  {
+      Debug.LogWarning($"GPS reading ignored: accuracy inaccurate.");
+      return;
+  }
+
         if (StepCountAndGpsManager.Instance != null)
         {
          
             StepCountAndGpsManager.Instance.setGPSLonAndLat(
                 latitude,
-                longitude
+                longitude,
+                horizontalAccuracy
             );
         }
         else
@@ -185,31 +185,25 @@ if (!Input.location.isEnabledByUser)
 
 
 
- 
+
     private void OnDestroy()
     {
-        // Make sure the GPS service is stopped when this
-        // GameObject is destroyed.
+        
         StopGPS();
     }
 
 
-    // ============================================================
-    // STOP GPS
-    // ============================================================
 
     private void StopGPS()
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
 
-        // Only attempt to stop the GPS if our tracker says
-        // that it is currently running.
+     
         if (gpsRunning)
         {
-            // Stop Unity's location service.
             Input.location.Stop();
 
-            // Mark the GPS tracker as no longer running.
+            
             gpsRunning = false;
 
             Debug.Log("GPS stopped.");
