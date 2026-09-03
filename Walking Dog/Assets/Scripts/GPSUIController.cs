@@ -11,6 +11,8 @@ public class GPSUIController : MonoBehaviour
     [SerializeField] private TextMeshProUGUI walkingSessionButtonText;
     [SerializeField] private bool clearRouteOnSessionStart = true;
 
+    private bool buttonListenerRegistered;
+
     private void Awake()
     {
         AssignMissingReferences();
@@ -19,23 +21,28 @@ public class GPSUIController : MonoBehaviour
     private void OnEnable()
     {
         AssignMissingReferences();
+        RegisterButtonListener();
+    }
 
-        if (walkingSessionButton != null)
-        {
-            walkingSessionButton.onClick.AddListener(ToggleWalkingSession);
-        }
+    private void Start()
+    {
+        AssignMissingReferences();
+        RegisterButtonListener();
     }
 
     private void OnDisable()
     {
-        if (walkingSessionButton != null)
-        {
-            walkingSessionButton.onClick.RemoveListener(ToggleWalkingSession);
-        }
+        UnregisterButtonListener();
     }
 
     private void Update()
     {
+        if (HasMissingUiReference())
+        {
+            AssignMissingReferences();
+            RegisterButtonListener();
+        }
+
         var manager = StepCountAndGpsManager.Instance;
 
         if (manager == null)
@@ -112,6 +119,41 @@ public class GPSUIController : MonoBehaviour
         }
     }
 
+    private bool HasMissingUiReference()
+    {
+        return longText == null ||
+            latText == null ||
+            accuracyText == null ||
+            walkingSessionButton == null ||
+            walkingSessionButtonText == null;
+    }
+
+    private void RegisterButtonListener()
+    {
+        if (buttonListenerRegistered || walkingSessionButton == null)
+        {
+            return;
+        }
+
+        walkingSessionButton.onClick.AddListener(ToggleWalkingSession);
+        buttonListenerRegistered = true;
+    }
+
+    private void UnregisterButtonListener()
+    {
+        if (!buttonListenerRegistered)
+        {
+            return;
+        }
+
+        if (walkingSessionButton != null)
+        {
+            walkingSessionButton.onClick.RemoveListener(ToggleWalkingSession);
+        }
+
+        buttonListenerRegistered = false;
+    }
+
     private static TextMeshProUGUI FindText(string objectName)
     {
         var gameObject = GameObject.Find(objectName);
@@ -151,9 +193,19 @@ public class GPSUIController : MonoBehaviour
     {
         var sessionState = manager.IsWalkingSessionActive
             ? "Walking"
-            : manager.HasWalkingSession ? "Stopped" : "Ready";
+            : GetSavedSessionState(manager);
 
         return $"GPS: {manager.AccuracyStatus} | {sessionState} | {FormatDistance(manager.WalkingSessionDistanceMeters)} | {manager.RoutePointCount} pts";
+    }
+
+    private static string GetSavedSessionState(StepCountAndGpsManager manager)
+    {
+        if (!manager.HasWalkingSession)
+        {
+            return "Ready";
+        }
+
+        return string.IsNullOrEmpty(manager.LastSavedWalkFilePath) ? "Save failed" : "Saved";
     }
 
     private static string FormatDistance(float meters)

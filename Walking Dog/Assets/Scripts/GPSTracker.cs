@@ -16,6 +16,7 @@ public class GPSTracker : MonoBehaviour
     [SerializeField] private float updateInterval = 1.5f;
 
     private bool gpsRunning = false;
+    private Coroutine gpsRoutine;
 
     public float DesiredAccuracyInMeters => desiredAccuracyInMeters;
     public float UpdateDistance => updateDistance;
@@ -24,7 +25,26 @@ public class GPSTracker : MonoBehaviour
 
     private void Start()
     {
-        StartCoroutine(StartGPS());
+        StartGpsRoutine();
+    }
+
+    private void OnApplicationFocus(bool hasFocus)
+    {
+        if (hasFocus)
+        {
+            StartGpsRoutine();
+        }
+    }
+
+    private void OnApplicationPause(bool isPaused)
+    {
+        if (isPaused)
+        {
+            StopGpsRoutine();
+            return;
+        }
+
+        StartGpsRoutine();
     }
 
     private IEnumerator StartGPS()
@@ -151,11 +171,32 @@ public class GPSTracker : MonoBehaviour
 
     private void OnDisable()
     {
-        StopGPS();
+        StopGpsRoutine();
     }
 
     private void OnDestroy()
     {
+        StopGpsRoutine();
+    }
+
+    private void StartGpsRoutine()
+    {
+        if (gpsRoutine != null && gpsRunning)
+        {
+            return;
+        }
+
+        gpsRoutine = StartCoroutine(StartGPS());
+    }
+
+    private void StopGpsRoutine()
+    {
+        if (gpsRoutine != null)
+        {
+            StopCoroutine(gpsRoutine);
+            gpsRoutine = null;
+        }
+
         StopGPS();
     }
 

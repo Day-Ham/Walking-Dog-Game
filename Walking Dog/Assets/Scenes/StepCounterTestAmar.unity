@@ -1621,8 +1621,14 @@ MonoBehaviour:
   sessionEndTime: 0
   sessionDistanceMeters: 0
   sessionStatus: No walk started.
+  currentSessionId:
+  sessionStartUtc:
+  sessionEndUtc:
+  lastSavedWalkFilePath:
   recordRoutePoints: 0
+  lastRoutePointTime: -1
   routePoints: []
+  routePointSamples: []
 --- !u!1 &1589840762
 GameObject:
   m_ObjectHideFlags: 0
