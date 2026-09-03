@@ -7,6 +7,8 @@ public class StepCountAndGpsManager : MonoBehaviour
 
     private const float EarthRadiusMeters = 6371000f;
     private const float MinRoutePointDistanceMeters = 2f;
+    private const float MaxGpsJumpDistanceMeters = 100f;
+    private const float MaxWalkingSpeedMetersPerSecond = 8f;
 
     [Header("Step State")]
     [SerializeField] private int stepsCounted;
@@ -30,6 +32,7 @@ public class StepCountAndGpsManager : MonoBehaviour
 
     [Header("Route Recording")]
     [SerializeField] private bool recordRoutePoints;
+    [SerializeField] private float lastRoutePointTime = -1f;
     [SerializeField] private List<Vector2> routePoints = new List<Vector2>();
 
     public static StepCountAndGpsManager Instance { get; private set; }
@@ -112,6 +115,12 @@ public class StepCountAndGpsManager : MonoBehaviour
 
     public void SetGpsLocation(float latitude, float longitude, float accuracyMeters)
     {
+        if (!IsUsableGpsFix(latitude, longitude, accuracyMeters))
+        {
+            accuracyStatus = "Waiting for valid GPS fix.";
+            return;
+        }
+
         this.latitude = latitude;
         this.longitude = longitude;
         horizontalAccuracy = Mathf.Max(0f, accuracyMeters);
@@ -200,6 +209,7 @@ public class StepCountAndGpsManager : MonoBehaviour
     {
         routePoints.Clear();
         sessionDistanceMeters = 0f;
+        lastRoutePointTime = -1f;
     }
 
     public List<Vector2> GetRoutePointsSnapshot()
@@ -210,6 +220,7 @@ public class StepCountAndGpsManager : MonoBehaviour
     private void AddRoutePoint(float latitude, float longitude)
     {
         var point = new Vector2(latitude, longitude);
+        var now = Time.realtimeSinceStartup;
 
         if (routePoints.Count > 0)
         {
@@ -221,10 +232,52 @@ public class StepCountAndGpsManager : MonoBehaviour
                 return;
             }
 
+            if (IsUnrealisticGpsJump(distanceFromLastPoint, now))
+            {
+                if (routePoints.Count == 1 && sessionDistanceMeters <= 0f)
+                {
+                    routePoints[0] = point;
+                    lastRoutePointTime = now;
+                    sessionStatus = "Route re-anchored after GPS jump.";
+                    return;
+                }
+
+                sessionStatus = $"Ignored GPS jump ({distanceFromLastPoint:0}m).";
+                return;
+            }
+
             sessionDistanceMeters += distanceFromLastPoint;
         }
 
         routePoints.Add(point);
+        lastRoutePointTime = now;
+    }
+
+    private bool IsUnrealisticGpsJump(float distanceMeters, float now)
+    {
+        if (lastRoutePointTime < 0f)
+        {
+            return false;
+        }
+
+        var secondsSinceLastPoint = Mathf.Max(0.001f, now - lastRoutePointTime);
+        var allowedDistance = Mathf.Max(MaxGpsJumpDistanceMeters, MaxWalkingSpeedMetersPerSecond * secondsSinceLastPoint);
+        return distanceMeters > allowedDistance;
+    }
+
+    private static bool IsUsableGpsFix(float latitude, float longitude, float accuracyMeters)
+    {
+        if (accuracyMeters <= 0f)
+        {
+            return false;
+        }
+
+        if (latitude < -90f || latitude > 90f || longitude < -180f || longitude > 180f)
+        {
+            return false;
+        }
+
+        return !Mathf.Approximately(latitude, 0f) || !Mathf.Approximately(longitude, 0f);
     }
 
     public static float CalculateDistanceMeters(Vector2 from, Vector2 to)

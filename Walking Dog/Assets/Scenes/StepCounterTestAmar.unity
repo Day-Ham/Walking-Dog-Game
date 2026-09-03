@@ -1622,6 +1622,7 @@ MonoBehaviour:
   sessionDistanceMeters: 0
   sessionStatus: No walk started.
   recordRoutePoints: 0
+  lastRoutePointTime: -1
   routePoints: []
 --- !u!1 &1589840762
 GameObject:
