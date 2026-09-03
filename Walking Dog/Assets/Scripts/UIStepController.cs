@@ -1,25 +1,31 @@
-using UnityEngine;
 using TMPro;
+using UnityEngine;
+
 public class UIStepController : MonoBehaviour
 {
+    [SerializeField] private TextMeshProUGUI stepText;
+    [SerializeField] private string prefix = "";
+    [SerializeField] private bool showWalkingSessionSteps = false;
 
-    [SerializeField]
-    private TextMeshProUGUI stepText;
-
-    void Start()
+    private void Awake()
     {
-       stepText = GetComponent<TextMeshProUGUI>();
-    }
-
-    // Update is called once per frame
-    private void LateUpdate()
-    {
-        var manager = StepCountAndGpsManager.Instance;
-
-        if (manager != null)
+        if (stepText == null)
         {
-            stepText.text = StepCountAndGpsManager.Instance.getSteps().ToString();
+            stepText = GetComponent<TextMeshProUGUI>();
         }
     }
-    
+
+    private void LateUpdate()
+    {
+        if (stepText == null)
+        {
+            return;
+        }
+
+        var manager = StepCountAndGpsManager.Instance;
+        var steps = manager == null
+            ? 0
+            : showWalkingSessionSteps ? manager.WalkingSessionSteps : manager.Steps;
+        stepText.text = string.IsNullOrEmpty(prefix) ? steps.ToString() : $"{prefix}{steps}";
+    }
 }
