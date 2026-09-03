@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.12.0/dist/maplibre-gl.css" onerror="window.__openFreeMapCssFailed = true">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" onerror="window.__openFreeMapCssFailed = true">
   <style>
     html,
     body,
@@ -122,7 +122,7 @@
       }
     }
   </script>
-  <script src="https://unpkg.com/maplibre-gl@5.12.0/dist/maplibre-gl.js" onerror="reportOpenFreeMapBootError('MapLibre CDN blocked or offline')"></script>
+  <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js" onerror="reportOpenFreeMapBootError('MapLibre CDN blocked or offline')"></script>
   <script>
     (function () {
       var styles = {
@@ -424,48 +424,32 @@
             return false;
           }
 
-          var redMin = 255;
-          var greenMin = 255;
-          var blueMin = 255;
-          var redMax = 0;
-          var greenMax = 0;
-          var blueMax = 0;
-          var uniqueColors = {};
-          var uniqueCount = 0;
+          var lightPixels = 0;
+          var darkPixels = 0;
           var pixel = new Uint8Array(4);
 
-          for (var row = 1; row <= 7; row += 1) {
-            for (var col = 1; col <= 7; col += 1) {
-              var x = Math.floor(canvas.width * col / 8);
-              var y = Math.floor(canvas.height * row / 8);
+          for (var row = 1; row <= 9; row += 1) {
+            for (var col = 1; col <= 9; col += 1) {
+              var x = Math.floor(canvas.width * col / 10);
+              var y = Math.floor(canvas.height * row / 10);
               gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
 
               if (pixel[3] < 12) {
                 continue;
               }
 
-              redMin = Math.min(redMin, pixel[0]);
-              greenMin = Math.min(greenMin, pixel[1]);
-              blueMin = Math.min(blueMin, pixel[2]);
-              redMax = Math.max(redMax, pixel[0]);
-              greenMax = Math.max(greenMax, pixel[1]);
-              blueMax = Math.max(blueMax, pixel[2]);
+              var brightness = (pixel[0] + pixel[1] + pixel[2]) / 3;
+              if (brightness > 210) {
+                lightPixels += 1;
+              }
 
-              var colorKey = [
-                Math.round(pixel[0] / 12),
-                Math.round(pixel[1] / 12),
-                Math.round(pixel[2] / 12)
-              ].join(":");
-
-              if (!uniqueColors[colorKey]) {
-                uniqueColors[colorKey] = true;
-                uniqueCount += 1;
+              if (brightness < 170) {
+                darkPixels += 1;
               }
             }
           }
 
-          var channelSpread = Math.max(redMax - redMin, greenMax - greenMin, blueMax - blueMin);
-          return uniqueCount >= 4 || channelSpread >= 18;
+          return lightPixels >= 4 && darkPixels >= 4;
         } catch (error) {
           return false;
         }
@@ -505,12 +489,17 @@
             return false;
           }
 
-          var features = map.queryRenderedFeatures([[0, 0], [width, height]])
+          var detailFeatures = map.queryRenderedFeatures([[0, 0], [width, height]])
             .filter(function (feature) {
-              return feature && feature.layer && feature.layer.id !== "walk-route-line";
+              if (!feature || !feature.layer || feature.layer.id === "walk-route-line") {
+                return false;
+              }
+
+              var layerId = feature.layer.id || "";
+              return /(road|street|transport|building|water|poi|place|label|rail|path|aeroway|housenumber)/i.test(layerId);
             });
 
-          hasVisibleVectorFeatures = features.length > 0 && canvasHasVisibleMapDetail();
+          hasVisibleVectorFeatures = detailFeatures.length >= 3 && canvasHasVisibleMapDetail();
           hasRenderedMap = hasVisibleVectorFeatures;
           return hasVisibleVectorFeatures;
         } catch (error) {
@@ -720,13 +709,18 @@
             center: [state.lng, state.lat],
             zoom: state.zoom,
             attributionControl: false,
+            pixelRatio: 1,
+            maxTileCacheSize: 8,
+            maxTileCacheZoomLevels: 1,
+            renderWorldCopies: false,
+            fadeDuration: 0,
             failIfMajorPerformanceCaveat: false,
             refreshExpiredTiles: false,
-            cancelPendingTileRequestsWhileZooming: false,
+            cancelPendingTileRequestsWhileZooming: true,
             canvasContextAttributes: {
-              contextType: "webgl2",
               failIfMajorPerformanceCaveat: false,
-              preserveDrawingBuffer: true
+              preserveDrawingBuffer: false,
+              powerPreference: "low-power"
             }
           });
         } catch (error) {
