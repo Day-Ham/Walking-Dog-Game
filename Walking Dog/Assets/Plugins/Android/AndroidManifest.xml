@@ -4,14 +4,16 @@
     xmlns:tools="http://schemas.android.com/tools">
 	
 <!-- add permissions here-->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
-    <application>
+    <application android:hardwareAccelerated="true">
         <!-- Used when Application Entry is set to Activity. -->
         <activity android:name="com.unity3d.player.UnityPlayerActivity"
-                  android:theme="@style/UnityThemeSelector">
+                  android:theme="@style/UnityThemeSelector"
+                  android:hardwareAccelerated="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -21,7 +23,8 @@
 
         <!-- Used when Application Entry is set to GameActivity. -->
         <activity android:name="com.unity3d.player.UnityPlayerGameActivity"
-                  android:theme="@style/BaseUnityGameActivityTheme">
+                  android:theme="@style/BaseUnityGameActivityTheme"
+                  android:hardwareAccelerated="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
