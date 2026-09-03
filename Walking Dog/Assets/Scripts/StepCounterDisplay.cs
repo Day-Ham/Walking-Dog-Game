@@ -63,20 +63,6 @@ public class StepCounterDisplay : MonoBehaviour
     private string motionFilterStatus = "Motion filter starting...";
     private string status = "Starting step counter...";
 
-    /// <summary>
-    /// Returns true if the user is currently taking steps or has taken a step very recently.
-    /// Used by GPSTracker to filter out GPS drift when standing still.
-    /// </summary>
-    public bool IsActivelyWalking
-    {
-        get
-        {
-            // If we have pending steps or a step was detected in the last 3 seconds, we are walking.
-            return pendingDetectorSteps > 0 || 
-                   (lastDetectorStepTime > 0f && Time.realtimeSinceStartup - lastDetectorStepTime < 3.0f);
-        }
-    }
-
     private void OnEnable()
     {
         InputSystem.onDeviceChange += OnDeviceChange;
@@ -178,10 +164,20 @@ public class StepCounterDisplay : MonoBehaviour
 
         if (!hasFirstReading)
         {
+            // Android's TYPE_STEP_COUNTER may read as zero until its first
+            // sensor event, then report its cumulative count since boot. Do
+            // not use that placeholder zero as this app session's baseline.
+            if (rawStepCount == 0)
+            {
+                return;
+            }
+
             startingStepCount = rawStepCount;
             lastRawStepCount = rawStepCount;
             lastRawChangeTime = Time.realtimeSinceStartup;
             hasFirstReading = true;
+            delayedCounterSessionSteps = 0;
+            return;
         }
 
         if (rawStepCount != lastRawStepCount)
@@ -391,6 +387,13 @@ public class StepCounterDisplay : MonoBehaviour
         pendingDetectorSteps = 0;
         rhythmEventCount = 0;
         detectorFilterStatus = "Corrected downward: detector was far ahead of delayed StepCounter.";
+        var manager = StepCountAndGpsManager.Instance;
+
+        if (manager != null)
+        {
+            manager.setStep(acceptedDetectorSteps);
+        }
+
     }
 
     private void TryEnableStepCounter()
@@ -605,55 +608,76 @@ public class StepCounterDisplay : MonoBehaviour
 #endif
     }
 
-    private void OnGUI()
-    {
-        var scale = Mathf.Max(1f, Screen.dpi > 0 ? Screen.dpi / 160f : Screen.width / 390f);
-        var margin = Mathf.RoundToInt(24f * scale);
-        var width = Screen.width - (margin * 2);
 
-        var titleStyle = new GUIStyle(GUI.skin.label)
+    /*
+        private void OnGUI()
         {
-            fontSize = Mathf.RoundToInt(30f * scale),
-            fontStyle = FontStyle.Bold,
-            wordWrap = true
-        };
-        titleStyle.normal.textColor = Color.white;
+            var scale = Mathf.Max(1f, Screen.dpi > 0 ? Screen.dpi / 160f : Screen.width / 390f);
+            var margin = Mathf.RoundToInt(24f * scale);
+            var width = Screen.width - (margin * 2);
 
-        var bodyStyle = new GUIStyle(GUI.skin.label)
-        {
-            fontSize = Mathf.RoundToInt(18f * scale),
-            wordWrap = true
-        };
-        bodyStyle.normal.textColor = Color.white;
+            var titleStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = Mathf.RoundToInt(30f * scale),
+                fontStyle = FontStyle.Bold,
+                wordWrap = true
+            };
+            titleStyle.normal.textColor = Color.white;
 
-        var stepCounterState = stepCounter == null
-            ? "missing"
-            : $"{stepCounter.displayName} / enabled: {stepCounter.enabled}";
-        var secondsSinceRawChange = hasFirstReading ? Time.realtimeSinceStartup - lastRawChangeTime : 0f;
-        var detectorStepTime = lastDetectorStepTime >= 0f
-            ? $"{Time.realtimeSinceStartup - lastDetectorStepTime:0.0}s ago"
-            : "none yet";
-        var stepDetectorState = stepDetectorAvailable
-            ? $"available / running: {stepDetectorRunning}"
-            : checkedStepDetector ? "missing" : "checking";
-        var accelerometerState = accelerometerAvailable
-            ? $"available / enabled: {accelerometer.enabled}"
-            : "missing";
-            
-        var gpsTracker = GetComponent<GPSTracker>() ?? FindObjectOfType<GPSTracker>();
-        var gpsString = gpsTracker != null ? $"\nGPS: {gpsTracker.GPSStatus}" : "\nGPS: Not found";
+            var bodyStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = Mathf.RoundToInt(18f * scale),
+                wordWrap = true
+            };
+            bodyStyle.normal.textColor = Color.white;
 
-        GUI.Label(new Rect(margin, margin, width, 54f * scale), $"Session Steps: {sessionSteps}", titleStyle);
-        GUI.Label(new Rect(margin, margin + (60f * scale), width, 360f * scale),
-            $"TYPE_STEP_DETECTOR: {stepDetectorState}\nRaw Detector Events: {lastShownDetectorSteps}\nAccepted: {acceptedDetectorSteps}  Pending: {pendingDetectorSteps}  Rejected: {rejectedDetectorEvents}\nDelayed StepCounter: {delayedCounterSessionSteps}  Raw: {rawStepCount}\nCorrections +{counterUpCorrections} / -{counterDownCorrections}\nAccelerometer: {accelerometerState}\nMotion: {motionLevel:0.00}  Shake: {shakeLevel:0.0}  Confidence: {walkingConfidence * 100f:0}%\nDetector changed: {detectorStepTime}  Counter changed: {secondsSinceRawChange:0.0}s ago\nPermission: {hasPermission}\n{motionFilterStatus}\n{detectorFilterStatus}\n{status}{gpsString}",
-            bodyStyle);
+            var stepCounterState = stepCounter == null
+                ? "missing"
+                : $"{stepCounter.displayName} / enabled: {stepCounter.enabled}";
+            var secondsSinceRawChange = hasFirstReading ? Time.realtimeSinceStartup - lastRawChangeTime : 0f;
+            var detectorStepTime = lastDetectorStepTime >= 0f
+                ? $"{Time.realtimeSinceStartup - lastDetectorStepTime:0.0}s ago"
+                : "none yet";
+            var stepDetectorState = stepDetectorAvailable
+                ? $"available / running: {stepDetectorRunning}"
+                : checkedStepDetector ? "missing" : "checking";
+            var accelerometerState = accelerometerAvailable
+                ? $"available / enabled: {accelerometer.enabled}"
+                : "missing";
 
-#if UNITY_ANDROID && !UNITY_EDITOR
-        if (!hasPermission && GUI.Button(new Rect(margin, margin + (440f * scale), width, 48f * scale), "Request Physical Activity Permission"))
-        {
-            requestedPermission = false;
-            RequestPermissionIfNeeded();
+            GUI.Label(new Rect(margin, margin, width, 54f * scale), $"Session Steps: {sessionSteps}", titleStyle);
+            GUI.Label(new Rect(margin, margin + (60f * scale), width, 360f * scale),
+                $"TYPE_STEP_DETECTOR: {stepDetectorState}\nRaw Detector Events: {lastShownDetectorSteps}\nAccepted: {acceptedDetectorSteps}  Pending: {pendingDetectorSteps}  Rejected: {rejectedDetectorEvents}\nDelayed StepCounter: {delayedCounterSessionSteps}  Raw: {rawStepCount}\nCorrections +{counterUpCorrections} / -{counterDownCorrections}\nAccelerometer: {accelerometerState}\nMotion: {motionLevel:0.00}  Shake: {shakeLevel:0.0}  Confidence: {walkingConfidence * 100f:0}%\nDetector changed: {detectorStepTime}  Counter changed: {secondsSinceRawChange:0.0}s ago\nPermission: {hasPermission}\n{motionFilterStatus}\n{detectorFilterStatus}\n{status}",
+                bodyStyle);
+
+    #if UNITY_ANDROID && !UNITY_EDITOR
+            if (!hasPermission && GUI.Button(new Rect(margin, margin + (440f * scale), width, 48f * scale), "Request Physical Activity Permission"))
+            {
+                requestedPermission = false;
+                RequestPermissionIfNeeded();
+            }
+    #endif
         }
-#endif
+        
+
+    */
+
+
+
+
+
+
+    
+    // to implement UI
+    private void LateUpdate()
+    {
+        var manager = StepCountAndGpsManager.Instance;
+
+        if (manager != null)
+        {
+            manager.setStep(sessionSteps);
+        }
     }
+    
 }
+
