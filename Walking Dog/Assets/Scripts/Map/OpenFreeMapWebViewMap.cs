@@ -7,6 +7,7 @@ using UnityEngine;
 public class OpenFreeMapWebViewMap : MonoBehaviour
 {
     private const string DefaultHtmlFileName = "OpenFreeMapMap.html";
+    private const string TrustedMapBaseUrl = "https://walkingdog.local/assets/";
     private const int ViewVisible = 0;
     private const int ViewGone = 8;
 
@@ -168,7 +169,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
 
             activity.Call("addContentView", webView, layoutParams);
             webView.Call("bringToFront");
-            webView.Call("loadUrl", $"file:///android_asset/{safeHtmlFileName}");
+            LoadMapHtmlFromAssets(webView, safeHtmlFileName);
             webViewVisible = true;
         });
 #endif
@@ -202,6 +203,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         settings.Call("setAllowContentAccess", true);
         settings.Call("setAllowFileAccessFromFileURLs", true);
         settings.Call("setAllowUniversalAccessFromFileURLs", true);
+        AppendAppNameToUserAgent(settings);
 
         try
         {
@@ -235,6 +237,68 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         catch (Exception exception)
         {
             Debug.LogWarning("OpenFreeMap WebView hardware layer was not applied: " + exception.Message);
+        }
+    }
+
+    private void LoadMapHtmlFromAssets(AndroidJavaObject targetWebView, string safeHtmlFileName)
+    {
+        try
+        {
+            var html = ReadAndroidAssetText(safeHtmlFileName);
+            if (!string.IsNullOrEmpty(html))
+            {
+                targetWebView.Call("loadDataWithBaseURL", TrustedMapBaseUrl, html, "text/html", "UTF-8", null);
+                return;
+            }
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning("OpenFreeMap HTML asset could not be loaded as text: " + exception.Message);
+        }
+
+        targetWebView.Call("loadUrl", $"file:///android_asset/{safeHtmlFileName}");
+    }
+
+    private string ReadAndroidAssetText(string fileName)
+    {
+        AndroidJavaObject assets = null;
+        AndroidJavaObject inputStream = null;
+        AndroidJavaObject scanner = null;
+
+        try
+        {
+            assets = activity.Call<AndroidJavaObject>("getAssets");
+            inputStream = assets.Call<AndroidJavaObject>("open", fileName);
+            scanner = new AndroidJavaObject("java.util.Scanner", inputStream, "UTF-8");
+            scanner.Call<AndroidJavaObject>("useDelimiter", "\\A");
+            return scanner.Call<bool>("hasNext") ? scanner.Call<string>("next") : string.Empty;
+        }
+        finally
+        {
+            if (scanner != null)
+            {
+                scanner.Call("close");
+                scanner.Dispose();
+            }
+
+            inputStream?.Dispose();
+            assets?.Dispose();
+        }
+    }
+
+    private void AppendAppNameToUserAgent(AndroidJavaObject settings)
+    {
+        try
+        {
+            var currentUserAgent = settings.Call<string>("getUserAgentString");
+            if (!string.IsNullOrEmpty(currentUserAgent) && !currentUserAgent.Contains("WalkingDogGame"))
+            {
+                settings.Call("setUserAgentString", currentUserAgent + " WalkingDogGame/1.0");
+            }
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning("OpenFreeMap WebView user agent was not updated: " + exception.Message);
         }
     }
 

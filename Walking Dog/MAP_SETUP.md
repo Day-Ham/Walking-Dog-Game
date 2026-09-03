@@ -35,7 +35,7 @@ Location permissions are already present for GPS tracking.
 
 ## Troubleshooting
 
-If the map appears as a blank/white area with a red dot, the Unity-to-WebView GPS sync is working. The red dot is our current-location marker. The missing part is the basemap, which means MapLibre could not draw OpenFreeMap tiles yet.
+If the map appears as a blank/white/gray area with a red dot, the Unity-to-WebView GPS sync is working. The red dot is our current-location marker. The missing part is the basemap, which means MapLibre could not draw OpenFreeMap tiles yet.
 
 Check the small status label inside the map after rebuilding to Android:
 
@@ -43,5 +43,10 @@ Check the small status label inside the map after rebuilding to Android:
 - `MapLibre CDN blocked or offline` means the phone cannot reach the MapLibre script on `unpkg.com`.
 - `WebGL unavailable in Android WebView` means Android System WebView/Chrome needs updating, or the device does not support the required WebGL rendering.
 - `Map still loading` usually means weak internet, blocked tile requests, or an Android WebView rendering issue.
+- `GPS tracking (raster map)` means the app detected a blank vector map and switched to the simpler image-tile fallback.
 
 The map is an Android native WebView overlay. That overlay always draws above Unity UI inside its rectangle, so keep the `OpenFreeMap Map Panel` away from step counters and buttons instead of trying to layer Unity text on top of it.
+
+The WebView loads the HTML using a local `https://walkingdog.local/assets/` base URL instead of directly using `file:///android_asset`. This avoids Android WebView/MapLibre tile-worker origin issues where the page loads, the marker appears, but vector map tiles stay blank.
+
+The raster fallback uses the public OpenStreetMap tile endpoint only for normal on-screen viewing. It is useful for prototype/demo reliability, but high-traffic production apps should use OpenFreeMap successfully, a paid/free-tier provider, or self-hosted tiles instead of depending on public OSM tile capacity.

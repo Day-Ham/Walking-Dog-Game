@@ -7,7 +7,8 @@
   <style>
     html,
     body,
-    #map {
+    #map,
+    #raster-map {
       width: 100%;
       height: 100%;
       margin: 0;
@@ -16,11 +17,57 @@
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
+    body {
+      position: relative;
+    }
+
+    #map,
+    #raster-map {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+    }
+
+    #raster-map {
+      display: none;
+      background: #eef0e8;
+    }
+
+    #raster-tiles img {
+      position: absolute;
+      width: 256px;
+      height: 256px;
+      border: 0;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    #raster-route {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    #raster-attribution {
+      position: absolute;
+      right: 6px;
+      bottom: 4px;
+      z-index: 3;
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.72);
+      color: #334155;
+      font-size: 10px;
+      line-height: 1.2;
+      pointer-events: none;
+    }
+
     #status {
       position: absolute;
       left: 8px;
       top: 8px;
-      z-index: 2;
+      z-index: 4;
       max-width: calc(100% - 16px);
       padding: 5px 8px;
       border-radius: 5px;
@@ -40,6 +87,14 @@
       box-shadow: 0 2px 8px rgba(15, 23, 42, 0.35);
     }
 
+    .raster-current-location-marker {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      z-index: 3;
+      transform: translate(-50%, -50%);
+    }
+
     .maplibregl-ctrl-attrib {
       font-size: 10px;
     }
@@ -51,6 +106,12 @@
 </head>
 <body>
   <div id="map"></div>
+  <div id="raster-map">
+    <div id="raster-tiles"></div>
+    <svg id="raster-route" aria-hidden="true"></svg>
+    <div class="current-location-marker raster-current-location-marker"></div>
+    <div id="raster-attribution">© OpenStreetMap contributors</div>
+  </div>
   <div id="status">Loading OpenFreeMap...</div>
 
   <script>
@@ -88,7 +149,13 @@
       var marker = null;
       var isMapLoaded = false;
       var hasRenderedMap = false;
+      var hasVisibleVectorFeatures = false;
+      var isRasterFallbackActive = false;
+      var lastRasterKey = "";
+      var rasterResizeListenerAttached = false;
       var lastMapError = "";
+      var rasterTileSize = 256;
+      var rasterTileTemplate = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 
       function setStatus(message) {
         var status = document.getElementById("status");
@@ -160,6 +227,7 @@
             if (!response.ok) {
               lastMapError = "OpenFreeMap style HTTP " + response.status;
               setStatus(lastMapError);
+              activateRasterFallback(lastMapError + "; using raster map");
               return;
             }
 
@@ -170,11 +238,284 @@
           .catch(function (error) {
             lastMapError = "Cannot reach OpenFreeMap: " + getErrorMessage(error);
             setStatus(lastMapError);
+            activateRasterFallback(lastMapError + "; using raster map");
           });
       }
 
       function setReadyStatus() {
-        setStatus(state.hasLocation ? "GPS tracking" : "Preview location");
+        if (isRasterFallbackActive) {
+          setStatus(state.hasLocation ? "GPS tracking (raster map)" : "Preview location (raster map)");
+          return;
+        }
+
+        if (hasVisibleVectorFeatures) {
+          setStatus(state.hasLocation ? "GPS tracking" : "Preview location");
+          return;
+        }
+
+        setStatus(lastMapError || "OpenFreeMap vector tiles loading...");
+      }
+
+      function setRasterFallbackVisible(isVisible) {
+        var mapElement = document.getElementById("map");
+        var rasterElement = document.getElementById("raster-map");
+
+        if (mapElement) {
+          mapElement.style.display = isVisible ? "none" : "block";
+        }
+
+        if (rasterElement) {
+          rasterElement.style.display = isVisible ? "block" : "none";
+        }
+      }
+
+      function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+      }
+
+      function getRasterZoom() {
+        var rawZoom = Number(state.zoom);
+        var roundedZoom = Number.isFinite(rawZoom) ? Math.round(rawZoom) : 17;
+        return clamp(roundedZoom, 1, 19);
+      }
+
+      function getRasterTileUrl(zoom, x, y) {
+        return rasterTileTemplate
+          .replace("{z}", String(zoom))
+          .replace("{x}", String(x))
+          .replace("{y}", String(y));
+      }
+
+      function lonLatToWorldPixels(lng, lat, zoom) {
+        var scale = rasterTileSize * Math.pow(2, zoom);
+        var safeLat = clamp(lat, -85.05112878, 85.05112878);
+        var sinLat = Math.sin(safeLat * Math.PI / 180);
+
+        return {
+          x: (lng + 180) / 360 * scale,
+          y: (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * scale
+        };
+      }
+
+      function getRasterLayout(center, zoom) {
+        var rasterElement = document.getElementById("raster-map");
+        if (!rasterElement) {
+          return null;
+        }
+
+        var width = rasterElement.clientWidth || window.innerWidth || 1;
+        var height = rasterElement.clientHeight || window.innerHeight || 1;
+        var centerPixels = lonLatToWorldPixels(center[0], center[1], zoom);
+
+        return {
+          width: width,
+          height: height,
+          topLeftX: centerPixels.x - width / 2,
+          topLeftY: centerPixels.y - height / 2
+        };
+      }
+
+      function renderRasterRoute(layout, zoom) {
+        var routeElement = document.getElementById("raster-route");
+        var coordinates = toRouteCoordinates(state.routePoints);
+
+        if (!routeElement) {
+          return;
+        }
+
+        routeElement.setAttribute("viewBox", "0 0 " + layout.width + " " + layout.height);
+        routeElement.setAttribute("width", String(layout.width));
+        routeElement.setAttribute("height", String(layout.height));
+        routeElement.textContent = "";
+
+        if (coordinates.length < 2) {
+          return;
+        }
+
+        var points = coordinates.map(function (coordinate) {
+          var pixels = lonLatToWorldPixels(coordinate[0], coordinate[1], zoom);
+          return (pixels.x - layout.topLeftX).toFixed(1) + "," + (pixels.y - layout.topLeftY).toFixed(1);
+        });
+
+        var polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+        polyline.setAttribute("points", points.join(" "));
+        polyline.setAttribute("fill", "none");
+        polyline.setAttribute("stroke", "#1f8fff");
+        polyline.setAttribute("stroke-width", "5");
+        polyline.setAttribute("stroke-linecap", "round");
+        polyline.setAttribute("stroke-linejoin", "round");
+        routeElement.appendChild(polyline);
+      }
+
+      function renderRasterFallback() {
+        var rasterElement = document.getElementById("raster-map");
+        var tileElement = document.getElementById("raster-tiles");
+        var center = toCenter(state);
+
+        if (!rasterElement || !tileElement || !center) {
+          return;
+        }
+
+        var zoom = getRasterZoom();
+        var layout = getRasterLayout(center, zoom);
+        if (!layout) {
+          return;
+        }
+
+        var key = [
+          zoom,
+          center[0].toFixed(5),
+          center[1].toFixed(5),
+          layout.width,
+          layout.height
+        ].join(":");
+
+        if (key !== lastRasterKey) {
+          var tileCount = Math.pow(2, zoom);
+          var startTileX = Math.floor(layout.topLeftX / rasterTileSize);
+          var startTileY = Math.floor(layout.topLeftY / rasterTileSize);
+          var endTileX = Math.floor((layout.topLeftX + layout.width) / rasterTileSize);
+          var endTileY = Math.floor((layout.topLeftY + layout.height) / rasterTileSize);
+
+          tileElement.textContent = "";
+
+          for (var tileY = startTileY; tileY <= endTileY; tileY += 1) {
+            if (tileY < 0 || tileY >= tileCount) {
+              continue;
+            }
+
+            for (var tileX = startTileX; tileX <= endTileX; tileX += 1) {
+              var wrappedTileX = ((tileX % tileCount) + tileCount) % tileCount;
+              var image = document.createElement("img");
+              image.alt = "";
+              image.decoding = "async";
+              image.draggable = false;
+              image.src = getRasterTileUrl(zoom, wrappedTileX, tileY);
+              image.style.left = Math.round(tileX * rasterTileSize - layout.topLeftX) + "px";
+              image.style.top = Math.round(tileY * rasterTileSize - layout.topLeftY) + "px";
+              image.addEventListener("error", function () {
+                lastMapError = "Raster tile failed from OpenStreetMap";
+                setStatus(lastMapError);
+              });
+              tileElement.appendChild(image);
+            }
+          }
+
+          lastRasterKey = key;
+        }
+
+        renderRasterRoute(layout, zoom);
+        setReadyStatus();
+      }
+
+      function canvasHasVisibleMapDetail() {
+        if (!map || isRasterFallbackActive) {
+          return false;
+        }
+
+        try {
+          var canvas = map.getCanvas();
+          if (!canvas || canvas.width < 1 || canvas.height < 1) {
+            return false;
+          }
+
+          var gl = canvas.getContext("webgl2") || canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+          if (!gl) {
+            return false;
+          }
+
+          var redMin = 255;
+          var greenMin = 255;
+          var blueMin = 255;
+          var redMax = 0;
+          var greenMax = 0;
+          var blueMax = 0;
+          var uniqueColors = {};
+          var uniqueCount = 0;
+          var pixel = new Uint8Array(4);
+
+          for (var row = 1; row <= 7; row += 1) {
+            for (var col = 1; col <= 7; col += 1) {
+              var x = Math.floor(canvas.width * col / 8);
+              var y = Math.floor(canvas.height * row / 8);
+              gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+
+              if (pixel[3] < 12) {
+                continue;
+              }
+
+              redMin = Math.min(redMin, pixel[0]);
+              greenMin = Math.min(greenMin, pixel[1]);
+              blueMin = Math.min(blueMin, pixel[2]);
+              redMax = Math.max(redMax, pixel[0]);
+              greenMax = Math.max(greenMax, pixel[1]);
+              blueMax = Math.max(blueMax, pixel[2]);
+
+              var colorKey = [
+                Math.round(pixel[0] / 12),
+                Math.round(pixel[1] / 12),
+                Math.round(pixel[2] / 12)
+              ].join(":");
+
+              if (!uniqueColors[colorKey]) {
+                uniqueColors[colorKey] = true;
+                uniqueCount += 1;
+              }
+            }
+          }
+
+          var channelSpread = Math.max(redMax - redMin, greenMax - greenMin, blueMax - blueMin);
+          return uniqueCount >= 4 || channelSpread >= 18;
+        } catch (error) {
+          return false;
+        }
+      }
+
+      function activateRasterFallback(reason) {
+        if (!isRasterFallbackActive) {
+          isRasterFallbackActive = true;
+          lastRasterKey = "";
+          setRasterFallbackVisible(true);
+          setStatus(reason || "OpenFreeMap vector map blank; using raster map");
+        }
+
+        if (!rasterResizeListenerAttached) {
+          rasterResizeListenerAttached = true;
+          window.addEventListener("resize", function () {
+            lastRasterKey = "";
+            renderRasterFallback();
+          });
+        }
+
+        renderRasterFallback();
+      }
+
+      function updateVectorRenderState() {
+        if (!map || !isMapLoaded || isRasterFallbackActive) {
+          return false;
+        }
+
+        try {
+          var canvas = map.getCanvas();
+          var width = canvas ? canvas.clientWidth : 0;
+          var height = canvas ? canvas.clientHeight : 0;
+
+          if (width < 1 || height < 1) {
+            hasVisibleVectorFeatures = false;
+            return false;
+          }
+
+          var features = map.queryRenderedFeatures([[0, 0], [width, height]])
+            .filter(function (feature) {
+              return feature && feature.layer && feature.layer.id !== "walk-route-line";
+            });
+
+          hasVisibleVectorFeatures = features.length > 0 && canvasHasVisibleMapDetail();
+          hasRenderedMap = hasVisibleVectorFeatures;
+          return hasVisibleVectorFeatures;
+        } catch (error) {
+          return false;
+        }
       }
 
       function scheduleBlankMapCheck() {
@@ -189,8 +530,10 @@
             }
           }
 
-          if (!hasRenderedMap || !tilesLoaded) {
-            setStatus(lastMapError || "Map still loading: check internet or Android WebView");
+          updateVectorRenderState();
+
+          if (!hasVisibleVectorFeatures || !tilesLoaded) {
+            activateRasterFallback(lastMapError || "OpenFreeMap vector map blank; using raster map");
           }
         }, 6500);
       }
@@ -299,6 +642,11 @@
       function applyState(nextState, animate) {
         state = nextState || state;
 
+        if (isRasterFallbackActive) {
+          renderRasterFallback();
+          return;
+        }
+
         if (!map || !isMapLoaded) {
           return;
         }
@@ -342,7 +690,8 @@
           });
         }
 
-        setStatus(state.hasLocation ? "GPS tracking" : "Preview location");
+        updateVectorRenderState();
+        setReadyStatus();
       }
 
       function initializeMap() {
@@ -351,12 +700,14 @@
         }
 
         if (!window.maplibregl) {
-          setStatus("MapLibre failed to load");
+          lastMapError = "MapLibre failed to load";
+          activateRasterFallback(lastMapError + "; using raster map");
           return;
         }
 
         if (!isWebglSupported()) {
-          setStatus("WebGL unavailable in Android WebView");
+          lastMapError = "WebGL unavailable in Android WebView";
+          activateRasterFallback(lastMapError + "; using raster map");
           return;
         }
 
@@ -369,11 +720,18 @@
             center: [state.lng, state.lat],
             zoom: state.zoom,
             attributionControl: false,
-            failIfMajorPerformanceCaveat: false
+            failIfMajorPerformanceCaveat: false,
+            refreshExpiredTiles: false,
+            cancelPendingTileRequestsWhileZooming: false,
+            canvasContextAttributes: {
+              contextType: "webgl2",
+              failIfMajorPerformanceCaveat: false,
+              preserveDrawingBuffer: true
+            }
           });
         } catch (error) {
           lastMapError = "Map render failed: " + getErrorMessage(error);
-          setStatus(lastMapError);
+          activateRasterFallback(lastMapError + "; using raster map");
           return;
         }
 
@@ -386,21 +744,23 @@
 
         map.on("load", function () {
           isMapLoaded = true;
-          hasRenderedMap = true;
+          hasRenderedMap = false;
+          hasVisibleVectorFeatures = false;
           ensureRouteLayer();
           applyState(state, false);
         });
 
         map.on("style.load", function () {
           isMapLoaded = true;
-          hasRenderedMap = true;
+          hasRenderedMap = false;
+          hasVisibleVectorFeatures = false;
           ensureRouteLayer();
           applyState(state, false);
         });
 
         map.on("idle", function () {
-          if (isMapLoaded) {
-            hasRenderedMap = true;
+          if (isMapLoaded && !isRasterFallbackActive) {
+            updateVectorRenderState();
             setReadyStatus();
           }
         });
