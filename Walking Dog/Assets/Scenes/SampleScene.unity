@@ -270,6 +270,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::GPSTracker
   minUpdateDistance: 2
   stepCounter: {fileID: 1509270912}
+  ignoreStepFilterForTesting: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

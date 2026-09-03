@@ -17,6 +17,9 @@ public class GPSTracker : MonoBehaviour
     public bool IsLocationServiceRunning { get; private set; }
     public string GPSStatus { get; private set; } = "Initializing...";
 
+    [Tooltip("If true, GPS will track distance even if no steps are detected. Useful for testing in Emulators.")]
+    public bool ignoreStepFilterForTesting = false;
+
     private LocationInfo lastData;
     private bool hasValidLastData = false;
     private bool hasPermission = false;
@@ -88,7 +91,7 @@ public class GPSTracker : MonoBehaviour
     {
         if (!IsLocationServiceRunning || Input.location.status != LocationServiceStatus.Running) return;
 
-        bool isWalking = stepCounter != null && stepCounter.IsActivelyWalking;
+        bool isWalking = ignoreStepFilterForTesting || (stepCounter != null && stepCounter.IsActivelyWalking);
         
         LocationInfo currentData = Input.location.lastData;
 
