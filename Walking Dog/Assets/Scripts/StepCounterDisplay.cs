@@ -429,8 +429,20 @@ public class StepCounterDisplay : MonoBehaviour
                 using (var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
                 using (var activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
                 {
+                    if (activity == null)
+                    {
+                        status = "Waiting for Android activity before starting step detector.";
+                        return;
+                    }
+
                     sensorManager = activity.Call<AndroidJavaObject>("getSystemService", "sensor");
                 }
+            }
+
+            if (sensorManager == null)
+            {
+                status = "Android sensor manager is not ready yet.";
+                return;
             }
 
             if (stepDetectorSensor == null && !checkedStepDetector)
@@ -472,9 +484,16 @@ public class StepCounterDisplay : MonoBehaviour
 
     private void StopStepDetector()
     {
-        if (sensorManager != null && stepDetectorListener != null)
+        try
         {
-            sensorManager.Call("unregisterListener", stepDetectorListener);
+            if (sensorManager != null && stepDetectorListener != null)
+            {
+                sensorManager.Call("unregisterListener", stepDetectorListener);
+            }
+        }
+        catch (System.Exception exception)
+        {
+            Debug.LogWarning("Failed to stop TYPE_STEP_DETECTOR cleanly: " + exception.Message);
         }
 
         stepDetectorRunning = false;
