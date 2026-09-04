@@ -162,6 +162,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
 
             webView = new AndroidJavaObject("android.webkit.WebView", activity);
             ConfigureWebView(webView);
+            ClearWebViewCache(webView);
 
             layoutParams = CreateLayoutParams(rect);
             lastAndroidRect = rect;
@@ -229,14 +230,18 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         targetWebView.Call("setVerticalScrollBarEnabled", false);
         targetWebView.Call("setHorizontalScrollBarEnabled", false);
         targetWebView.Call("setClickable", allowMapGestures);
+    }
 
+    private void ClearWebViewCache(AndroidJavaObject targetWebView)
+    {
         try
         {
-            targetWebView.Call("setLayerType", 2, (object)null);
+            targetWebView.Call("clearCache", false);
+            targetWebView.Call("clearHistory");
         }
         catch (Exception exception)
         {
-            Debug.LogWarning("OpenFreeMap WebView hardware layer was not applied: " + exception.Message);
+            Debug.LogWarning("OpenFreeMap WebView cache was not cleared: " + exception.Message);
         }
     }
 

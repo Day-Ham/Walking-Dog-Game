@@ -10,18 +10,6 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <application android:hardwareAccelerated="true">
-        <!-- Used when Application Entry is set to Activity. -->
-        <activity android:name="com.unity3d.player.UnityPlayerActivity"
-                  android:theme="@style/UnityThemeSelector"
-                  android:hardwareAccelerated="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-            <meta-data android:name="unityplayer.UnityActivity" android:value="true" />
-        </activity>
-
-        <!-- Used when Application Entry is set to GameActivity. -->
         <activity android:name="com.unity3d.player.UnityPlayerGameActivity"
                   android:theme="@style/BaseUnityGameActivityTheme"
                   android:hardwareAccelerated="true">
