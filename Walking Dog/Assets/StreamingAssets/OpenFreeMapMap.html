@@ -340,7 +340,7 @@
         var polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
         polyline.setAttribute("points", points.join(" "));
         polyline.setAttribute("fill", "none");
-        polyline.setAttribute("stroke", "#1f8fff");
+        polyline.setAttribute("stroke", "#fc4c02"); //Orange
         polyline.setAttribute("stroke-width", "5");
         polyline.setAttribute("stroke-linecap", "round");
         polyline.setAttribute("stroke-linejoin", "round");
@@ -581,15 +581,32 @@
           });
         }
 
+        if (!map.getLayer("walk-route-casing")) {
+          map.addLayer({
+            id: "walk-route-casing",
+            type: "line",
+            source: "walk-route",
+            paint: {
+              "line-color": "#e34402", // Darker orange for the border
+              "line-width": 8,
+              "line-opacity": 0.92
+            },
+            layout: {
+              "line-cap": "round",
+              "line-join": "round"
+            }
+          });
+        }
+
         if (!map.getLayer("walk-route-line")) {
           map.addLayer({
             id: "walk-route-line",
             type: "line",
             source: "walk-route",
             paint: {
-              "line-color": "#1f8fff",
+              "line-color": "#fc4c02", // Strava Orange
               "line-width": 5,
-              "line-opacity": 0.92
+              "line-opacity": 1.0
             },
             layout: {
               "line-cap": "round",
