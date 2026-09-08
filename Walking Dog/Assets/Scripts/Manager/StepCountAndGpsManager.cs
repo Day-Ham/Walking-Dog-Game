@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using UnityEngine;
 
 public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackReceiver
@@ -35,6 +37,19 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     [SerializeField] private string sessionStartUtc = "";
     [SerializeField] private string sessionEndUtc = "";
     [SerializeField] private string lastSavedWalkFilePath = "";
+    [SerializeField] private string sessionOwnerUserId = "";
+
+    private LocalWalkRepository localWalks;
+    private IWalkCloudStore cloudStore;
+    private WalkSyncService walkSync;
+    private CancellationTokenSource syncLifetime;
+    private float nextSyncTime;
+    private string lastWalkSaveState = "Ready";
+    private SavedWalkSession completedSessionRecord;
+
+    public LocalWalkRepository LocalWalks => localWalks ??
+        (localWalks = new LocalWalkRepository(SavedWalkDirectoryPath));
+    public string LastWalkSaveState => lastWalkSaveState;
 
     [Header("Route Recording")]
     [SerializeField] private bool recordRoutePoints;
@@ -115,12 +130,15 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
 
         Instance = this;
         DontDestroyOnLoad(gameObject);
+        syncLifetime = new CancellationTokenSource();
     }
 
     private void OnDestroy()
     {
         if (Instance == this)
         {
+            syncLifetime?.Cancel();
+            syncLifetime?.Dispose();
             Instance = null;
         }
     }
@@ -195,6 +213,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
 
     public void BeginWalkingSession(bool clearExistingRoute = true)
     {
+        if (walkingSessionActive) return;
         hasWalkingSession = true;
         walkingSessionActive = true;
         sessionStartSteps = stepsCounted;
@@ -206,6 +225,9 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         sessionStartUtc = DateTime.UtcNow.ToString("o");
         sessionEndUtc = "";
         lastSavedWalkFilePath = "";
+        completedSessionRecord = null;
+        sessionOwnerUserId = cloudStore?.AuthenticatedUserId ?? "";
+        lastWalkSaveState = "Walking";
         sessionStatus = "Walking session active.";
 
         StartRouteRecording(clearExistingRoute);
@@ -232,7 +254,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         var savedPath = SaveCurrentWalkingSession();
         sessionStatus = string.IsNullOrEmpty(savedPath)
             ? $"Walk ended: {WalkingSessionSteps} steps, {sessionDistanceMeters:0}m. Save failed."
-            : $"Walk saved: {WalkingSessionSteps} steps, {sessionDistanceMeters:0}m.";
+            : $"Walk saved on device: {WalkingSessionSteps} steps, {sessionDistanceMeters:0}m.";
     }
 
     public void ToggleWalkingSession()
@@ -291,26 +313,28 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
 
     public string SaveCurrentWalkingSession()
     {
-        if (!hasWalkingSession)
+        if (!hasWalkingSession || walkingSessionActive)
         {
-            Debug.LogWarning("Cannot save walk because no walking session has started.");
+            Debug.LogWarning("Only completed walking sessions can be saved.");
             return "";
         }
 
-        var record = CreateSavedWalkSession();
+        // GPS and global step state may continue changing after Stop Walk.
+        // Preserve the exact completed payload for repeated saves/disk retries.
+        var record = completedSessionRecord ?? (completedSessionRecord = CreateSavedWalkSession());
 
         try
         {
-            Directory.CreateDirectory(SavedWalkDirectoryPath);
-            var filePath = Path.Combine(SavedWalkDirectoryPath, BuildSavedWalkFileName(record));
-            File.WriteAllText(filePath, JsonUtility.ToJson(record, true));
+            var filePath = LocalWalks.Save(record);
             lastSavedWalkFilePath = filePath;
-            Debug.Log($"Walk session saved to {filePath}");
+            RefreshLastWalkSaveState();
+            RequestWalkSync();
             return filePath;
         }
         catch (Exception exception)
         {
             lastSavedWalkFilePath = "";
+            lastWalkSaveState = "Save failed";
             Debug.LogError($"Failed to save walk session: {exception.Message}");
             return "";
         }
@@ -318,65 +342,84 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
 
     public List<string> GetSavedWalkFilePaths()
     {
-        try
-        {
-            if (!Directory.Exists(SavedWalkDirectoryPath))
-            {
-                return new List<string>();
-            }
-
-            var files = Directory.GetFiles(SavedWalkDirectoryPath, "walk_*.json");
-            Array.Sort(files);
-            return new List<string>(files);
-        }
-        catch (Exception exception)
-        {
-            Debug.LogWarning($"Failed to list saved walks: {exception.Message}");
-            return new List<string>();
-        }
+        return LocalWalks.GetFilePaths();
     }
 
     public List<SavedWalkSession> LoadSavedWalks()
     {
-        var savedWalks = new List<SavedWalkSession>();
-        var filePaths = GetSavedWalkFilePaths();
-
-        foreach (var filePath in filePaths)
-        {
-            if (TryLoadSavedWalk(filePath, out var savedWalk))
-            {
-                savedWalks.Add(savedWalk);
-            }
-        }
-
-        return savedWalks;
+        return LocalWalks.LoadAll();
     }
 
     public bool TryLoadSavedWalk(string filePath, out SavedWalkSession savedWalk)
     {
-        savedWalk = null;
+        return LocalWalks.TryLoad(filePath, out savedWalk);
+    }
 
-        if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
-        {
-            return false;
-        }
+    // Firebase's future bootstrapper supplies the authenticated adapter here.
+    // There is intentionally no fake adapter or automatic sign-in in the app.
+    public void ConfigureCloudSync(IWalkCloudStore store)
+    {
+        if (walkSync != null && walkSync.IsRunning)
+            throw new InvalidOperationException("Wait for the current sync before replacing its provider.");
+        cloudStore = store;
+        walkSync = store == null ? null : new WalkSyncService(LocalWalks, store);
+        RequestWalkSync();
+    }
 
+    public void AssignLocalWalkToCurrentAccount(string walkId)
+    {
+        var owner = cloudStore?.AuthenticatedUserId;
+        if (string.IsNullOrWhiteSpace(owner)) throw new InvalidOperationException("Sign in before importing a local walk.");
+        LocalWalks.AssignOwner(walkId, owner);
+        RefreshLastWalkSaveState();
+        RequestWalkSync();
+    }
+
+    public Task SyncPendingWalksAsync(CancellationToken cancellationToken = default)
+    {
+        return walkSync == null ? Task.CompletedTask : walkSync.SyncPendingAsync(cancellationToken);
+    }
+
+    private void Update()
+    {
+        if (walkSync == null || Time.realtimeSinceStartup < nextSyncTime) return;
+        RequestWalkSync();
+    }
+
+    private void OnApplicationPause(bool paused)
+    {
+        if (!paused) RequestWalkSync();
+    }
+
+    private async void RequestWalkSync()
+    {
+        nextSyncTime = Time.realtimeSinceStartup + 15f;
+        if (walkSync == null || syncLifetime == null || syncLifetime.IsCancellationRequested) return;
         try
         {
-            var json = File.ReadAllText(filePath);
-            savedWalk = JsonUtility.FromJson<SavedWalkSession>(json);
-            if (savedWalk != null)
-            {
-                savedWalk.EnsureCollections();
-            }
-
-            return savedWalk != null;
+            await SyncPendingWalksAsync(syncLifetime.Token);
+            if (this != null) RefreshLastWalkSaveState();
         }
+        catch (OperationCanceledException) { }
         catch (Exception exception)
         {
-            Debug.LogWarning($"Failed to load walk session from {filePath}: {exception.Message}");
-            return false;
+            Debug.LogWarning("Walk sync could not finish; local saves are retained. " + exception.GetType().Name);
         }
+    }
+
+    private void RefreshLastWalkSaveState()
+    {
+        if (walkingSessionActive || string.IsNullOrEmpty(lastSavedWalkFilePath)) return;
+        if (!LocalWalks.TryLoad(lastSavedWalkFilePath, out var walk))
+        {
+            lastWalkSaveState = "Save unavailable";
+            return;
+        }
+        lastWalkSaveState = walk.sync.state == WalkUploadState.Synced
+            ? "Summary synced to cloud"
+            : walk.sync.state == WalkUploadState.RetryNeeded
+                ? "Saved on device - sync pending"
+                : "Saved on device";
     }
 
     private void AddRoutePoint(float latitude, float longitude)
@@ -425,6 +468,8 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
 
         var record = new SavedWalkSession
         {
+            schemaVersion = LocalWalkRepository.CurrentSchemaVersion,
+            ownerUserId = sessionOwnerUserId,
             id = string.IsNullOrEmpty(currentSessionId) ? Guid.NewGuid().ToString("N") : currentSessionId,
             startedAtUtc = string.IsNullOrEmpty(sessionStartUtc) ? DateTime.UtcNow.ToString("o") : sessionStartUtc,
             endedAtUtc = string.IsNullOrEmpty(sessionEndUtc) ? DateTime.UtcNow.ToString("o") : sessionEndUtc,
@@ -444,14 +489,6 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         }
 
         return record;
-    }
-
-    private static string BuildSavedWalkFileName(SavedWalkSession record)
-    {
-        var timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss_fff");
-        var id = string.IsNullOrEmpty(record.id) ? Guid.NewGuid().ToString("N") : record.id;
-        var shortId = id.Length > 8 ? id.Substring(0, 8) : id;
-        return $"walk_{timestamp}_{shortId}.json";
     }
 
     private WalkRoutePoint CreateRoutePointSample(float latitude, float longitude, float now)
@@ -590,6 +627,9 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     [Serializable]
     public class SavedWalkSession
     {
+        public int schemaVersion;
+        public string ownerUserId = "";
+        public WalkSyncMetadata sync = new WalkSyncMetadata();
         public string id;
         public string startedAtUtc;
         public string endedAtUtc;

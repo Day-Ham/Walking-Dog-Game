@@ -205,7 +205,7 @@ public class GPSUIController : MonoBehaviour
             return "Ready";
         }
 
-        return string.IsNullOrEmpty(manager.LastSavedWalkFilePath) ? "Save failed" : "Saved";
+        return manager.LastWalkSaveState;
     }
 
     private static string FormatDistance(float meters)
