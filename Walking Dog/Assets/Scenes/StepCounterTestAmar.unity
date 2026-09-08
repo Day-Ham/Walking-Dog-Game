@@ -211,7 +211,7 @@ GameObject:
   - component: {fileID: 164583898}
   - component: {fileID: 164583897}
   m_Layer: 5
-  m_Name: TestButton (1)
+  m_Name: Walking Session Button
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -234,7 +234,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -9.999989, y: -228}
+  m_AnchoredPosition: {x: -9.999989, y: 76.00003}
   m_SizeDelta: {x: 488.5249, y: 30}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &164583897
@@ -318,6 +318,105 @@ CanvasRenderer:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 164583895}
+  m_CullTransparentMesh: 1
+--- !u!1 &258018270
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 258018271}
+  - component: {fileID: 258018274}
+  - component: {fileID: 258018273}
+  - component: {fileID: 258018272}
+  m_Layer: 5
+  m_Name: OpenFreeMap Map Panel
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!224 &258018271
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 258018270}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 359971482}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0.06, y: 0.05}
+  m_AnchorMax: {x: 0.94, y: 0.31}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 0, y: 0}
+  m_Pivot: {x: 0.5, y: 0.5}
+--- !u!114 &258018272
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 258018270}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0eab7fef752a449eaf03de58072e35b4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::OpenFreeMapWebViewMap
+  mapArea: {fileID: 258018271}
+  mapStyle: 0
+  zoom: 17
+  followGps: 1
+  allowMapGestures: 1
+  fallbackLatitudeLongitude: {x: 14.5995, y: 120.9842}
+  mapSyncIntervalSeconds: 1
+  layoutSyncIntervalSeconds: 0.5
+  maxRoutePointsToSend: 700
+  htmlFileName: OpenFreeMapMap.html
+  statusText: {fileID: 0}
+--- !u!114 &258018273
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 258018270}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
+  m_Material: {fileID: 0}
+  m_Color: {r: 0.91, g: 0.94, b: 0.95, a: 1}
+  m_RaycastTarget: 0
+  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
+  m_Maskable: 1
+  m_OnCullStateChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  m_Sprite: {fileID: 0}
+  m_Type: 0
+  m_PreserveAspect: 0
+  m_FillCenter: 1
+  m_FillMethod: 4
+  m_FillAmount: 1
+  m_FillClockwise: 1
+  m_FillOrigin: 0
+  m_UseSpriteMesh: 0
+  m_PixelsPerUnitMultiplier: 1
+--- !u!222 &258018274
+CanvasRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 258018270}
   m_CullTransparentMesh: 1
 --- !u!1 &305311090
 GameObject:
@@ -551,6 +650,7 @@ RectTransform:
   m_LocalScale: {x: 0, y: 0, z: 0}
   m_ConstrainProportionsScale: 0
   m_Children:
+  - {fileID: 258018271}
   - {fileID: 692439212}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -708,7 +808,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Record Route
+  m_text: Start Walk
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
@@ -824,7 +924,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -10, y: -299}
+  m_AnchoredPosition: {x: -10, y: 5}
   m_SizeDelta: {x: 488.5249, y: 30}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &463346446
@@ -1206,10 +1306,10 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 692439212}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 23, y: 176}
-  m_SizeDelta: {x: 200, y: 50}
+  m_AnchorMin: {x: 0.5, y: 1}
+  m_AnchorMax: {x: 0.5, y: 1}
+  m_AnchoredPosition: {x: 0, y: -133}
+  m_SizeDelta: {x: 180.3626, y: 25.921387}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &781096843
 MonoBehaviour:
@@ -1258,7 +1358,7 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 44.75
+  m_fontSize: 23.2
   m_fontSizeBase: 39.2
   m_fontWeight: 400
   m_enableAutoSizing: 1
@@ -1323,7 +1423,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4e1d27eaa59707346bedebaaf873e20c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIStepController
-  stepText: {fileID: 0}
+  stepText: {fileID: 781096843}
+  prefix: 
+  showWalkingSessionSteps: 0
 --- !u!1 &1150923258
 GameObject:
   m_ObjectHideFlags: 0
@@ -1359,7 +1461,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -166, y: -106}
+  m_AnchoredPosition: {x: -166, y: -221.00002}
   m_SizeDelta: {x: 100, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1150923260
@@ -1374,8 +1476,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8bbdf084d40567f4e90c022149eff6a1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GPSUIController
-  longText: {fileID: 0}
-  latText: {fileID: 0}
+  longText: {fileID: 305311092}
+  latText: {fileID: 729581950}
+  accuracyText: {fileID: 1589840764}
+  walkingSessionButton: {fileID: 164583897}
+  walkingSessionButtonText: {fileID: 458750779}
+  clearRouteOnSessionStart: 1
 --- !u!1 &1158483059
 GameObject:
   m_ObjectHideFlags: 0
@@ -1387,7 +1493,7 @@ GameObject:
   - component: {fileID: 1158483061}
   - component: {fileID: 1158483062}
   m_Layer: 0
-  m_Name: StepCountTracker
+  m_Name: StepCounterDisplay
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1454,7 +1560,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -328, y: 406}
+  m_AnchoredPosition: {x: -328, y: 436}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1343479194
@@ -1604,7 +1710,25 @@ MonoBehaviour:
   stepsCounted: 0
   latitude: 0
   longitude: 0
+  horizontalAccuracy: 0
+  hasLocation: 0
+  accuracyStatus: No GPS fix yet.
+  walkingSessionActive: 0
+  hasWalkingSession: 0
+  sessionStartSteps: 0
+  sessionEndSteps: 0
+  sessionStartTime: 0
+  sessionEndTime: 0
+  sessionDistanceMeters: 0
+  sessionStatus: No walk started.
+  currentSessionId: 
+  sessionStartUtc: 
+  sessionEndUtc: 
+  lastSavedWalkFilePath: 
+  recordRoutePoints: 0
+  lastRoutePointTime: -1
   routePoints: []
+  routePointSamples: []
 --- !u!1 &1589840762
 GameObject:
   m_ObjectHideFlags: 0
@@ -1617,7 +1741,7 @@ GameObject:
   - component: {fileID: 1589840765}
   - component: {fileID: 1589840764}
   m_Layer: 5
-  m_Name: Text (TMP)
+  m_Name: Display Accuracy
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1742,6 +1866,50 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1589840762}
   m_CullTransparentMesh: 1
+--- !u!1 &1911547239
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1911547241}
+  - component: {fileID: 1911547240}
+  m_Layer: 0
+  m_Name: MapManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1911547240
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1911547239}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9d978ce72866d554fa8f5a56f5cb9c7e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::OSMMapManager
+--- !u!4 &1911547241
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1911547239}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 220.70746, y: 604.11633, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -1752,3 +1920,4 @@ SceneRoots:
   - {fileID: 1158483061}
   - {fileID: 1409638470}
   - {fileID: 530991186}
+  - {fileID: 1911547241}
