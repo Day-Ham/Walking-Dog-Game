@@ -20,7 +20,7 @@ public sealed class WalkSyncMetadata
 }
 
 // Deliberately excludes coordinates, route samples, and local queue metadata.
-// A future Firebase adapter maps this DTO to users/{ownerUserId}/walks/{id}.
+// The Firebase adapter maps this DTO to users/{ownerUserId}/walks/{id}.
 [Serializable]
 public sealed class WalkSummary
 {
