@@ -1,0 +1,6 @@
+{
+    "name": "WalkingDog.Persistence.Tests",
+    "references": ["WalkingDog.Runtime"],
+    "includePlatforms": ["Editor"],
+    "optionalUnityReferences": ["TestAssemblies"]
+}
