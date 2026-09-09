@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "13373242265",
+    "project_id": "walky-aa25c",
+    "storage_bucket": "walky-aa25c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:13373242265:android:3cd3592d631b08fd263108",
+        "android_client_info": {
+          "package_name": "com.TheVeryEvilCompany.WalkingDog"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBtC4AVEFrmyqKJO2WGa3NQyGtkDO-RU0E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

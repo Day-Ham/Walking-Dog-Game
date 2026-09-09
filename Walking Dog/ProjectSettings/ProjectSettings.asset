@@ -171,7 +171,7 @@ PlayerSettings:
   androidMaxAspectRatio: 2.4
   androidMinAspectRatio: 1
   applicationIdentifier:
-    Android: com.DefaultCompany.WalkingDog
+    Android: com.TheVeryEvilCompany.WalkingDog
     Standalone: com.DefaultCompany.2D-Project
   buildNumber:
     Standalone: 0
