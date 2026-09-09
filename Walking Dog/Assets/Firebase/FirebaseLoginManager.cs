@@ -13,6 +13,7 @@ public class FirebaseLoginManager : MonoBehaviour
     private FirebaseUser user;
 
     public bool IsFirebaseReady { get; private set; }
+    public string InitializationError { get; private set; }
 
     public event Action<FirebaseUser> OnLoginSuccess;
     public event Action<string> OnLoginFailed;
@@ -40,6 +41,14 @@ public class FirebaseLoginManager : MonoBehaviour
     {
         FirebaseApp.CheckAndFixDependenciesAsync().ContinueWithOnMainThread(task =>
         {
+            if (this == null || Instance != this) return;
+            if (task.IsCanceled || task.IsFaulted)
+            {
+                InitializationError = "Firebase could not start. Please restart the app and try again.";
+                Debug.LogWarning(InitializationError);
+                return;
+            }
+
             var dependencyStatus = task.Result;
             if (dependencyStatus == DependencyStatus.Available)
             {
@@ -49,6 +58,7 @@ public class FirebaseLoginManager : MonoBehaviour
             }
             else
             {
+                InitializationError = "Firebase dependencies are unavailable: " + dependencyStatus;
                 Debug.LogError($"Could not resolve all Firebase dependencies: {dependencyStatus}");
             }
         });
@@ -83,12 +93,13 @@ public class FirebaseLoginManager : MonoBehaviour
     {
         if (!IsFirebaseReady)
         {
-            OnLoginFailed?.Invoke("Firebase is not ready yet.");
+            OnLoginFailed?.Invoke(InitializationError ?? "Firebase is not ready yet.");
             return;
         }
 
         auth.SignInWithEmailAndPasswordAsync(email, password).ContinueWithOnMainThread(task =>
         {
+            if (this == null || Instance != this) return;
             if (task.IsCanceled)
             {
                 Debug.LogError("SignInWithEmailAndPasswordAsync was canceled.");
@@ -112,12 +123,13 @@ public class FirebaseLoginManager : MonoBehaviour
     {
         if (!IsFirebaseReady)
         {
-            OnRegisterFailed?.Invoke("Firebase is not ready yet.");
+            OnRegisterFailed?.Invoke(InitializationError ?? "Firebase is not ready yet.");
             return;
         }
 
         auth.CreateUserWithEmailAndPasswordAsync(email, password).ContinueWithOnMainThread(task =>
         {
+            if (this == null || Instance != this) return;
             if (task.IsCanceled)
             {
                 Debug.LogError("CreateUserWithEmailAndPasswordAsync was canceled.");
@@ -148,6 +160,15 @@ public class FirebaseLoginManager : MonoBehaviour
     public FirebaseUser GetCurrentUser()
     {
         return user;
+    }
+
+    private void OnDestroy()
+    {
+        if (auth != null) auth.StateChanged -= AuthStateChanged;
+        IsFirebaseReady = false;
+        if (Instance == this) Instance = null;
+        user = null;
+        auth = null; // Firebase's default instance is shared; do not dispose it here.
     }
 
     private string GetErrorMessage(AggregateException exception)
