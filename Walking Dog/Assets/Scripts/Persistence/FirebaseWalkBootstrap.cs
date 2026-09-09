@@ -12,6 +12,7 @@ using UnityEngine;
 public sealed class FirebaseWalkBootstrap : MonoBehaviour
 {
     public bool IsReady { get; private set; }
+    internal IWalkHistoryStore HistoryStore { get; private set; }
     public string Status { get; private set; } = "Not initialized";
     private FirebaseApp app;
     private FirebaseWalkCloudStore store;
@@ -52,6 +53,7 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
             app = FirebaseApp.DefaultInstance;
             store = new FirebaseWalkCloudStore(FirebaseAuth.DefaultInstance, FirebaseFirestore.DefaultInstance);
             manager.ConfigureCloudSync(store);
+            HistoryStore = new FirebaseWalkHistoryStore(FirebaseAuth.DefaultInstance, FirebaseFirestore.DefaultInstance);
             IsReady = true;
             Status = "Firebase initialized"; // Does not imply signed in or server connectivity.
             Debug.Log(string.IsNullOrEmpty(store.AuthenticatedUserId)
@@ -62,6 +64,7 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
         {
             store?.Dispose();
             store = null;
+            HistoryStore = null;
             if (destroyed) return;
             Status = "Firebase initialization failed";
             Debug.LogWarning(Status + "; walks will continue saving on device. " + exception.GetType().Name);
@@ -72,6 +75,7 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
     {
         destroyed = true;
         IsReady = false;
+        HistoryStore = null;
         store?.Dispose();
         // Default Firebase instances are shared; do not dispose them here.
         app = null;
