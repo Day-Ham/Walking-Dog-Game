@@ -355,7 +355,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         return LocalWalks.TryLoad(filePath, out savedWalk);
     }
 
-    // Firebase's future bootstrapper supplies the authenticated adapter here.
+    // FirebaseWalkBootstrap supplies the authenticated adapter here when attached.
     // There is intentionally no fake adapter or automatic sign-in in the app.
     public void ConfigureCloudSync(IWalkCloudStore store)
     {
