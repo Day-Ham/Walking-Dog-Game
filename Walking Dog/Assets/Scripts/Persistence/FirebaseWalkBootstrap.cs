@@ -54,6 +54,9 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
             manager.ConfigureCloudSync(store);
             IsReady = true;
             Status = "Firebase initialized"; // Does not imply signed in or server connectivity.
+            Debug.Log(string.IsNullOrEmpty(store.AuthenticatedUserId)
+                ? "Walk cloud sync initialized; sign in to upload walks."
+                : "Walk cloud sync initialized for the signed-in player.");
         }
         catch (Exception exception)
         {

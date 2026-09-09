@@ -1,0 +1,52 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Accept UTC strings emitted by the Unity save format, including legacy Z dates.
+    // This checks format, not calendar validity or proof of physical activity.
+    function isUtcString(value) {
+      return value is string && value.size() <= 40
+        && value.matches('[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])'
+          + 'T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]'
+          + '([.][0-9]{1,7})?(Z|[+]00:00)');
+    }
+
+    // Match the finite, nonnegative C# float range used in saved measurements.
+    function isMeasurement(value) {
+      return value is number && value >= 0 && value <= 340282346638528859811704183484516925440.0;
+    }
+
+    function validSummary(walkId) {
+      let data = request.resource.data;
+      let fields = ['schemaVersion', 'id', 'startedAtUtc', 'endedAtUtc',
+                    'steps', 'distanceMeters', 'durationSeconds', 'uploadedAt'];
+      return data.keys().hasAll(fields) && data.keys().hasOnly(fields)
+        && data.schemaVersion is int && data.schemaVersion == 1
+        && data.id is string && data.id == walkId
+        && walkId.matches('[A-Za-z0-9_-]{1,128}')
+        && isUtcString(data.startedAtUtc) && isUtcString(data.endedAtUtc)
+        && data.steps is int && data.steps >= 0 && data.steps <= 2147483647
+        && isMeasurement(data.distanceMeters)
+        && isMeasurement(data.durationSeconds)
+        && data.uploadedAt is timestamp && data.uploadedAt == request.time;
+    }
+
+    match /users/{userId}/walks/{walkId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && validSummary(walkId);
+      // Completed summaries are immutable. A retry may refresh the server timestamp.
+      allow update: if isOwner(userId) && validSummary(walkId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uploadedAt']);
+      allow delete: if false;
+    }
+
+    // Profiles, rewards, GPS routes, and all other paths need separate rules.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
