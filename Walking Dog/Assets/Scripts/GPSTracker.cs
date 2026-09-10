@@ -12,14 +12,13 @@ public class GPSTracker : MonoBehaviour
 
     [Header("GPS Settings")]
     [SerializeField] private float desiredAccuracyInMeters = 5f;
-    [SerializeField] private float updateDistance = 3f;
     [SerializeField] private float updateInterval = 1.5f;
 
     private bool gpsRunning = false;
     private Coroutine gpsRoutine;
 
     public float DesiredAccuracyInMeters => desiredAccuracyInMeters;
-    public float UpdateDistance => updateDistance;
+    public float UpdateDistance => 0f;
     public float UpdateInterval => updateInterval;
     public bool IsRunning => gpsRunning;
 
@@ -40,6 +39,8 @@ public class GPSTracker : MonoBehaviour
     {
         if (isPaused)
         {
+            if (StepCountAndGpsManager.Instance != null && !StepCountAndGpsManager.Instance.IsBackgroundTracking)
+                StepCountAndGpsManager.Instance.InterruptTracking("Tracking interrupted — app paused");
             StopGpsRoutine();
             return;
         }
@@ -99,7 +100,8 @@ public class GPSTracker : MonoBehaviour
 
         Debug.Log("Starting GPS...");
         SetGpsStatus("Starting GPS...");
-        Input.location.Start(desiredAccuracyInMeters, updateDistance);
+        // Keep receiving fresh fixes while stationary; route filtering removes jitter.
+        Input.location.Start(desiredAccuracyInMeters, 0f);
 
         var waitTime = GpsInitializationTimeoutSeconds;
 
@@ -160,7 +162,11 @@ public class GPSTracker : MonoBehaviour
             return;
         }
 
-        manager.SetGpsLocation(location.latitude, location.longitude, location.horizontalAccuracy);
+        if (manager.IsBackgroundTracking) return;
+        if (Input.location.status != LocationServiceStatus.Running)
+        { manager.InterruptTracking("Tracking interrupted — GPS unavailable"); return; }
+        manager.SetGpsLocation(location.latitude, location.longitude, location.horizontalAccuracy,
+            location.timestamp, StepCountAndGpsManager.UtcSeconds);
 
         if (location.horizontalAccuracy > StepCountAndGpsManager.AccurateGpsThresholdMeters)
         {
@@ -181,12 +187,21 @@ public class GPSTracker : MonoBehaviour
 
     private void StartGpsRoutine()
     {
-        if (gpsRoutine != null && gpsRunning)
+        if (gpsRoutine != null)
         {
             return;
         }
 
-        gpsRoutine = StartCoroutine(StartGPS());
+        gpsRoutine = StartCoroutine(RunGPS());
+    }
+
+    private IEnumerator RunGPS()
+    {
+        // Yield first so the coroutine handle is assigned even on immediate failure.
+        yield return null;
+        yield return StartGPS();
+        StopGPS();
+        gpsRoutine = null;
     }
 
     private void StopGpsRoutine()
@@ -203,13 +218,8 @@ public class GPSTracker : MonoBehaviour
     private void StopGPS()
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
-        if (gpsRunning)
-        {
-            Input.location.Stop();
-            gpsRunning = false;
-            Debug.Log("GPS stopped.");
-            SetGpsStatus("GPS stopped.");
-        }
+        Input.location.Stop();
+        gpsRunning = false;
 #endif
     }
 

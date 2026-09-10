@@ -41,6 +41,16 @@ public sealed class LocalWalkRepository
         return path;
     }
 
+    // The manager uses a separate Active directory; these never enter the upload queue.
+    internal void SaveCheckpoint(Walk walk) => WriteAtomically(GetPath(walk.id), walk);
+
+    internal void RemoveCheckpoint(string id)
+    {
+        var path = GetPath(id);
+        foreach (var suffix in new[] { "", ".bak", ".tmp" })
+            if (File.Exists(path + suffix)) File.Delete(path + suffix);
+    }
+
     public List<string> GetFilePaths()
     {
         try
@@ -196,10 +206,19 @@ public sealed class LocalWalkRepository
             || !Coordinate(walk.finalLatitude, 90f) || !Coordinate(walk.finalLongitude, 180f)
             || !Nonnegative(walk.finalAccuracyMeters)) throw new ArgumentException("Invalid walk measurements.");
         walk.EnsureCollections();
+        if (walk.trackingVersion < 0 || walk.trackingVersion > 1 || walk.nativeSequence < 0)
+            throw new ArgumentException("Unsupported tracking metadata.");
+        float previousSeconds = 0;
         foreach (var point in walk.routePoints)
+        {
             if (point == null || !Coordinate(point.latitude, 90f) || !Coordinate(point.longitude, 180f)
-                || !Nonnegative(point.accuracyMeters) || !Nonnegative(point.secondsSinceSessionStart))
+                || !Nonnegative(point.accuracyMeters) || !Nonnegative(point.secondsSinceSessionStart)
+                || !WalkGpsFilter.Finite(point.gpsTimestamp) || point.gpsTimestamp < 0
+                || (walk.trackingVersion > 0 && (point.secondsSinceSessionStart < previousSeconds
+                    || point.secondsSinceSessionStart > walk.durationSeconds)))
                 throw new ArgumentException("Invalid route point.");
+            previousSeconds = point.secondsSinceSessionStart;
+        }
         if (walk.routePointCount != walk.routePoints.Count) throw new ArgumentException("Route count does not match.");
         walk.schemaVersion = CurrentSchemaVersion; // Existing JSON without a version is version zero.
         walk.ownerUserId = walk.ownerUserId ?? "";

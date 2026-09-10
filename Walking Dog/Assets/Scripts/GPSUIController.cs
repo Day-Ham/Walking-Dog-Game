@@ -12,10 +12,12 @@ public class GPSUIController : MonoBehaviour
     [SerializeField] private bool clearRouteOnSessionStart = true;
 
     private bool buttonListenerRegistered;
+    private WalkRecoveryUI recoveryUI;
 
     private void Awake()
     {
         AssignMissingReferences();
+        recoveryUI = GetComponent<WalkRecoveryUI>() ?? gameObject.AddComponent<WalkRecoveryUI>();
     }
 
     private void OnEnable()
@@ -54,6 +56,15 @@ public class GPSUIController : MonoBehaviour
             return;
         }
 
+        if (manager.IsWalkingSessionActive)
+        {
+            SetText(longText, $"{manager.WalkingSessionSteps:N0} steps • {FormatDistance(manager.WalkingSessionDistanceMeters)} • {manager.WalkingSessionDurationSeconds / 60:0.0} min");
+            SetText(latText, manager.BackgroundTrackingStatus);
+            SetText(accuracyText, BuildTrackingStatus(manager));
+            UpdateWalkingSessionButton(manager);
+            return;
+        }
+
         if (!manager.HasLocation)
         {
             SetText(longText, "Longitude: --");
@@ -82,6 +93,7 @@ public class GPSUIController : MonoBehaviour
         if (manager.IsWalkingSessionActive)
         {
             manager.EndWalkingSession();
+            recoveryUI.ShowSummary();
         }
         else
         {
@@ -178,14 +190,14 @@ public class GPSUIController : MonoBehaviour
     {
         if (walkingSessionButton != null)
         {
-            walkingSessionButton.interactable = manager != null;
+            walkingSessionButton.interactable = manager != null && (manager.IsWalkingSessionActive || manager.HasFreshLocation);
         }
 
         if (walkingSessionButtonText != null)
         {
             walkingSessionButtonText.text = manager != null && manager.IsWalkingSessionActive
                 ? "Stop Walk"
-                : "Start Walk";
+                : manager != null && !manager.HasFreshLocation ? "Waiting for GPS" : "Start Walk";
         }
     }
 
@@ -195,7 +207,11 @@ public class GPSUIController : MonoBehaviour
             ? "Walking"
             : GetSavedSessionState(manager);
 
-        return $"GPS: {manager.AccuracyStatus} | {sessionState} | {FormatDistance(manager.WalkingSessionDistanceMeters)} | {manager.RoutePointCount} pts";
+        var tracking = manager.IsWalkingSessionActive ? manager.TrackingStatus
+            : !manager.HasFreshLocation && !manager.HasWalkingSession ? manager.AccuracyStatus : sessionState;
+        // Each existing HUD row is only 30 units high; keep feedback on one line.
+        if (!string.IsNullOrEmpty(manager.RecoveryError)) return "Recovery save failed — keep the app open";
+        return tracking == "Recording" && manager.HasTrackingGaps ? "Recording • route has gaps" : tracking;
     }
 
     private static string GetSavedSessionState(StepCountAndGpsManager manager)

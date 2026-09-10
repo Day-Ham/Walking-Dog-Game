@@ -317,7 +317,7 @@
 
       function renderRasterRoute(layout, zoom) {
         var routeElement = document.getElementById("raster-route");
-        var coordinates = toRouteCoordinates(state.routePoints);
+        var segments = toRouteSegments(state.routePoints);
 
         if (!routeElement) {
           return;
@@ -328,10 +328,7 @@
         routeElement.setAttribute("height", String(layout.height));
         routeElement.textContent = "";
 
-        if (coordinates.length < 2) {
-          return;
-        }
-
+        segments.forEach(function (coordinates) {
         var points = coordinates.map(function (coordinate) {
           var pixels = lonLatToWorldPixels(coordinate[0], coordinate[1], zoom);
           return (pixels.x - layout.topLeftX).toFixed(1) + "," + (pixels.y - layout.topLeftY).toFixed(1);
@@ -345,6 +342,7 @@
         polyline.setAttribute("stroke-linecap", "round");
         polyline.setAttribute("stroke-linejoin", "round");
         routeElement.appendChild(polyline);
+        });
       }
 
       function renderRasterFallback() {
@@ -562,6 +560,22 @@
           });
       }
 
+      function toRouteSegments(routePoints) {
+        var segments = [], current = [];
+        (Array.isArray(routePoints) ? routePoints : []).forEach(function (point) {
+          if (!point) { if (current.length > 1) segments.push(current); current = []; return; }
+          var coordinate = [Number(point.lng), Number(point.lat)];
+          var valid = Number.isFinite(coordinate[0]) && Number.isFinite(coordinate[1]);
+          if (point.startsNewSegment || !valid) {
+            if (current.length > 1) segments.push(current);
+            current = [];
+          }
+          if (valid) current.push(coordinate);
+        });
+        if (current.length > 1) segments.push(current);
+        return segments;
+      }
+
       function ensureRouteLayer() {
         if (!map || !map.isStyleLoaded()) {
           return false;
@@ -573,7 +587,7 @@
             data: {
               type: "Feature",
               geometry: {
-                type: "LineString",
+                type: "MultiLineString",
                 coordinates: []
               },
               properties: {}
@@ -689,8 +703,8 @@
           routeSource.setData({
             type: "Feature",
             geometry: {
-              type: "LineString",
-              coordinates: toRouteCoordinates(state.routePoints)
+              type: "MultiLineString",
+              coordinates: toRouteSegments(state.routePoints)
             },
             properties: {}
           });

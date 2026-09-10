@@ -276,6 +276,7 @@ public sealed class WalkHistoryUI : MonoBehaviour
                 points.Add(new Vector2(point.latitude, point.longitude));
             }
             openFreeMap.HistoricalRoutePoints = points;
+            openFreeMap.HistoricalRouteSamples = walk.routePoints;
             openFreeMap.ShowHistoricalRoute = true;
             openFreeMap.enabled = true;
             mapStatus.text = "";
@@ -283,6 +284,7 @@ public sealed class WalkHistoryUI : MonoBehaviour
         else
         {
             openFreeMap.HistoricalRoutePoints = null;
+            openFreeMap.HistoricalRouteSamples = null;
             openFreeMap.ShowHistoricalRoute = false;
             openFreeMap.enabled = false;
             

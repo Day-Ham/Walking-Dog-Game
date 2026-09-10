@@ -10,9 +10,36 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     public const float AccurateGpsThresholdMeters = 10f;
 
     private const float EarthRadiusMeters = 6371000f;
-    private const float MinRoutePointDistanceMeters = 2f;
-    private const float MaxGpsJumpDistanceMeters = 100f;
-    private const float MaxWalkingSpeedMetersPerSecond = 8f;
+    private WalkGpsFilter gpsFilter = new WalkGpsFilter();
+    private double locationTimestamp;
+    private double routeEpoch;
+    private float routeElapsedOffset;
+    private float nextCheckpointTime;
+    private int recoveredSteps;
+    private LocalWalkRepository checkpoints;
+    private AndroidWalkTracking backgroundTracking;
+    private long nativeSequence;
+    private string recoveryError = "";
+
+    private LocalWalkRepository Checkpoints => checkpoints ??
+        (checkpoints = new LocalWalkRepository(Path.Combine(LocalWalks.DirectoryPath, "Active")));
+    internal static double UtcSeconds => (DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds;
+    public bool HasFreshLocation => HasAccurateLocation && UtcSeconds - locationTimestamp <= WalkGpsFilter.FreshSeconds;
+    public bool HasTrackingGaps => gpsFilter.HasGaps;
+    public bool IsBackgroundTracking => backgroundTracking != null && backgroundTracking.IsRunning;
+    public string BackgroundTrackingStatus => IsBackgroundTracking ? "Screen-off route recording on"
+        : !string.IsNullOrEmpty(backgroundTracking?.Error) ? backgroundTracking.Error : "Keep the app open to record your route";
+    public string RecoveryError => recoveryError;
+    public bool HasUnsavedCompletedWalk => completedSessionRecord != null && string.IsNullOrEmpty(lastSavedWalkFilePath);
+    public string TrackingStatus => walkingSessionActive ? gpsFilter.Status : (HasFreshLocation ? "GPS ready" : "Waiting for GPS");
+    public SavedWalkSession RecoverableWalk
+    {
+        get
+        {
+            var owner = cloudStore?.AuthenticatedUserId ?? "";
+            return Checkpoints.LoadAll().Find(w => w.ownerUserId == owner && LocalWalks.Find(w.id) == null);
+        }
+    }
 
     [Header("Step State")]
     [SerializeField] private int stepsCounted;
@@ -68,7 +95,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     public string AccuracyStatus => accuracyStatus;
     public bool IsWalkingSessionActive => walkingSessionActive;
     public bool HasWalkingSession => hasWalkingSession;
-    public int WalkingSessionSteps => Mathf.Max(0, (walkingSessionActive ? stepsCounted : sessionEndSteps) - sessionStartSteps);
+    public int WalkingSessionSteps => recoveredSteps + Mathf.Max(0, (walkingSessionActive ? stepsCounted : sessionEndSteps) - sessionStartSteps);
     public float WalkingSessionDurationSeconds
     {
         get
@@ -137,6 +164,8 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     {
         if (Instance == this)
         {
+            backgroundTracking?.Stop();
+            if (walkingSessionActive) SaveCheckpoint();
             syncLifetime?.Cancel();
             syncLifetime?.Dispose();
             Instance = null;
@@ -180,16 +209,33 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
 
     public void SetGpsLocation(float latitude, float longitude, float accuracyMeters)
     {
+        SetGpsLocation(latitude, longitude, accuracyMeters, UtcSeconds, UtcSeconds);
+    }
+
+    public void SetGpsLocation(float latitude, float longitude, float accuracyMeters, double timestamp, double observedAt)
+    {
+        // Native service owns active route samples, including those recorded with the screen off.
+        if (walkingSessionActive && IsBackgroundTracking) return;
+        ApplyGpsSample(latitude, longitude, accuracyMeters, timestamp, observedAt);
+    }
+
+    internal void ApplyGpsSample(float latitude, float longitude, float accuracyMeters, double timestamp, double observedAt)
+    {
         if (!IsUsableGpsFix(latitude, longitude, accuracyMeters))
         {
-            accuracyStatus = "Waiting for valid GPS fix.";
+            InterruptTracking("Waiting for valid GPS fix");
             return;
         }
+        if (!WalkGpsFilter.Finite(timestamp) || timestamp <= 0 || !WalkGpsFilter.Finite(observedAt)
+            || observedAt - timestamp > WalkGpsFilter.FreshSeconds || timestamp - observedAt > 2)
+        { InterruptTracking("Tracking interrupted — waiting for fresh GPS"); return; }
+        if (timestamp <= locationTimestamp) return;
 
         this.latitude = latitude;
         this.longitude = longitude;
         horizontalAccuracy = Mathf.Max(0f, accuracyMeters);
         hasLocation = true;
+        locationTimestamp = timestamp;
 
         if (HasAccurateLocation)
         {
@@ -197,13 +243,21 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
 
             if (recordRoutePoints)
             {
-                AddRoutePoint(latitude, longitude);
+                AddRoutePoint(latitude, longitude, timestamp, observedAt);
             }
 
             return;
         }
 
         accuracyStatus = $"Inaccurate ({horizontalAccuracy:0.0}m)";
+        if (recordRoutePoints) gpsFilter.Interrupt("Weak GPS — move to an open area");
+    }
+
+    public void InterruptTracking(string reason)
+    {
+        hasLocation = false;
+        accuracyStatus = reason;
+        if (recordRoutePoints) gpsFilter.Interrupt(reason);
     }
 
     public void SetGpsStatus(string status)
@@ -214,6 +268,16 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     public void BeginWalkingSession(bool clearExistingRoute = true)
     {
         if (walkingSessionActive) return;
+        if (HasUnsavedCompletedWalk)
+        { sessionStatus = "Save the finished walk before starting another."; return; }
+        if (RecoverableWalk != null)
+        { sessionStatus = "Recover the unfinished walk before starting another."; return; }
+        // A walking session can collect steps while waiting; its route starts only on a fresh fix.
+        gpsFilter = new WalkGpsFilter();
+        recoveredSteps = 0;
+        nativeSequence = 0;
+        routeEpoch = UtcSeconds;
+        routeElapsedOffset = 0;
         hasWalkingSession = true;
         walkingSessionActive = true;
         sessionStartSteps = stepsCounted;
@@ -230,12 +294,15 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         lastWalkSaveState = "Walking";
         sessionStatus = "Walking session active.";
 
-        StartRouteRecording(clearExistingRoute);
+        // Never join the previous walk to a new session, including legacy scene bindings.
+        StartRouteRecording(true);
 
-        if (HasAccurateLocation)
+        if (HasFreshLocation)
         {
-            AddRoutePoint(latitude, longitude);
+            AddRoutePoint(latitude, longitude, locationTimestamp, UtcSeconds);
         }
+        SaveCheckpoint();
+        StartBackgroundTracking();
     }
 
     public void EndWalkingSession()
@@ -245,6 +312,8 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
             return;
         }
 
+        backgroundTracking?.Stop();
+        SaveCheckpoint();
         sessionEndSteps = stepsCounted;
         sessionEndTime = Time.realtimeSinceStartup;
         sessionEndUtc = DateTime.UtcNow.ToString("o");
@@ -326,6 +395,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         try
         {
             var filePath = LocalWalks.Save(record);
+            ClearCheckpoint(record.id);
             lastSavedWalkFilePath = filePath;
             RefreshLastWalkSaveState();
             RequestWalkSync();
@@ -382,13 +452,108 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
 
     private void Update()
     {
+        backgroundTracking?.Pump();
+        if (walkingSessionActive)
+        {
+            if (hasLocation && UtcSeconds - locationTimestamp > WalkGpsFilter.GapSeconds)
+                InterruptTracking("Tracking interrupted — waiting for GPS");
+            if (Time.realtimeSinceStartup >= nextCheckpointTime) SaveCheckpoint();
+        }
         if (walkSync == null || Time.realtimeSinceStartup < nextSyncTime) return;
         RequestWalkSync();
     }
 
     private void OnApplicationPause(bool paused)
     {
+        if (paused && walkingSessionActive)
+        {
+            if (!IsBackgroundTracking) InterruptTracking("Tracking interrupted — app paused");
+            SaveCheckpoint();
+        }
+        if (!paused) backgroundTracking?.Pump();
         if (!paused) RequestWalkSync();
+    }
+
+    private void OnApplicationQuit()
+    {
+        backgroundTracking?.Stop();
+        if (walkingSessionActive) SaveCheckpoint();
+    }
+
+    public void SaveCheckpoint()
+    {
+        if (!walkingSessionActive) return;
+        nextCheckpointTime = Time.realtimeSinceStartup + 15f;
+        try { Checkpoints.SaveCheckpoint(CreateSavedWalkSession()); recoveryError = ""; }
+        catch (Exception e)
+        {
+            recoveryError = "Recovery save failed. Keep the app open and finish your walk.";
+            Debug.LogWarning("Walk checkpoint failed: " + e.GetType().Name);
+        }
+    }
+
+    private void ClearCheckpoint(string id)
+    {
+        try { Checkpoints.RemoveCheckpoint(id); }
+        catch (Exception e) { Debug.LogWarning("Completed walk saved; checkpoint cleanup deferred: " + e.GetType().Name); }
+    }
+
+    public bool RecoverWalk(bool continueWalking)
+    {
+        if (walkingSessionActive) return false;
+        var saved = RecoverableWalk;
+        if (saved == null) return false;
+        hasWalkingSession = true;
+        walkingSessionActive = true;
+        recordRoutePoints = true;
+        currentSessionId = saved.id;
+        sessionOwnerUserId = saved.ownerUserId;
+        sessionStartUtc = saved.startedAtUtc;
+        sessionEndUtc = "";
+        sessionStartTime = Time.realtimeSinceStartup - saved.durationSeconds;
+        sessionEndTime = Time.realtimeSinceStartup;
+        recoveredSteps = saved.steps;
+        sessionStartSteps = sessionEndSteps = stepsCounted;
+        sessionDistanceMeters = saved.distanceMeters;
+        nativeSequence = saved.nativeSequence;
+        routeEpoch = LocalWalkRepository.ParseUtc(saved.endedAtUtc).ToUnixTimeMilliseconds() / 1000d;
+        routeElapsedOffset = saved.durationSeconds;
+        completedSessionRecord = null;
+        lastSavedWalkFilePath = "";
+        routePointSamples = saved.routePoints;
+        routePoints = new List<Vector2>();
+        foreach (var point in routePointSamples) routePoints.Add(new Vector2(point.latitude, point.longitude));
+        gpsFilter = new WalkGpsFilter();
+        gpsFilter.Restore(routePoints.Count > 0, saved.hasTrackingGaps);
+        hasLocation = false;
+        locationTimestamp = 0;
+        lastWalkSaveState = "Walk recovered";
+        // Recover any durable native samples before starting a new segment.
+        backgroundTracking = new AndroidWalkTracking(this);
+        backgroundTracking.Recover(saved);
+        gpsFilter.Interrupt("Waiting for GPS after recovery");
+        // Offline time is excluded when the native service was no longer recording.
+        routeEpoch = UtcSeconds;
+        routeElapsedOffset = WalkingSessionDurationSeconds;
+        if (continueWalking) { SaveCheckpoint(); StartBackgroundTracking(); }
+        else EndWalkingSession();
+        return true;
+    }
+
+    private void StartBackgroundTracking()
+    {
+        backgroundTracking = backgroundTracking ?? new AndroidWalkTracking(this);
+        backgroundTracking.Start(currentSessionId, LocalWalks.DirectoryPath);
+    }
+
+    internal long NativeSequence => nativeSequence;
+    internal void ExtendRecoveredDuration(float seconds) { sessionStartTime -= Mathf.Max(0, seconds); }
+    internal void ApplyNativeSample(AndroidWalkTracking.Sample sample)
+    {
+        if (!walkingSessionActive || sample.sequence <= nativeSequence) return;
+        if (sample.interrupted) InterruptTracking("Tracking interrupted — GPS unavailable");
+        else ApplyGpsSample(sample.latitude, sample.longitude, sample.accuracy, sample.timestamp, sample.observedAt);
+        nativeSequence = sample.sequence;
     }
 
     private async void RequestWalkSync()
@@ -422,46 +587,23 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
                 : "Saved on device";
     }
 
-    private void AddRoutePoint(float latitude, float longitude)
+    private void AddRoutePoint(float latitude, float longitude, double timestamp, double observedAt)
     {
         EnsureCollections();
-
+        if (!gpsFilter.Accept(latitude, longitude, horizontalAccuracy, timestamp, observedAt, out var startsSegment)) return;
         var point = new Vector2(latitude, longitude);
-        var now = Time.realtimeSinceStartup;
-
-        if (routePoints.Count > 0)
-        {
-            var lastPoint = routePoints[routePoints.Count - 1];
-            var distanceFromLastPoint = CalculateDistanceMeters(lastPoint, point);
-
-            if (distanceFromLastPoint < MinRoutePointDistanceMeters)
-            {
-                return;
-            }
-
-            if (IsUnrealisticGpsJump(distanceFromLastPoint, now))
-            {
-                if (routePoints.Count == 1 && sessionDistanceMeters <= 0f)
-                {
-                    routePoints[0] = point;
-                    ReplaceRoutePointSample(0, latitude, longitude, now);
-                    lastRoutePointTime = now;
-                    sessionStatus = "Route re-anchored after GPS jump.";
-                    return;
-                }
-
-                sessionStatus = $"Ignored GPS jump ({distanceFromLastPoint:0}m).";
-                return;
-            }
-
-            sessionDistanceMeters += distanceFromLastPoint;
-        }
-
+        if (routePoints.Count > 0 && !startsSegment)
+            sessionDistanceMeters += CalculateDistanceMeters(routePoints[routePoints.Count - 1], point);
+        var elapsed = Mathf.Clamp(routeElapsedOffset + (float)(timestamp - routeEpoch), 0, WalkingSessionDurationSeconds);
+        if (routePointSamples.Count > 0) elapsed = Mathf.Max(elapsed, routePointSamples[routePointSamples.Count - 1].secondsSinceSessionStart);
         routePoints.Add(point);
-        routePointSamples.Add(CreateRoutePointSample(latitude, longitude, now));
-        lastRoutePointTime = now;
+        routePointSamples.Add(new WalkRoutePoint
+        {
+            latitude = latitude, longitude = longitude, accuracyMeters = horizontalAccuracy,
+            secondsSinceSessionStart = elapsed, gpsTimestamp = timestamp, startsNewSegment = startsSegment
+        });
+        lastRoutePointTime = Time.realtimeSinceStartup;
     }
-
     private SavedWalkSession CreateSavedWalkSession()
     {
         EnsureCollections();
@@ -480,7 +622,10 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
             finalLatitude = hasLocation ? latitude : 0f,
             finalLongitude = hasLocation ? longitude : 0f,
             finalAccuracyMeters = hasLocation ? horizontalAccuracy : 0f,
-            accuracyStatus = accuracyStatus
+            accuracyStatus = accuracyStatus,
+            trackingVersion = 1,
+            hasTrackingGaps = gpsFilter.HasGaps,
+            nativeSequence = nativeSequence
         };
 
         foreach (var point in routePointSamples)
@@ -491,47 +636,10 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         return record;
     }
 
-    private WalkRoutePoint CreateRoutePointSample(float latitude, float longitude, float now)
-    {
-        return new WalkRoutePoint
-        {
-            latitude = latitude,
-            longitude = longitude,
-            accuracyMeters = horizontalAccuracy,
-            secondsSinceSessionStart = hasWalkingSession ? Mathf.Max(0f, now - sessionStartTime) : 0f
-        };
-    }
-
-    private void ReplaceRoutePointSample(int index, float latitude, float longitude, float now)
-    {
-        EnsureCollections();
-
-        var sample = CreateRoutePointSample(latitude, longitude, now);
-
-        if (index >= 0 && index < routePointSamples.Count)
-        {
-            routePointSamples[index] = sample;
-            return;
-        }
-
-        routePointSamples.Add(sample);
-    }
-
-    private bool IsUnrealisticGpsJump(float distanceMeters, float now)
-    {
-        if (lastRoutePointTime < 0f)
-        {
-            return false;
-        }
-
-        var secondsSinceLastPoint = Mathf.Max(0.001f, now - lastRoutePointTime);
-        var allowedDistance = Mathf.Max(MaxGpsJumpDistanceMeters, MaxWalkingSpeedMetersPerSecond * secondsSinceLastPoint);
-        return distanceMeters > allowedDistance;
-    }
-
     private static bool IsUsableGpsFix(float latitude, float longitude, float accuracyMeters)
     {
-        if (accuracyMeters <= 0f)
+        if (!WalkGpsFilter.Finite(latitude) || !WalkGpsFilter.Finite(longitude)
+            || !WalkGpsFilter.Finite(accuracyMeters) || accuracyMeters <= 0f)
         {
             return false;
         }
@@ -541,7 +649,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
             return false;
         }
 
-        return !Mathf.Approximately(latitude, 0f) || !Mathf.Approximately(longitude, 0f);
+        return true;
     }
 
     private void EnsureCollections()
@@ -641,6 +749,10 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         public float finalLongitude;
         public float finalAccuracyMeters;
         public string accuracyStatus;
+        // Legacy records remain readable, but have no verified continuity information.
+        public int trackingVersion;
+        public bool hasTrackingGaps;
+        public long nativeSequence;
         public List<WalkRoutePoint> routePoints = new List<WalkRoutePoint>();
 
         public void EnsureCollections()
@@ -659,6 +771,8 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         public float longitude;
         public float accuracyMeters;
         public float secondsSinceSessionStart;
+        public double gpsTimestamp;
+        public bool startsNewSegment;
 
         public WalkRoutePoint Clone()
         {
@@ -667,7 +781,9 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
                 latitude = latitude,
                 longitude = longitude,
                 accuracyMeters = accuracyMeters,
-                secondsSinceSessionStart = secondsSinceSessionStart
+                secondsSinceSessionStart = secondsSinceSessionStart,
+                gpsTimestamp = gpsTimestamp,
+                startsNewSegment = startsNewSegment
             };
         }
     }

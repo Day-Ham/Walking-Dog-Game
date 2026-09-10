@@ -477,6 +477,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
 #endif
 
     public IReadOnlyList<Vector2> HistoricalRoutePoints { get; set; }
+    public IReadOnlyList<StepCountAndGpsManager.WalkRoutePoint> HistoricalRouteSamples { get; set; }
     public bool ShowHistoricalRoute { get; set; }
 
     private OpenFreeMapState BuildMapState()
@@ -500,7 +501,8 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
 
             if (hasPoints)
             {
-                AddRoutePoints(HistoricalRoutePoints, historyState.routePoints);
+                if (HistoricalRouteSamples != null) AddRouteSamples(HistoricalRouteSamples, historyState.routePoints);
+                else AddRoutePoints(HistoricalRoutePoints, historyState.routePoints);
             }
             return historyState;
         }
@@ -509,6 +511,11 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         var hasGpsLocation = manager != null && manager.HasLocation;
         var latitude = hasGpsLocation ? manager.Latitude : fallbackLatitudeLongitude.x;
         var longitude = hasGpsLocation ? manager.Longitude : fallbackLatitudeLongitude.y;
+        if (!hasGpsLocation && manager != null && manager.RoutePointCount > 0)
+        {
+            var last = manager.RoutePoints[manager.RoutePointCount - 1];
+            latitude = last.x; longitude = last.y;
+        }
 
         var state = new OpenFreeMapState
         {
@@ -524,7 +531,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
 
         if (manager != null && manager.RoutePointCount > 0)
         {
-            AddRoutePoints(manager.RoutePoints, state.routePoints);
+            AddRouteSamples(manager.RoutePointSamples, state.routePoints);
         }
 
         return state;
@@ -551,6 +558,19 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
             !Mathf.Approximately(destination[destination.Count - 1].lng, lastPoint.y))
         {
             destination.Add(ToRoutePoint(lastPoint));
+        }
+    }
+
+    private void AddRouteSamples(IReadOnlyList<StepCountAndGpsManager.WalkRoutePoint> samples, List<OpenFreeMapRoutePoint> destination)
+    {
+        // Preserve both sides of every break when reducing display detail.
+        var stride = Mathf.Max(1, Mathf.CeilToInt(samples.Count / (float)Mathf.Max(2, maxRoutePointsToSend)));
+        for (var i = 0; i < samples.Count; i++)
+        {
+            var point = samples[i];
+            if (i % stride != 0 && i != samples.Count - 1 && !point.startsNewSegment
+                && !samples[i + 1].startsNewSegment) continue;
+            destination.Add(new OpenFreeMapRoutePoint { lat = point.latitude, lng = point.longitude, startsNewSegment = point.startsNewSegment });
         }
     }
 
@@ -658,5 +678,6 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
     {
         public float lat;
         public float lng;
+        public bool startsNewSegment;
     }
 }
