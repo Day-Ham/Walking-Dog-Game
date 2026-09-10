@@ -10,33 +10,44 @@ using UnityEngine.InputSystem;
 [DisallowMultipleComponent]
 public sealed class WalkHistoryUI : MonoBehaviour
 {
-    private GameObject canvasObject;
+    [SerializeField]
     private GameObject panel;
-    private RectTransform launcherSafeArea;
-    private RectTransform panelSafeArea;
+    [SerializeField]
     private RectTransform content;
+    [SerializeField]
     private ScrollRect scroll;
+    [SerializeField]
     private TMP_Text status;
+    [SerializeField]
     private Button refresh;
+    [SerializeField]
     private Button more;
-    private WalkHistorySession session;
-    private bool initializing;
-    private string initializationError = "";
-    private bool destroyed;
-    private GameObject mapPanel;
-    private RectTransform mapPanelSafeArea;
-    private OpenFreeMapWebViewMap openFreeMap;
-    private TMP_Text mapStatus;
-    private int viewGeneration;
-    private Rect lastSafeArea;
-    private Vector2Int lastScreen;
 
-    private void Start() { BuildView(); }
+    [SerializeField]
+    private GameObject mapPanel;// 
+    [SerializeField]
+    private OpenFreeMapWebViewMap openFreeMap; // keep for map
+    [SerializeField]
+    private TMP_Text mapStatus; // keep for map status messages
 
+    [SerializeField]
+    private WalkDataTab walkDataTabPrefab; // keep for row prefab
+
+    private WalkHistorySession session; // keep
+    private bool initializing; // keep for status
+    private string initializationError = ""; // keep for error message
+    private bool destroyed; // for destroying
+ 
+    private int viewGeneration; //keep
+
+   
+
+    private void Start() { }
+
+    // Unity calls this every frame; updates safe-area layout, handles Escape, and refreshes after an account change.
     private void Update()
     {
-        if (canvasObject == null) return;
-        UpdateSafeArea();
+       
         if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
         {
             if (mapPanel != null && mapPanel.activeSelf) CloseMap();
@@ -49,11 +60,11 @@ public sealed class WalkHistoryUI : MonoBehaviour
         }
     }
 
-    private System.Collections.Generic.List<OpenFreeMapWebViewMap> otherMaps = new System.Collections.Generic.List<OpenFreeMapWebViewMap>();
+    private System.Collections.Generic.List<OpenFreeMapWebViewMap> otherMaps = new System.Collections.Generic.List<OpenFreeMapWebViewMap>(); // keep 
 
+    // Opens the history panel, starts a Firestore refresh, and temporarily disables other active map components.
     public void Open()
     {
-        if (canvasObject == null) BuildView();
         panel.SetActive(true);
         RefreshHistory();
         
@@ -68,6 +79,7 @@ public sealed class WalkHistoryUI : MonoBehaviour
         }
     }
 
+    // Closes history and map panels, invalidates pending loads, resets the session, and restores other maps.
     public void Close()
     {
         viewGeneration++;
@@ -83,11 +95,13 @@ public sealed class WalkHistoryUI : MonoBehaviour
         otherMaps.Clear();
     }
 
+    // Hides only the historical-route map panel.
     public void CloseMap()
     {
         if (mapPanel != null) mapPanel.SetActive(false);
     }
 
+    // Initializes Firebase/history access if needed, then requests the first page of Firestore history entries.
     private async void RefreshHistory()
     {
         if (initializing || destroyed || !panel.activeSelf) return;
@@ -128,6 +142,7 @@ public sealed class WalkHistoryUI : MonoBehaviour
         if (!destroyed && revision == viewGeneration) Render();
     }
 
+    // Requests the next page of Firestore history entries when the Load more button is clicked.
     private async void LoadMore()
     {
         if (session == null || session.IsLoading) return;
@@ -138,15 +153,10 @@ public sealed class WalkHistoryUI : MonoBehaviour
         if (!destroyed && revision == viewGeneration) Render();
     }
 
+    // Rebuilds the visible status and walk-row UI from the current history session state.
     private void Render()
     {
         if (destroyed || status == null) return;
-        // Remove stale rows synchronously, even though Unity destroys them at frame end.
-        foreach (Transform child in content)
-        {
-            child.gameObject.SetActive(false);
-            Destroy(child.gameObject);
-        }
         bool loading = initializing || (session != null && session.IsLoading);
         refresh.interactable = !loading;
         more.gameObject.SetActive(session != null && session.HasMore && session.Entries.Count > 0);
@@ -165,6 +175,18 @@ public sealed class WalkHistoryUI : MonoBehaviour
             + (session.SkippedCount > 0 ? "\nSome saved walks couldn't be displayed." : "");
 
         if (session == null) return;
+        foreach (Transform child in content)
+        {
+            // Keep the inactive template; delete only rows created from it.
+            if (walkDataTabPrefab != null && child == walkDataTabPrefab.transform)
+                continue;
+
+            Destroy(child.gameObject);
+        }
+
+        if (session == null)
+            return;
+
         foreach (var entry in session.Entries)
         {
             RectTransform row = Rect("Walk " + entry.Id, content);
@@ -172,7 +194,7 @@ public sealed class WalkHistoryUI : MonoBehaviour
             var button = row.gameObject.AddComponent<Button>();
             string entryId = entry.Id;
             button.onClick.AddListener(() => OpenWalkMap(entryId));
-            
+
             var layout = row.gameObject.AddComponent<LayoutElement>();
             layout.minHeight = 116;
             layout.preferredHeight = 116;
@@ -182,86 +204,11 @@ public sealed class WalkHistoryUI : MonoBehaviour
             Place(stats.rectTransform, Vector2.zero, new Vector2(1, 0.5f), new Vector2(20, 10), new Vector2(-20, 0));
             stats.color = new Color(0.72f, 0.84f, 0.87f);
         }
+
     }
 
-    private void BuildView()
-    {
-        canvasObject = new GameObject("Walk History Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-        var canvas = canvasObject.GetComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 100;
-        var scaler = canvasObject.GetComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(720, 1280);
-        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
-        launcherSafeArea = Rect("Safe area", canvas.transform);
-        var launch = MakeButton("History", launcherSafeArea, Open);
-        Place(launch.GetComponent<RectTransform>(), Vector2.one, Vector2.one, new Vector2(-224, -88), new Vector2(-24, -24));
 
-        RectTransform backdrop = Rect("Walk History", canvas.transform);
-        backdrop.gameObject.AddComponent<Image>().color = new Color(0.06f, 0.10f, 0.13f);
-        panel = backdrop.gameObject;
-        panelSafeArea = Rect("Safe area", backdrop);
-        TMP_Text title = Label("Title", panelSafeArea, "Walk history", 36);
-        title.fontStyle = FontStyles.Bold;
-        Place(title.rectTransform, new Vector2(0, 1), Vector2.one, new Vector2(24, -100), new Vector2(-196, -24));
-        Button close = MakeButton("Back", panelSafeArea, Close);
-        Place(close.GetComponent<RectTransform>(), Vector2.one, Vector2.one, new Vector2(-176, -88), new Vector2(-24, -24));
-        status = Label("Status", panelSafeArea, "", 24);
-        Place(status.rectTransform, new Vector2(0, 1), Vector2.one, new Vector2(24, -208), new Vector2(-24, -108));
-
-        RectTransform viewport = Rect("Walk list", panelSafeArea);
-        Place(viewport, Vector2.zero, Vector2.one, new Vector2(24, 112), new Vector2(-24, -224));
-        viewport.gameObject.AddComponent<Image>().color = new Color(0.06f, 0.10f, 0.13f);
-        viewport.gameObject.AddComponent<RectMask2D>();
-        scroll = viewport.gameObject.AddComponent<ScrollRect>();
-        scroll.viewport = viewport;
-        scroll.horizontal = false;
-        scroll.movementType = ScrollRect.MovementType.Clamped;
-        scroll.scrollSensitivity = 40;
-        content = Rect("Walks", viewport);
-        content.anchorMin = new Vector2(0, 1);
-        content.anchorMax = Vector2.one;
-        content.pivot = new Vector2(0.5f, 1);
-        content.sizeDelta = Vector2.zero;
-        var rows = content.gameObject.AddComponent<VerticalLayoutGroup>();
-        rows.spacing = 12;
-        rows.childControlHeight = true;
-        rows.childControlWidth = true;
-        rows.childForceExpandHeight = false;
-        rows.childForceExpandWidth = true;
-        content.gameObject.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-        scroll.content = content;
-        refresh = MakeButton("Refresh", panelSafeArea, RefreshHistory);
-        Place(refresh.GetComponent<RectTransform>(), Vector2.zero, new Vector2(0.5f, 0), new Vector2(24, 24), new Vector2(-12, 88));
-        more = MakeButton("Load more", panelSafeArea, LoadMore);
-        Place(more.GetComponent<RectTransform>(), new Vector2(0.5f, 0), new Vector2(1, 0), new Vector2(12, 24), new Vector2(-24, 88));
-        // Map Panel Setup
-        RectTransform mapBackdrop = Rect("Walk Map Panel", canvas.transform);
-        mapBackdrop.gameObject.AddComponent<Image>().color = new Color(0.06f, 0.10f, 0.13f);
-        mapPanel = mapBackdrop.gameObject;
-        mapPanelSafeArea = Rect("Safe area", mapBackdrop);
-        TMP_Text mapTitle = Label("MapTitle", mapPanelSafeArea, "Walk Route", 36);
-        mapTitle.fontStyle = FontStyles.Bold;
-        Place(mapTitle.rectTransform, new Vector2(0, 1), Vector2.one, new Vector2(24, -100), new Vector2(-196, -24));
-        Button closeMap = MakeButton("Back", mapPanelSafeArea, CloseMap);
-        Place(closeMap.GetComponent<RectTransform>(), Vector2.one, Vector2.one, new Vector2(-176, -88), new Vector2(-24, -24));
-        
-        RectTransform mapContainer = Rect("Map Container", mapPanelSafeArea);
-        Place(mapContainer, Vector2.zero, Vector2.one, new Vector2(24, 24), new Vector2(-24, -120));
-        mapContainer.gameObject.AddComponent<Image>().color = Color.black;
-        
-        openFreeMap = mapContainer.gameObject.AddComponent<OpenFreeMapWebViewMap>();
-
-        mapStatus = Label("Map Status", mapContainer, "", 24);
-        Place(mapStatus.rectTransform, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
-        mapStatus.alignment = TextAlignmentOptions.Center;
-
-        UpdateSafeArea();
-        panel.SetActive(false);
-        mapPanel.SetActive(false);
-    }
-
+    // Opens a selected walk's map using matching local GPS route points; Firestore history contains only the list summary.
     private void OpenWalkMap(string entryId)
     {
         if (StepCountAndGpsManager.Instance == null) return;
@@ -301,20 +248,26 @@ public sealed class WalkHistoryUI : MonoBehaviour
         mapPanel.SetActive(true);
     }
 
-    private void UpdateSafeArea()
+    private void OnDisable()
     {
-        var safe = Screen.safeArea;
-        var dimensions = new Vector2Int(Screen.width, Screen.height);
-        if (dimensions.x <= 0 || dimensions.y <= 0 || (lastSafeArea == safe && lastScreen == dimensions)) return;
-        lastSafeArea = safe;
-        lastScreen = dimensions;
-        foreach (var rect in new[] { launcherSafeArea, panelSafeArea, mapPanelSafeArea })
-        {
-            if (rect == null) continue;
-            rect.anchorMin = new Vector2(safe.xMin / dimensions.x, safe.yMin / dimensions.y);
-            rect.anchorMax = new Vector2(safe.xMax / dimensions.x, safe.yMax / dimensions.y);
-            rect.offsetMin = rect.offsetMax = Vector2.zero;
-        }
+        Close();
+    }
+
+    private void OnDestroy()
+    {
+        destroyed = true;
+        viewGeneration++;
+        session?.Dispose();
+    }
+
+    public void OnRefreshClicked()
+    {
+        RefreshHistory();
+    }
+
+    public void OnLoadMoreClicked()
+    {
+        LoadMore();
     }
 
     private static RectTransform Rect(string name, Transform parent)
@@ -323,14 +276,6 @@ public sealed class WalkHistoryUI : MonoBehaviour
         rect.SetParent(parent, false);
         Place(rect, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
         return rect;
-    }
-
-    private static void Place(RectTransform rect, Vector2 min, Vector2 max, Vector2 insetMin, Vector2 insetMax)
-    {
-        rect.anchorMin = min;
-        rect.anchorMax = max;
-        rect.offsetMin = insetMin;
-        rect.offsetMax = insetMax;
     }
 
     private static TMP_Text Label(string name, Transform parent, string value, float size)
@@ -347,28 +292,12 @@ public sealed class WalkHistoryUI : MonoBehaviour
         text.richText = false;
         return text;
     }
-
-    private static Button MakeButton(string label, Transform parent, UnityEngine.Events.UnityAction action)
+    private static void Place(RectTransform rect, Vector2 min, Vector2 max, Vector2 insetMin, Vector2 insetMax)
     {
-        var rect = Rect(label, parent);
-        var background = rect.gameObject.AddComponent<Image>();
-        background.color = new Color(0.17f, 0.40f, 0.40f);
-        var button = rect.gameObject.AddComponent<Button>();
-        button.targetGraphic = background;
-        button.onClick.AddListener(action);
-        TMP_Text text = Label("Label", rect, label, 26);
-        Place(text.rectTransform, Vector2.zero, Vector2.one, new Vector2(10, 6), new Vector2(-10, -6));
-        text.alignment = TextAlignmentOptions.Center;
-        return button;
+        rect.anchorMin = min;
+        rect.anchorMax = max;
+        rect.offsetMin = insetMin;
+        rect.offsetMax = insetMax;
     }
 
-    private void OnDisable() { Close(); if (canvasObject != null) canvasObject.SetActive(false); }
-    private void OnEnable() { if (canvasObject != null) canvasObject.SetActive(true); }
-    private void OnDestroy()
-    {
-        destroyed = true;
-        viewGeneration++;
-        session?.Dispose();
-        if (canvasObject != null) Destroy(canvasObject);
-    }
 }
