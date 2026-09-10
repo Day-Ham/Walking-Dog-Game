@@ -650,8 +650,8 @@ RectTransform:
   m_LocalScale: {x: 0, y: 0, z: 0}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 258018271}
   - {fileID: 692439212}
+  - {fileID: 258018271}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -1068,7 +1068,7 @@ GameObject:
   - component: {fileID: 692439214}
   - component: {fileID: 692439213}
   m_Layer: 5
-  m_Name: Panel
+  m_Name: GAMEBG
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1083,7 +1083,7 @@ RectTransform:
   m_GameObject: {fileID: 692439211}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1.48, y: 1.83, z: 1.48}
+  m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1343479193}
@@ -1096,7 +1096,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 1}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: -360, y: -1040}
+  m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &692439213
 MonoBehaviour:
@@ -1306,10 +1306,10 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 692439212}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 1}
-  m_AnchorMax: {x: 0.5, y: 1}
-  m_AnchoredPosition: {x: 0, y: -133}
-  m_SizeDelta: {x: 180.3626, y: 25.921387}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: -0.000022888, y: 741}
+  m_SizeDelta: {x: 725.9388, y: 112.1528}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &781096843
 MonoBehaviour:
@@ -1358,15 +1358,15 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 23.2
-  m_fontSizeBase: 39.2
+  m_fontSize: 39.3
+  m_fontSizeBase: 40
   m_fontWeight: 400
   m_enableAutoSizing: 1
-  m_fontSizeMin: 18
+  m_fontSizeMin: 39.3
   m_fontSizeMax: 72
   m_fontStyle: 1
   m_HorizontalAlignment: 2
-  m_VerticalAlignment: 256
+  m_VerticalAlignment: 512
   m_textAlignment: 65535
   m_characterSpacing: 0
   m_characterHorizontalScale: 1
@@ -1397,7 +1397,7 @@ MonoBehaviour:
   m_VertexBufferAutoSizeReduction: 0
   m_useMaxVisibleDescender: 1
   m_pageToDisplay: 1
-  m_margin: {x: 70.15052, y: 0, z: 79.65447, w: 0}
+  m_margin: {x: 273.28485, y: 41.356422, z: 273.33148, w: 41.764057}
   m_isUsingLegacyAnimationComponent: 0
   m_isVolumetricText: 0
   m_hasFontAssetChanged: 0
@@ -1726,6 +1726,7 @@ MonoBehaviour:
   sessionStartUtc: 
   sessionEndUtc: 
   lastSavedWalkFilePath: 
+  sessionOwnerUserId: 
   recordRoutePoints: 0
   lastRoutePointTime: -1
   routePoints: []
@@ -1740,7 +1741,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: da3249c925ba4e50bba859a196186189, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: WalkingDog.Runtime::FirebaseWalkBootstrap
 --- !u!1 &1589840762
 GameObject:
