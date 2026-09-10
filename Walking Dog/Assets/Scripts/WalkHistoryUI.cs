@@ -23,6 +23,10 @@ public sealed class WalkHistoryUI : MonoBehaviour
     private bool initializing;
     private string initializationError = "";
     private bool destroyed;
+    private GameObject mapPanel;
+    private RectTransform mapPanelSafeArea;
+    private OpenFreeMapWebViewMap openFreeMap;
+    private TMP_Text mapStatus;
     private int viewGeneration;
     private Rect lastSafeArea;
     private Vector2Int lastScreen;
@@ -33,7 +37,11 @@ public sealed class WalkHistoryUI : MonoBehaviour
     {
         if (canvasObject == null) return;
         UpdateSafeArea();
-        if (panel.activeSelf && Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) Close();
+        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+        {
+            if (mapPanel != null && mapPanel.activeSelf) CloseMap();
+            else if (panel.activeSelf) Close();
+        }
         if (session != null && session.SynchronizeAccount() && panel.activeSelf)
         {
             Render();
@@ -41,11 +49,23 @@ public sealed class WalkHistoryUI : MonoBehaviour
         }
     }
 
+    private System.Collections.Generic.List<OpenFreeMapWebViewMap> otherMaps = new System.Collections.Generic.List<OpenFreeMapWebViewMap>();
+
     public void Open()
     {
         if (canvasObject == null) BuildView();
         panel.SetActive(true);
         RefreshHistory();
+        
+        otherMaps.Clear();
+        foreach (var map in FindObjectsOfType<OpenFreeMapWebViewMap>())
+        {
+            if (map != openFreeMap && map.enabled)
+            {
+                map.enabled = false;
+                otherMaps.Add(map);
+            }
+        }
     }
 
     public void Close()
@@ -53,7 +73,19 @@ public sealed class WalkHistoryUI : MonoBehaviour
         viewGeneration++;
         initializing = false;
         session?.Reset();
+        if (mapPanel != null) mapPanel.SetActive(false);
         if (panel != null) panel.SetActive(false);
+        
+        foreach (var map in otherMaps)
+        {
+            if (map != null) map.enabled = true;
+        }
+        otherMaps.Clear();
+    }
+
+    public void CloseMap()
+    {
+        if (mapPanel != null) mapPanel.SetActive(false);
     }
 
     private async void RefreshHistory()
@@ -137,6 +169,10 @@ public sealed class WalkHistoryUI : MonoBehaviour
         {
             RectTransform row = Rect("Walk " + entry.Id, content);
             row.gameObject.AddComponent<Image>().color = new Color(0.13f, 0.20f, 0.24f);
+            var button = row.gameObject.AddComponent<Button>();
+            string entryId = entry.Id;
+            button.onClick.AddListener(() => OpenWalkMap(entryId));
+            
             var layout = row.gameObject.AddComponent<LayoutElement>();
             layout.minHeight = 116;
             layout.preferredHeight = 116;
@@ -200,8 +236,67 @@ public sealed class WalkHistoryUI : MonoBehaviour
         Place(refresh.GetComponent<RectTransform>(), Vector2.zero, new Vector2(0.5f, 0), new Vector2(24, 24), new Vector2(-12, 88));
         more = MakeButton("Load more", panelSafeArea, LoadMore);
         Place(more.GetComponent<RectTransform>(), new Vector2(0.5f, 0), new Vector2(1, 0), new Vector2(12, 24), new Vector2(-24, 88));
+        // Map Panel Setup
+        RectTransform mapBackdrop = Rect("Walk Map Panel", canvas.transform);
+        mapBackdrop.gameObject.AddComponent<Image>().color = new Color(0.06f, 0.10f, 0.13f);
+        mapPanel = mapBackdrop.gameObject;
+        mapPanelSafeArea = Rect("Safe area", mapBackdrop);
+        TMP_Text mapTitle = Label("MapTitle", mapPanelSafeArea, "Walk Route", 36);
+        mapTitle.fontStyle = FontStyles.Bold;
+        Place(mapTitle.rectTransform, new Vector2(0, 1), Vector2.one, new Vector2(24, -100), new Vector2(-196, -24));
+        Button closeMap = MakeButton("Back", mapPanelSafeArea, CloseMap);
+        Place(closeMap.GetComponent<RectTransform>(), Vector2.one, Vector2.one, new Vector2(-176, -88), new Vector2(-24, -24));
+        
+        RectTransform mapContainer = Rect("Map Container", mapPanelSafeArea);
+        Place(mapContainer, Vector2.zero, Vector2.one, new Vector2(24, 24), new Vector2(-24, -120));
+        mapContainer.gameObject.AddComponent<Image>().color = Color.black;
+        
+        openFreeMap = mapContainer.gameObject.AddComponent<OpenFreeMapWebViewMap>();
+
+        mapStatus = Label("Map Status", mapContainer, "", 24);
+        Place(mapStatus.rectTransform, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+        mapStatus.alignment = TextAlignmentOptions.Center;
+
         UpdateSafeArea();
         panel.SetActive(false);
+        mapPanel.SetActive(false);
+    }
+
+    private void OpenWalkMap(string entryId)
+    {
+        if (StepCountAndGpsManager.Instance == null) return;
+        var localWalks = StepCountAndGpsManager.Instance.LocalWalks;
+        var walk = localWalks.Find(entryId);
+        
+        if (walk != null && walk.routePoints != null && walk.routePoints.Count > 0)
+        {
+            var points = new System.Collections.Generic.List<Vector2>();
+            foreach (var point in walk.routePoints)
+            {
+                points.Add(new Vector2(point.latitude, point.longitude));
+            }
+            openFreeMap.HistoricalRoutePoints = points;
+            openFreeMap.ShowHistoricalRoute = true;
+            openFreeMap.enabled = true;
+            mapStatus.text = "";
+        }
+        else
+        {
+            openFreeMap.HistoricalRoutePoints = null;
+            openFreeMap.ShowHistoricalRoute = false;
+            openFreeMap.enabled = false;
+            
+            if (walk == null)
+            {
+                mapStatus.text = "Route data is only available on the device used to record the walk.";
+            }
+            else
+            {
+                mapStatus.text = "No GPS route was recorded for this walk.";
+            }
+        }
+        
+        mapPanel.SetActive(true);
     }
 
     private void UpdateSafeArea()
@@ -211,8 +306,9 @@ public sealed class WalkHistoryUI : MonoBehaviour
         if (dimensions.x <= 0 || dimensions.y <= 0 || (lastSafeArea == safe && lastScreen == dimensions)) return;
         lastSafeArea = safe;
         lastScreen = dimensions;
-        foreach (var rect in new[] { launcherSafeArea, panelSafeArea })
+        foreach (var rect in new[] { launcherSafeArea, panelSafeArea, mapPanelSafeArea })
         {
+            if (rect == null) continue;
             rect.anchorMin = new Vector2(safe.xMin / dimensions.x, safe.yMin / dimensions.y);
             rect.anchorMax = new Vector2(safe.xMax / dimensions.x, safe.yMax / dimensions.y);
             rect.offsetMin = rect.offsetMax = Vector2.zero;

@@ -476,8 +476,35 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
     }
 #endif
 
+    public IReadOnlyList<Vector2> HistoricalRoutePoints { get; set; }
+    public bool ShowHistoricalRoute { get; set; }
+
     private OpenFreeMapState BuildMapState()
     {
+        if (ShowHistoricalRoute && HistoricalRoutePoints != null)
+        {
+            var hasPoints = HistoricalRoutePoints.Count > 0;
+            var center = hasPoints ? HistoricalRoutePoints[0] : fallbackLatitudeLongitude;
+            
+            var historyState = new OpenFreeMapState
+            {
+                hasLocation = hasPoints,
+                follow = false, // Don't snap to GPS
+                allowGestures = true, // Allow user to pan around the historical map
+                lat = center.x,
+                lng = center.y,
+                zoom = zoom,
+                style = GetStyleId(mapStyle),
+                routePoints = new List<OpenFreeMapRoutePoint>()
+            };
+
+            if (hasPoints)
+            {
+                AddRoutePoints(HistoricalRoutePoints, historyState.routePoints);
+            }
+            return historyState;
+        }
+
         var manager = StepCountAndGpsManager.Instance;
         var hasGpsLocation = manager != null && manager.HasLocation;
         var latitude = hasGpsLocation ? manager.Latitude : fallbackLatitudeLongitude.x;
