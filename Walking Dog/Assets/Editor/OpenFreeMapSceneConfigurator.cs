@@ -20,13 +20,11 @@ public static class OpenFreeMapSceneConfigurator
             return;
         }
 
-        var safeArea = canvas.GetComponentInChildren<WalkScreenSafeArea>(true);
-        var mapParent = safeArea != null ? safeArea.transform : canvas.transform;
-        var mapPanel = FindChild(mapParent, MapPanelName);
+        var mapPanel = FindChild(canvas.transform, MapPanelName);
         if (mapPanel == null)
         {
             mapPanel = new GameObject(MapPanelName, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-            mapPanel.transform.SetParent(mapParent, false);
+            mapPanel.transform.SetParent(canvas.transform, false);
         }
 
         mapPanel.layer = LayerMask.NameToLayer("UI");
@@ -67,8 +65,8 @@ public static class OpenFreeMapSceneConfigurator
     private static void ConfigureMapRect(RectTransform rectTransform)
     {
         // Native Android WebView draws above Unity UI, so keep this below the step counter.
-        rectTransform.anchorMin = new Vector2(0.06f, 0.03f);
-        rectTransform.anchorMax = new Vector2(0.94f, 0.30f);
+        rectTransform.anchorMin = new Vector2(0.06f, 0.05f);
+        rectTransform.anchorMax = new Vector2(0.94f, 0.31f);
         rectTransform.pivot = new Vector2(0.5f, 0.5f);
         rectTransform.anchoredPosition = Vector2.zero;
         rectTransform.sizeDelta = Vector2.zero;
