@@ -31,7 +31,7 @@ public sealed class WalkHistoryUI : MonoBehaviour
     private TMP_Text mapStatus; // keep for map status messages
 
     [SerializeField]
-    private WalkDataTab walkDataTabPrefab; // keep for row prefab
+
 
     private WalkHistorySession session; // keep
     private bool initializing; // keep for status
@@ -157,6 +157,13 @@ public sealed class WalkHistoryUI : MonoBehaviour
     private void Render()
     {
         if (destroyed || status == null) return;
+
+        foreach (Transform child in content)
+        {
+            child.gameObject.SetActive(false);
+            Destroy(child.gameObject);
+        }
+
         bool loading = initializing || (session != null && session.IsLoading);
         refresh.interactable = !loading;
         more.gameObject.SetActive(session != null && session.HasMore && session.Entries.Count > 0);
@@ -174,15 +181,7 @@ public sealed class WalkHistoryUI : MonoBehaviour
         else status.text = $"{session.Entries.Count} saved walks • Newest first"
             + (session.SkippedCount > 0 ? "\nSome saved walks couldn't be displayed." : "");
 
-        if (session == null) return;
-        foreach (Transform child in content)
-        {
-            // Keep the inactive template; delete only rows created from it.
-            if (walkDataTabPrefab != null && child == walkDataTabPrefab.transform)
-                continue;
-
-            Destroy(child.gameObject);
-        }
+      
 
         if (session == null)
             return;

@@ -236,7 +236,6 @@ MonoBehaviour:
   mapPanel: {fileID: 251651830}
   openFreeMap: {fileID: 1925151977}
   mapStatus: {fileID: 888242268}
-  walkDataTabPrefab: {fileID: 1280272777}
 --- !u!4 &120857284
 Transform:
   m_ObjectHideFlags: 0
@@ -1754,7 +1753,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GPSTracker
   desiredAccuracyInMeters: 10
-  updateDistance: 3
   updateInterval: 2
 --- !u!1 &560193401
 GameObject:
@@ -1839,10 +1837,10 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 251651830}
-        m_TargetAssemblyTypeName: UnityEngine.GameObject, UnityEngine
-        m_MethodName: SetActive
-        m_Mode: 6
+      - m_Target: {fileID: 120857283}
+        m_TargetAssemblyTypeName: WalkHistoryUI, WalkingDog.Runtime
+        m_MethodName: CloseMap
+        m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
           m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
@@ -2035,14 +2033,13 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 631474735}
-  - component: {fileID: 631474736}
   m_Layer: 5
   m_Name: Walk History
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &631474735
 RectTransform:
   m_ObjectHideFlags: 0
@@ -2064,28 +2061,6 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: -1080, y: -2256}
   m_Pivot: {x: 0.5, y: 0.5}
---- !u!95 &631474736
-Animator:
-  serializedVersion: 7
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 631474734}
-  m_Enabled: 1
-  m_Avatar: {fileID: 0}
-  m_Controller: {fileID: 9100000, guid: 4186336dcf4f77b439930a57f621272f, type: 2}
-  m_CullingMode: 0
-  m_UpdateMode: 0
-  m_ApplyRootMotion: 0
-  m_LinearVelocityBlending: 0
-  m_StabilizeFeet: 0
-  m_AnimatePhysics: 0
-  m_WarningMessage: 
-  m_HasTransformHierarchy: 1
-  m_AllowConstantClipSamplingOptimization: 1
-  m_KeepAnimatorStateOnDisable: 0
-  m_WriteDefaultValuesOnDisable: 0
 --- !u!1 &680601404
 GameObject:
   m_ObjectHideFlags: 0
@@ -2173,6 +2148,18 @@ MonoBehaviour:
         m_TargetAssemblyTypeName: UnityEngine.GameObject, UnityEngine
         m_MethodName: SetActive
         m_Mode: 6
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 1
+        m_CallState: 2
+      - m_Target: {fileID: 120857283}
+        m_TargetAssemblyTypeName: WalkHistoryUI, WalkingDog.Runtime
+        m_MethodName: Open
+        m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
           m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
@@ -2895,8 +2882,7 @@ RectTransform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 1280272776}
+  m_Children: []
   m_Father: {fileID: 415464564}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
@@ -3301,28 +3287,16 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 631474734}
-        m_TargetAssemblyTypeName: UnityEngine.GameObject, UnityEngine
-        m_MethodName: SetActive
-        m_Mode: 6
+      - m_Target: {fileID: 120857283}
+        m_TargetAssemblyTypeName: WalkHistoryUI, WalkingDog.Runtime
+        m_MethodName: Close
+        m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
           m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
           m_IntArgument: 0
           m_FloatArgument: 0
           m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
-      - m_Target: {fileID: 631474736}
-        m_TargetAssemblyTypeName: UnityEngine.Animator, UnityEngine
-        m_MethodName: SetTrigger
-        m_Mode: 5
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: CloseMenu
           m_BoolArgument: 0
         m_CallState: 2
 --- !u!114 &996178238
@@ -3596,123 +3570,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f01d8f1c9d734e7e91d503f60bf6a9b4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StepCounterDisplay
---- !u!1001 &1280272775
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 866499369}
-    m_Modifications:
-    - target: {fileID: 2727804602059368974, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_Name
-      value: Walk tab template
-      objectReference: {fileID: 0}
-    - target: {fileID: 2727804602059368974, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_IsActive
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_Pivot.x
-      value: 0.5
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_Pivot.y
-      value: 0.5
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_AnchorMax.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_AnchorMax.y
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_AnchorMin.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_AnchorMin.y
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_SizeDelta.x
-      value: 672
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_SizeDelta.y
-      value: 116
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_AnchoredPosition.x
-      value: 336
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_AnchoredPosition.y
-      value: -58
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
---- !u!224 &1280272776 stripped
-RectTransform:
-  m_CorrespondingSourceObject: {fileID: 6158594878924277430, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-  m_PrefabInstance: {fileID: 1280272775}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &1280272777 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 7651836296700523970, guid: 568477c95e84e8349a2a1149259726bb, type: 3}
-  m_PrefabInstance: {fileID: 1280272775}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 48129769f61f31441b6dbf9cdfc80c7f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: WalkingDog.Runtime::WalkDataTab
 --- !u!1 &1343479192
 GameObject:
   m_ObjectHideFlags: 0
@@ -4533,13 +4390,14 @@ GameObject:
   - component: {fileID: 1942300484}
   - component: {fileID: 1942300486}
   - component: {fileID: 1942300485}
+  - component: {fileID: 1942300487}
   m_Layer: 5
   m_Name: WalkHistoryBG
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1942300484
 RectTransform:
   m_ObjectHideFlags: 0
@@ -4598,6 +4456,28 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1942300483}
   m_CullTransparentMesh: 1
+--- !u!95 &1942300487
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1942300483}
+  m_Enabled: 1
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: 4186336dcf4f77b439930a57f621272f, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
