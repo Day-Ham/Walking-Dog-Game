@@ -115,6 +115,7 @@
   <div id="status">Loading OpenFreeMap...</div>
 
   <script>
+    // Displays a startup error message in the status indicator.
     function reportOpenFreeMapBootError(message) {
       var status = document.getElementById("status");
       if (status) {
@@ -157,6 +158,7 @@
       var rasterTileSize = 256;
       var rasterTileTemplate = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 
+      // Sets the text shown in the status element.
       function setStatus(message) {
         var status = document.getElementById("status");
         if (status) {
@@ -164,6 +166,7 @@
         }
       }
 
+      // Returns a shortened hostname or resource label for display in error messages.
       function summarizeUrl(url) {
         if (!url || typeof url !== "string") {
           return "resource";
@@ -176,6 +179,7 @@
         }
       }
 
+      // Extracts a readable message from an error object or event.
       function getErrorMessage(event) {
         var error = event && event.error ? event.error : event;
 
@@ -190,6 +194,7 @@
         return error.message || error.statusText || error.name || "unknown error";
       }
 
+      // Checks whether the browser can create a usable WebGL context.
       function isWebglSupported() {
         if (!window.WebGLRenderingContext) {
           return false;
@@ -204,6 +209,7 @@
         }
       }
 
+      // Tracks resource loading failures and updates the status message.
       function reportResourceLoadFailure(event) {
         var target = event && event.target;
         if (!target || target === window) {
@@ -217,6 +223,7 @@
         }
       }
 
+      // Attempts to confirm that the OpenFreeMap style can be fetched and falls back if needed.
       function verifyStyleReachability(styleUrl) {
         if (!window.fetch) {
           return;
@@ -242,6 +249,7 @@
           });
       }
 
+      // Displays the current map state based on whether the vector map or raster fallback is active.
       function setReadyStatus() {
         if (isRasterFallbackActive) {
           setStatus(state.hasLocation ? "GPS tracking (raster map)" : "Preview location (raster map)");
@@ -256,6 +264,7 @@
         setStatus(lastMapError || "OpenFreeMap vector tiles loading...");
       }
 
+      // Shows or hides the raster map layer while keeping the vector map container available.
       function setRasterFallbackVisible(isVisible) {
         var mapElement = document.getElementById("map");
         var rasterElement = document.getElementById("raster-map");
@@ -269,16 +278,19 @@
         }
       }
 
+      // Restrains a numeric value to a minimum and maximum range.
       function clamp(value, min, max) {
         return Math.min(max, Math.max(min, value));
       }
 
+      // Calculates the zoom level used for raster tiles from the current map zoom.
       function getRasterZoom() {
         var rawZoom = Number(state.zoom);
         var roundedZoom = Number.isFinite(rawZoom) ? Math.round(rawZoom) : 17;
         return clamp(roundedZoom, 1, 19);
       }
 
+      // Builds the URL for a specific raster tile based on zoom and tile coordinates.
       function getRasterTileUrl(zoom, x, y) {
         return rasterTileTemplate
           .replace("{z}", String(zoom))
@@ -286,6 +298,7 @@
           .replace("{y}", String(y));
       }
 
+      // Converts longitude and latitude into world pixel coordinates for raster rendering.
       function lonLatToWorldPixels(lng, lat, zoom) {
         var scale = rasterTileSize * Math.pow(2, zoom);
         var safeLat = clamp(lat, -85.05112878, 85.05112878);
@@ -297,6 +310,7 @@
         };
       }
 
+      // Computes the raster map layout, including the visible viewport and top-left pixel offset.
       function getRasterLayout(center, zoom) {
         var rasterElement = document.getElementById("raster-map");
         if (!rasterElement) {
@@ -315,6 +329,7 @@
         };
       }
 
+      // Draws the current walking route onto the raster map SVG.
       function renderRasterRoute(layout, zoom) {
         var routeElement = document.getElementById("raster-route");
         var segments = toRouteSegments(state.routePoints);
@@ -345,6 +360,7 @@
         });
       }
 
+      // Renders the raster map tiles and route overlay for the fallback view.
       function renderRasterFallback() {
         var rasterElement = document.getElementById("raster-map");
         var tileElement = document.getElementById("raster-tiles");
@@ -406,6 +422,7 @@
         setReadyStatus();
       }
 
+      // Checks whether the vector map canvas contains enough visible map detail to trust the current view.
       function canvasHasVisibleMapDetail() {
         if (!map || isRasterFallbackActive) {
           return false;
@@ -453,6 +470,7 @@
         }
       }
 
+      // Switches the map display to the raster fallback mode when vector tiles are unreliable.
       function activateRasterFallback(reason) {
         if (!isRasterFallbackActive) {
           isRasterFallbackActive = true;
@@ -472,6 +490,7 @@
         renderRasterFallback();
       }
 
+      // Determines whether the vector map is actually rendering visible map features.
       function updateVectorRenderState() {
         if (!map || !isMapLoaded || isRasterFallbackActive) {
           return false;
@@ -505,6 +524,7 @@
         }
       }
 
+      // Waits briefly and then verifies whether the vector map has loaded enough content.
       function scheduleBlankMapCheck() {
         window.setTimeout(function () {
           var tilesLoaded = false;
@@ -525,16 +545,19 @@
         }, 6500);
       }
 
+      // Returns a supported style key, defaulting to the Liberty theme when needed.
       function normalizeStyle(style) {
         return styles[style] ? style : "liberty";
       }
 
+      // Creates the custom marker element used for the user's current location.
       function createMarkerElement() {
         var element = document.createElement("div");
         element.className = "current-location-marker";
         return element;
       }
 
+      // Converts the current state into a longitude-latitude center pair.
       function toCenter(currentState) {
         var lng = Number(currentState.lng);
         var lat = Number(currentState.lat);
@@ -546,6 +569,7 @@
         return [lng, lat];
       }
 
+      // Transforms raw route points into valid coordinate arrays for map use.
       function toRouteCoordinates(routePoints) {
         if (!Array.isArray(routePoints)) {
           return [];
@@ -560,6 +584,7 @@
           });
       }
 
+      // Splits route points into line segments that can be rendered as polylines.
       function toRouteSegments(routePoints) {
         var segments = [], current = [];
         (Array.isArray(routePoints) ? routePoints : []).forEach(function (point) {
@@ -576,6 +601,103 @@
         return segments;
       }
 
+      // testing the adding of polygon when a user encircles the area and reaches back to the starting point, the polygon will be drawn and filled with a color
+    // ========================================
+    //            TERRITORY FUNCTIONS
+    // ========================================
+
+      function distanceMeters(a, b) {
+          const R = 6371000; // Earth radius in meters
+
+          const lat1 = Number(a.lat) * Math.PI / 180;
+          const lat2 = Number(b.lat) * Math.PI / 180;
+
+          const dLat =
+              (Number(b.lat) - Number(a.lat)) *
+              Math.PI / 180;
+
+          const dLon =
+              (Number(b.lng) - Number(a.lng)) *
+              Math.PI / 180;
+
+          const h =
+              Math.sin(dLat / 2) ** 2 +
+              Math.cos(lat1) *
+              Math.cos(lat2) *
+              Math.sin(dLon / 2) ** 2;
+
+          return 2 * R * Math.asin(Math.sqrt(h));
+      }
+
+
+      function completedLoop(routePoints) {
+
+          // Require at least 10 GPS points
+          if (!Array.isArray(routePoints) || routePoints.length < 10) {
+              return false;
+          }
+
+          const start = routePoints[0];
+          const end = routePoints[routePoints.length - 1];
+
+          const distance = distanceMeters(start, end);
+
+          // Consider the loop complete
+          // when the player is within 20 meters of the start
+          return distance <= 20;
+      }
+
+      // create territory polygon
+      function createTerritory(routePoints) {
+
+          if (!map || !map.isStyleLoaded()) {
+              return;
+          }
+
+          if (!Array.isArray(routePoints) || routePoints.length < 3) {
+              return;
+          }
+
+          // Convert GPS points into [longitude, latitude]
+          const coordinates = routePoints.map(function(point) {
+              return [
+                  Number(point.lng),
+                  Number(point.lat)
+              ];
+          });
+
+          // Close the polygon
+          coordinates.push(coordinates[0]);
+
+          const territorySource = map.getSource("player-territory");
+
+          if (!territorySource) {
+              return;
+          }
+
+          territorySource.setData({
+              type: "Feature",
+              geometry: {
+                  type: "Polygon",
+                  coordinates: [coordinates]
+              },
+              properties: {}
+          });
+      }
+
+      //territory update
+      function updateTerritory(routePoints) {
+
+        if (completedLoop(routePoints)) {
+           createTerritory(routePoints);
+         }
+      }
+
+
+
+
+
+      // Creates the route source and line layers on the map when they are missing.
       function ensureRouteLayer() {
         if (!map || !map.isStyleLoaded()) {
           return false;
@@ -594,7 +716,7 @@
             }
           });
         }
-
+        // the one for route tracing 
         if (!map.getLayer("walk-route-casing")) {
           map.addLayer({
             id: "walk-route-casing",
@@ -629,9 +751,66 @@
           });
         }
 
+
+                // ========================================
+        // TERRITORY SOURCE
+        // ========================================
+
+        if (!map.getSource("player-territory")) {
+            map.addSource("player-territory", {
+                type: "geojson",
+                data: {
+                    type: "Feature",
+                    geometry: {
+                        type: "Polygon",
+                        coordinates: []
+                    },
+                    properties: {}
+             }
+           });
+        }
+
+
+        // ========================================
+        // TERRITORY FILL
+        // ========================================
+
+        if (!map.getLayer("player-territory-fill")) {
+            map.addLayer({
+                id: "player-territory-fill",
+                type: "fill",
+                source: "player-territory",
+                paint: {
+                    "fill-color": "#fc4c02",
+                    "fill-opacity": 0.25
+                }
+            });
+        }
+
+
+        // ========================================
+        // TERRITORY OUTLINE
+        // ========================================
+
+        if (!map.getLayer("player-territory-outline")) {
+            map.addLayer({
+                id: "player-territory-outline",
+                type: "line",
+                source: "player-territory",
+                paint: {
+                    "line-color": "#fc4c02",
+                    "line-width": 2,
+                    "line-opacity": 0.9
+                }
+            });
+        }
+
         return true;
       }
 
+
+
+      // Enables or disables the map's interactive gesture controls based on the current state.
       function applyGestureState(currentState) {
         if (!map) {
           return;
@@ -659,6 +838,9 @@
         });
       }
 
+
+
+      // Applies the next map state, updates camera and route data, and refreshes readiness.
       function applyState(nextState, animate) {
         state = nextState || state;
 
@@ -678,7 +860,7 @@
           map.setStyle(styles[currentStyle]);
           return;
         }
-
+        // gesture
         applyGestureState(state);
         ensureRouteLayer();
 
@@ -709,11 +891,14 @@
             properties: {}
           });
         }
+        // update territory
+        updateTerritory(state.routePoints);
 
         updateVectorRenderState();
         setReadyStatus();
       }
 
+      // Initializes the vector map, marker, and event handlers for the OpenFreeMap experience.
       function initializeMap() {
         if (window.__openFreeMapCssFailed) {
           setStatus("MapLibre CSS blocked or offline");
@@ -812,6 +997,7 @@
         setStatus(lastMapError);
       });
 
+// Updates the map state with the latest dog walk information and handles any rendering errors.
       window.updateDogWalkState = function (nextState) {
         state = nextState || state;
         try {
@@ -822,6 +1008,7 @@
         }
       };
 
+      // Starts the map initialization process on page load.
       function start() {
         try {
           initializeMap();
