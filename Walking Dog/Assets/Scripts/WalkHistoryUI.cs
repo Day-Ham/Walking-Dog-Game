@@ -5,14 +5,13 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.InputSystem;
 
-// Scene-local view. Attached to the walking scene Canvas; builds its own canvas
-// so the history layout is independent of the existing tracking panel's scale.
+// Opened by the scene's History button. Builds the history overlay on demand.
 [DisallowMultipleComponent]
 public sealed class WalkHistoryUI : MonoBehaviour
 {
     [SerializeField]
     private GameObject panel;
-    [SerializeField]
+    private RectTransform panelSafeArea;
     private RectTransform content;
     [SerializeField]
     private ScrollRect scroll;
@@ -23,6 +22,7 @@ public sealed class WalkHistoryUI : MonoBehaviour
     [SerializeField]
     private Button more;
 
+<<<<<<< HEAD
     [SerializeField]
     private GameObject mapPanel;// 
     [SerializeField]
@@ -45,6 +45,8 @@ public sealed class WalkHistoryUI : MonoBehaviour
     private void Start() { }
 
     // Unity calls this every frame; updates safe-area layout, handles Escape, and refreshes after an account change.
+=======
+>>>>>>> Development-JM
     private void Update()
     {
        
@@ -206,6 +208,85 @@ public sealed class WalkHistoryUI : MonoBehaviour
 
     }
 
+<<<<<<< HEAD
+=======
+    private void BuildView()
+    {
+        canvasObject = new GameObject("Walk History Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+        var canvas = canvasObject.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 100;
+        var scaler = canvasObject.GetComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(720, 1280);
+        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
+        RectTransform backdrop = Rect("Walk History", canvas.transform);
+        backdrop.gameObject.AddComponent<Image>().color = new Color(0.06f, 0.10f, 0.13f);
+        panel = backdrop.gameObject;
+        panel.SetActive(false);
+        panelSafeArea = Rect("Safe area", backdrop);
+        TMP_Text title = Label("Title", panelSafeArea, "Walk history", 36);
+        title.fontStyle = FontStyles.Bold;
+        Place(title.rectTransform, new Vector2(0, 1), Vector2.one, new Vector2(24, -100), new Vector2(-196, -24));
+        Button close = MakeButton("Back", panelSafeArea, Close);
+        Place(close.GetComponent<RectTransform>(), Vector2.one, Vector2.one, new Vector2(-176, -88), new Vector2(-24, -24));
+        status = Label("Status", panelSafeArea, "", 24);
+        Place(status.rectTransform, new Vector2(0, 1), Vector2.one, new Vector2(24, -208), new Vector2(-24, -108));
+
+        RectTransform viewport = Rect("Walk list", panelSafeArea);
+        Place(viewport, Vector2.zero, Vector2.one, new Vector2(24, 112), new Vector2(-24, -224));
+        viewport.gameObject.AddComponent<Image>().color = new Color(0.06f, 0.10f, 0.13f);
+        viewport.gameObject.AddComponent<RectMask2D>();
+        scroll = viewport.gameObject.AddComponent<ScrollRect>();
+        scroll.viewport = viewport;
+        scroll.horizontal = false;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+        scroll.scrollSensitivity = 40;
+        content = Rect("Walks", viewport);
+        content.anchorMin = new Vector2(0, 1);
+        content.anchorMax = Vector2.one;
+        content.pivot = new Vector2(0.5f, 1);
+        content.sizeDelta = Vector2.zero;
+        var rows = content.gameObject.AddComponent<VerticalLayoutGroup>();
+        rows.spacing = 12;
+        rows.childControlHeight = true;
+        rows.childControlWidth = true;
+        rows.childForceExpandHeight = false;
+        rows.childForceExpandWidth = true;
+        content.gameObject.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        scroll.content = content;
+        refresh = MakeButton("Refresh", panelSafeArea, RefreshHistory);
+        Place(refresh.GetComponent<RectTransform>(), Vector2.zero, new Vector2(0.5f, 0), new Vector2(24, 24), new Vector2(-12, 88));
+        more = MakeButton("Load more", panelSafeArea, LoadMore);
+        Place(more.GetComponent<RectTransform>(), new Vector2(0.5f, 0), new Vector2(1, 0), new Vector2(12, 24), new Vector2(-24, 88));
+        // Map Panel Setup
+        RectTransform mapBackdrop = Rect("Walk Map Panel", canvas.transform);
+        mapBackdrop.gameObject.AddComponent<Image>().color = new Color(0.06f, 0.10f, 0.13f);
+        mapPanel = mapBackdrop.gameObject;
+        // Keep the Android WebView inactive until a saved route is selected.
+        mapPanel.SetActive(false);
+        mapPanelSafeArea = Rect("Safe area", mapBackdrop);
+        TMP_Text mapTitle = Label("MapTitle", mapPanelSafeArea, "Walk Route", 36);
+        mapTitle.fontStyle = FontStyles.Bold;
+        Place(mapTitle.rectTransform, new Vector2(0, 1), Vector2.one, new Vector2(24, -100), new Vector2(-196, -24));
+        Button closeMap = MakeButton("Back", mapPanelSafeArea, CloseMap);
+        Place(closeMap.GetComponent<RectTransform>(), Vector2.one, Vector2.one, new Vector2(-176, -88), new Vector2(-24, -24));
+        
+        RectTransform mapContainer = Rect("Map Container", mapPanelSafeArea);
+        Place(mapContainer, Vector2.zero, Vector2.one, new Vector2(24, 24), new Vector2(-24, -120));
+        mapContainer.gameObject.AddComponent<Image>().color = Color.black;
+        
+        openFreeMap = mapContainer.gameObject.AddComponent<OpenFreeMapWebViewMap>();
+
+        mapStatus = Label("Map Status", mapContainer, "", 24);
+        Place(mapStatus.rectTransform, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+        mapStatus.alignment = TextAlignmentOptions.Center;
+
+        UpdateSafeArea();
+        panel.SetActive(false);
+        mapPanel.SetActive(false);
+    }
+>>>>>>> Development-JM
 
     // Opens a selected walk's map using matching local GPS route points; Firestore history contains only the list summary.
     private void OpenWalkMap(string entryId)
@@ -249,6 +330,7 @@ public sealed class WalkHistoryUI : MonoBehaviour
 
     private void OnDisable()
     {
+<<<<<<< HEAD
         Close();
     }
 
@@ -267,6 +349,20 @@ public sealed class WalkHistoryUI : MonoBehaviour
     public void OnLoadMoreClicked()
     {
         LoadMore();
+=======
+        var safe = Screen.safeArea;
+        var dimensions = new Vector2Int(Screen.width, Screen.height);
+        if (dimensions.x <= 0 || dimensions.y <= 0 || (lastSafeArea == safe && lastScreen == dimensions)) return;
+        lastSafeArea = safe;
+        lastScreen = dimensions;
+        foreach (var rect in new[] { panelSafeArea, mapPanelSafeArea })
+        {
+            if (rect == null) continue;
+            rect.anchorMin = new Vector2(safe.xMin / dimensions.x, safe.yMin / dimensions.y);
+            rect.anchorMax = new Vector2(safe.xMax / dimensions.x, safe.yMax / dimensions.y);
+            rect.offsetMin = rect.offsetMax = Vector2.zero;
+        }
+>>>>>>> Development-JM
     }
 
     private static RectTransform Rect(string name, Transform parent)
