@@ -5,13 +5,13 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.InputSystem;
 
-// Scene-local view. Attached to the walking scene Canvas; builds its own canvas
-// so the history layout is independent of the existing tracking panel's scale.
+// Opened by the scene's History button. Builds the history overlay on demand.
 [DisallowMultipleComponent]
 public sealed class WalkHistoryUI : MonoBehaviour
 {
     [SerializeField]
     private GameObject panel;
+    //private RectTransform panelSafeArea;
     [SerializeField]
     private RectTransform content;
     [SerializeField]
@@ -30,7 +30,7 @@ public sealed class WalkHistoryUI : MonoBehaviour
     [SerializeField]
     private TMP_Text mapStatus; // keep for map status messages
 
-    [SerializeField]
+ 
 
 
     private WalkHistorySession session; // keep
