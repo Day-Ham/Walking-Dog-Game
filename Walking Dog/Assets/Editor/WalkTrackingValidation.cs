@@ -11,6 +11,44 @@ using UnityEngine.UI;
 // Batch validation entry points; never included in the Android player.
 public static class WalkTrackingValidation
 {
+    public static void CaptureWalkLayout()
+    {
+        EditorSceneManager.OpenScene("Assets/Scenes/StepCounterTestAmar.unity");
+        var canvas = GameObject.Find("Canvas").GetComponent<Canvas>();
+        var safe = canvas.GetComponentInChildren<WalkScreenSafeArea>();
+        safe.enabled = false;
+        var safeRect = safe.GetComponent<RectTransform>();
+        safeRect.anchorMin = Vector2.zero;
+        safeRect.anchorMax = Vector2.one;
+        safeRect.offsetMin = safeRect.offsetMax = Vector2.zero;
+        GameObject.Find("Counter").GetComponent<TMPro.TMP_Text>().text = "473";
+        GameObject.Find("Longitude").GetComponent<TMPro.TMP_Text>().text = "473 steps • 291 m • 4.1 min";
+        GameObject.Find("Latitude").GetComponent<TMPro.TMP_Text>().text = "Screen-off route recording on";
+        GameObject.Find("Display Accuracy").GetComponent<TMPro.TMP_Text>().text = "Recording";
+        GameObject.Find("Walking Session Button").GetComponentInChildren<TMPro.TMP_Text>().text = "Stop Walk";
+        Directory.CreateDirectory("Logs");
+        foreach (var size in new[] { new Vector2Int(720, 1280), new Vector2Int(946, 2048), new Vector2Int(1536, 2048) })
+        {
+            Capture(canvas, $"Logs/walk-layout-{size.x}x{size.y}.png", size.x, size.y);
+            foreach (var label in safe.GetComponentsInChildren<TMPro.TMP_Text>())
+            {
+                label.ForceMeshUpdate();
+                if (label.isTextOverflowing) throw new Exception($"Walk HUD overflow: {label.name} at {size}");
+            }
+        }
+        // Exercise the longer error/status messages as well as the screenshot values.
+        GameObject.Find("Longitude").GetComponent<TMPro.TMP_Text>().text = "123,456 steps • 123.45 km • 999.9 min";
+        GameObject.Find("Latitude").GetComponent<TMPro.TMP_Text>().text = "Screen-off tracking unavailable. Keep the app open.";
+        GameObject.Find("Display Accuracy").GetComponent<TMPro.TMP_Text>().text = "Recovery save failed — keep the app open";
+        Capture(canvas, "Logs/walk-layout-long-messages.png");
+        foreach (var label in safe.GetComponentsInChildren<TMPro.TMP_Text>())
+        {
+            label.ForceMeshUpdate();
+            if (label.isTextOverflowing) throw new Exception("Walk HUD overflow: " + label.name);
+        }
+        Debug.Log("Walk layout captures and text fit checks passed.");
+    }
+
     public static void BuildAndroid()
     {
         var options = new BuildPlayerOptions
@@ -55,25 +93,25 @@ public static class WalkTrackingValidation
     private static void Set(object target, string field, object value) => target.GetType()
         .GetField(field, BindingFlags.Instance | BindingFlags.NonPublic).SetValue(target, value);
 
-    private static void Capture(Canvas canvas, string path)
+    private static void Capture(Canvas canvas, string path, int width = 720, int height = 1280)
     {
         var cameraObject = new GameObject("Preview camera");
         var camera = cameraObject.AddComponent<Camera>();
-        var texture = new RenderTexture(720, 1280, 24);
+        var texture = new RenderTexture(width, height, 24);
         camera.targetTexture = texture;
         camera.orthographic = true;
         camera.orthographicSize = 640;
         camera.transform.position = new Vector3(0, 0, -10);
         canvas.GetComponent<CanvasScaler>().enabled = false;
-        canvas.scaleFactor = 1;
+        canvas.scaleFactor = width / canvas.GetComponent<CanvasScaler>().referenceResolution.x;
         canvas.renderMode = RenderMode.ScreenSpaceCamera;
         canvas.worldCamera = camera;
         canvas.planeDistance = 1;
         Canvas.ForceUpdateCanvases();
         camera.Render();
         RenderTexture.active = texture;
-        var image = new Texture2D(720, 1280, TextureFormat.RGB24, false);
-        image.ReadPixels(new Rect(0, 0, 720, 1280), 0, 0);
+        var image = new Texture2D(width, height, TextureFormat.RGB24, false);
+        image.ReadPixels(new Rect(0, 0, width, height), 0, 0);
         image.Apply();
         File.WriteAllBytes(path, image.EncodeToPNG());
         RenderTexture.active = null;
