@@ -11,6 +11,39 @@ using UnityEngine.UI;
 // Batch validation entry points; never included in the Android player.
 public static class WalkTrackingValidation
 {
+    public static void ValidateHistoryNavigation()
+    {
+        CaptureWalkLayout();
+        var launch = GameObject.Find("History Button").GetComponent<Button>();
+        var history = UnityEngine.Object.FindAnyObjectByType<WalkHistoryUI>();
+        if (!launch.isActiveAndEnabled || !launch.interactable ||
+            launch.onClick.GetPersistentEventCount() != 1 ||
+            launch.onClick.GetPersistentTarget(0) != history ||
+            launch.onClick.GetPersistentMethodName(0) != nameof(WalkHistoryUI.Open))
+            throw new Exception("History button is missing or incorrectly wired.");
+
+        var liveMap = GameObject.Find("OpenFreeMap Map Panel").GetComponent<OpenFreeMapWebViewMap>();
+        // Allow the serialized runtime callback to execute in this editor check.
+        launch.onClick.SetPersistentListenerState(0, UnityEngine.Events.UnityEventCallState.EditorAndRuntime);
+        launch.onClick.Invoke();
+        var overlay = GameObject.Find("Walk History Canvas").GetComponent<Canvas>();
+        var panel = overlay.transform.Find("Walk History").gameObject;
+        var routePanel = overlay.transform.Find("Walk Map Panel").gameObject;
+        if (!panel.activeSelf || routePanel.activeSelf || liveMap.enabled)
+            throw new Exception("History did not open with the live map hidden.");
+        Capture(overlay, "Logs/walk-history-open.png");
+        panel.transform.Find("Safe area/Back").GetComponent<Button>().onClick.Invoke();
+        if (panel.activeSelf || !liveMap.enabled || !launch.gameObject.activeInHierarchy)
+            throw new Exception("History Back did not restore the walk screen.");
+        launch.onClick.Invoke();
+        if (!panel.activeSelf || UnityEngine.Object.FindObjectsByType<Canvas>(FindObjectsSortMode.None)
+            .Count(c => c.name == "Walk History Canvas") != 1)
+            throw new Exception("Reopening history created a duplicate overlay.");
+        history.Close();
+        launch.onClick.SetPersistentListenerState(0, UnityEngine.Events.UnityEventCallState.RuntimeOnly);
+        Debug.Log("History button callback, open, Back, and reopen checks passed.");
+    }
+
     public static void CaptureWalkLayout()
     {
         EditorSceneManager.OpenScene("Assets/Scenes/StepCounterTestAmar.unity");

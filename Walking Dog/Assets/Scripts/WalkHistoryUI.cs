@@ -5,14 +5,12 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.InputSystem;
 
-// Scene-local view. Attached to the walking scene Canvas; builds its own canvas
-// so the history layout is independent of the existing tracking panel's scale.
+// Opened by the scene's History button. Builds the history overlay on demand.
 [DisallowMultipleComponent]
 public sealed class WalkHistoryUI : MonoBehaviour
 {
     private GameObject canvasObject;
     private GameObject panel;
-    private RectTransform launcherSafeArea;
     private RectTransform panelSafeArea;
     private RectTransform content;
     private ScrollRect scroll;
@@ -30,8 +28,6 @@ public sealed class WalkHistoryUI : MonoBehaviour
     private int viewGeneration;
     private Rect lastSafeArea;
     private Vector2Int lastScreen;
-
-    private void Start() { BuildView(); }
 
     private void Update()
     {
@@ -194,13 +190,10 @@ public sealed class WalkHistoryUI : MonoBehaviour
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(720, 1280);
         scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
-        launcherSafeArea = Rect("Safe area", canvas.transform);
-        var launch = MakeButton("History", launcherSafeArea, Open);
-        Place(launch.GetComponent<RectTransform>(), Vector2.one, Vector2.one, new Vector2(-224, -88), new Vector2(-24, -24));
-
         RectTransform backdrop = Rect("Walk History", canvas.transform);
         backdrop.gameObject.AddComponent<Image>().color = new Color(0.06f, 0.10f, 0.13f);
         panel = backdrop.gameObject;
+        panel.SetActive(false);
         panelSafeArea = Rect("Safe area", backdrop);
         TMP_Text title = Label("Title", panelSafeArea, "Walk history", 36);
         title.fontStyle = FontStyles.Bold;
@@ -240,6 +233,8 @@ public sealed class WalkHistoryUI : MonoBehaviour
         RectTransform mapBackdrop = Rect("Walk Map Panel", canvas.transform);
         mapBackdrop.gameObject.AddComponent<Image>().color = new Color(0.06f, 0.10f, 0.13f);
         mapPanel = mapBackdrop.gameObject;
+        // Keep the Android WebView inactive until a saved route is selected.
+        mapPanel.SetActive(false);
         mapPanelSafeArea = Rect("Safe area", mapBackdrop);
         TMP_Text mapTitle = Label("MapTitle", mapPanelSafeArea, "Walk Route", 36);
         mapTitle.fontStyle = FontStyles.Bold;
@@ -308,7 +303,7 @@ public sealed class WalkHistoryUI : MonoBehaviour
         if (dimensions.x <= 0 || dimensions.y <= 0 || (lastSafeArea == safe && lastScreen == dimensions)) return;
         lastSafeArea = safe;
         lastScreen = dimensions;
-        foreach (var rect in new[] { launcherSafeArea, panelSafeArea, mapPanelSafeArea })
+        foreach (var rect in new[] { panelSafeArea, mapPanelSafeArea })
         {
             if (rect == null) continue;
             rect.anchorMin = new Vector2(safe.xMin / dimensions.x, safe.yMin / dimensions.y);
