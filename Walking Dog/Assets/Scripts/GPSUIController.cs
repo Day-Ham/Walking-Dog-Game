@@ -209,7 +209,7 @@ public class GPSUIController : MonoBehaviour
 
         var tracking = manager.IsWalkingSessionActive ? manager.TrackingStatus
             : !manager.HasFreshLocation && !manager.HasWalkingSession ? manager.AccuracyStatus : sessionState;
-        // Each existing HUD row is only 30 units high; keep feedback on one line.
+        // Keep tracking feedback concise for the dedicated status row.
         if (!string.IsNullOrEmpty(manager.RecoveryError)) return "Recovery save failed — keep the app open";
         return tracking == "Recording" && manager.HasTrackingGaps ? "Recording • route has gaps" : tracking;
     }
