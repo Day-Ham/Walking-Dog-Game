@@ -137,6 +137,41 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     public string LastSavedWalkFilePath => lastSavedWalkFilePath;
     public string SavedWalkDirectoryPath => Path.Combine(Application.persistentDataPath, "WalkSessions");
     public bool IsRouteRecording => recordRoutePoints;
+    // The first accepted route sample is the authoritative walk start. Do not use the
+    // Start Walk button time/location: a walk can begin before GPS has a fresh fix.
+    public bool HasRouteStart => routePoints != null && routePoints.Count > 0;
+    public float DistanceToRouteStartMeters
+    {
+        get
+        {
+            // A stale or inaccurate fix must not tell the player they can close a loop.
+            if (!HasRouteStart || !HasFreshLocation) return -1f;
+            return CalculateDistanceMeters(latitude, longitude, routePoints[0].x, routePoints[0].y);
+        }
+    }
+    public bool IsWithinTerritoryClosureRange => DistanceToRouteStartMeters >= 0f
+        && DistanceToRouteStartMeters <= TerritoryCapture.ClosureMeters;
+    public string TerritoryClosureStatus
+    {
+        get
+        {
+            if (!walkingSessionActive || sessionTerritoryVersion != TerritoryCapture.Version || !HasRouteStart)
+                return "";
+
+            // At the beginning of every walk the player is naturally beside the start.
+            // Wait until the minimum loop distance is covered before showing a return cue.
+            if (sessionDistanceMeters < 200f) return "";
+
+            var distance = DistanceToRouteStartMeters;
+            if (distance < 0f) return "";
+            if (distance <= TerritoryCapture.ClosureMeters)
+                // This only confirms the closing-distance requirement; area, route length,
+                // and non-crossing checks are still validated when the walk is saved.
+                return $"Near your start ({distance:0} m) — within the {TerritoryCapture.ClosureMeters:0} m loop-closing range.";
+
+            return $"Return to your start — {distance - (float)TerritoryCapture.ClosureMeters:0} m to the loop-closing range.";
+        }
+    }
     public int RoutePointCount
     {
         get
