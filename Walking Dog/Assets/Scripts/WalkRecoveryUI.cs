@@ -30,6 +30,8 @@ public sealed class WalkRecoveryUI : MonoBehaviour
             else if (candidate == null && pending != null && !summary) Close();
         }
         if (canvasObject == null || !canvasObject.activeSelf) return;
+        // A pending territory commit may succeed while the result dialog is open.
+        if (summary && Time.unscaledTime >= nextCheck) { nextCheck = Time.unscaledTime + 1f; Show(); }
         var safe = Screen.safeArea;
         safeArea.anchorMin = new Vector2(safe.xMin / Mathf.Max(1, Screen.width), safe.yMin / Mathf.Max(1, Screen.height));
         safeArea.anchorMax = new Vector2(safe.xMax / Mathf.Max(1, Screen.width), safe.yMax / Mathf.Max(1, Screen.height));
@@ -59,7 +61,8 @@ public sealed class WalkRecoveryUI : MonoBehaviour
         details.text = summary
             ? $"{manager.WalkingSessionSteps:N0} steps  •  {manager.WalkingSessionDistanceMeters:0} m\n{manager.WalkingSessionDurationSeconds / 60f:0.0} minutes\n\n{manager.LastWalkSaveState}\n\n" +
               (manager.HasTrackingGaps ? "Parts of this route are missing. Gaps are shown as breaks on the map." :
-               manager.RoutePointCount < 2 ? "There are not enough GPS points to show a route." : "Your recorded route is ready to review on the map.")
+               manager.RoutePointCount < 2 ? "There are not enough GPS points to show a route." : "Your recorded route is ready to review on the map.") +
+              "\n\n<b>Your territory</b>\n" + manager.TerritorySummary
             : $"{pending.steps:N0} steps  •  {pending.distanceMeters:0} m\nSaved {LocalWalkRepository.ParseUtc(pending.endedAtUtc).ToLocalTime():MMM d, h:mm tt}\n\nResume this walk, or save what was recorded and finish. Any missing tracking will remain a break in the route.";
         primary.GetComponentInChildren<TMP_Text>().text = summary ? (manager.RoutePointCount > 1 ? "View map" : "Done") : "Resume walk";
         primary.interactable = !summary || !manager.HasUnsavedCompletedWalk;
@@ -115,7 +118,7 @@ public sealed class WalkRecoveryUI : MonoBehaviour
         layout.childForceExpandHeight = false;
         title = Label("Title", card, 34, 70);
         title.fontStyle = FontStyles.Bold;
-        details = Label("Details", card, 25, 310);
+        details = Label("Details", card, 24, 450);
         primary = MakeButton("Resume walk", card, Primary);
         secondary = MakeButton("Save and finish", card, Secondary);
         canvasObject.SetActive(false);

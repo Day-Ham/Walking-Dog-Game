@@ -504,6 +504,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
                 if (HistoricalRouteSamples != null) AddRouteSamples(HistoricalRouteSamples, historyState.routePoints);
                 else AddRoutePoints(HistoricalRoutePoints, historyState.routePoints);
             }
+            AddTerritoryState(historyState);
             return historyState;
         }
 
@@ -534,7 +535,20 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
             AddRouteSamples(manager.RoutePointSamples, state.routePoints);
         }
 
+        AddTerritoryState(state);
         return state;
+    }
+
+    private static void AddTerritoryState(OpenFreeMapState state)
+    {
+        var manager = StepCountAndGpsManager.Instance;
+        var territories = manager != null ? manager.Territories : null;
+        state.territoryRevision = territories?.Revision ?? "";
+        state.territoryTiles = territories == null ? new List<TerritoryCapture.Tile>() : new List<TerritoryCapture.Tile>(territories.Tiles);
+        state.territoryMessage = territories == null || string.IsNullOrWhiteSpace(territories.Owner)
+            ? "Sign in before walking to claim territory"
+            : !string.IsNullOrEmpty(territories.Error) ? territories.Error
+            : "Your territory · " + territories.Tiles.Count + " tiles";
     }
 
     private void AddRoutePoints(IReadOnlyList<Vector2> sourceRoutePoints, List<OpenFreeMapRoutePoint> destination)
@@ -671,6 +685,9 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         public int zoom;
         public string style;
         public List<OpenFreeMapRoutePoint> routePoints;
+        public List<TerritoryCapture.Tile> territoryTiles;
+        public string territoryRevision;
+        public string territoryMessage;
     }
 
     [Serializable]

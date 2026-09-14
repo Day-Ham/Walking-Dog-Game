@@ -84,10 +84,20 @@ public static class WalkTrackingValidation
 
     public static void BuildAndroid()
     {
+        BuildAndroidAt("Builds/WalkingDog-tracking.apk");
+    }
+
+    public static void BuildTerritoryAndroid()
+    {
+        BuildAndroidAt("Builds/WalkingDog-territories.apk");
+    }
+
+    private static void BuildAndroidAt(string output)
+    {
         var options = new BuildPlayerOptions
         {
             scenes = EditorBuildSettings.scenes.Where(s => s.enabled).Select(s => s.path).ToArray(),
-            locationPathName = "Builds/WalkingDog-tracking.apk",
+            locationPathName = output,
             target = BuildTarget.Android,
             options = BuildOptions.Development
         };
@@ -114,6 +124,16 @@ public static class WalkTrackingValidation
         ui.ShowSummary();
         var canvas = GameObject.Find("Walk Recovery Canvas").GetComponent<Canvas>();
         Capture(canvas, "Logs/walk-summary-preview.png");
+        // Exercise the longer territory result without writing to a real player's storage.
+        var text = canvas.transform.Find("Safe area/Walk details/Details").GetComponent<TMPro.TMP_Text>();
+        text.text = "824 steps  •  612 m\n9.0 minutes\n\nSaved on device\n\nYour recorded route is ready to review on the map.\n\n<b>Your territory</b>\n+9 new tiles claimed! 3 already owned.";
+        Capture(canvas, "Logs/territory-summary-preview.png");
+        text.ForceMeshUpdate();
+        if (text.isTextOverflowing) throw new Exception("Territory summary overflows.");
+        text.text = "824 steps  •  612 m\n9.0 minutes\n\nSummary synced to cloud\n\nParts of this route are missing. Gaps are shown as breaks on the map.\n\n<b>Your territory</b>\nTerritory save pending. Your walk is safe; we'll retry automatically.";
+        Capture(canvas, "Logs/territory-pending-preview.png");
+        text.ForceMeshUpdate();
+        if (text.isTextOverflowing) throw new Exception("Territory pending summary overflows.");
         Set(ui, "summary", false);
         Set(ui, "pending", new StepCountAndGpsManager.SavedWalkSession
         { steps = 824, distanceMeters = 612, endedAtUtc = "2026-09-10T05:30:00Z" });
