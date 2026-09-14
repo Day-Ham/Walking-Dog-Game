@@ -38,6 +38,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
     [Header("Optional UI")]
     [SerializeField] private TextMeshProUGUI statusText;
     [SerializeField] private TextMeshProUGUI territoryClaimText;
+    [SerializeField] private TextMeshProUGUI territoryInstructionsText;
 
     private readonly Vector3[] mapCorners = new Vector3[4];
     private float nextMapSyncTime;
@@ -554,6 +555,11 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
 
     private void UpdateTerritoryClaimText()
     {
+        if (territoryInstructionsText != null)
+        {
+            territoryInstructionsText.text = "Walk a loop of 200 m or more. Enclose at least 2,500 m².\nFinish within 50 m of your start without crossing your route.";
+        }
+
         if (territoryClaimText == null) return;
 
         var manager = StepCountAndGpsManager.Instance;
