@@ -20,6 +20,27 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     private AndroidWalkTracking backgroundTracking;
     private long nativeSequence;
     private string recoveryError = "";
+    private int sessionTerritoryVersion;
+    private TerritoryService territoryService;
+    private float nextTerritoryRetry;
+
+
+    public int territtoryFlag = 0; // for UI Color change with gps text will do this later
+    public TerritoryService Territories
+    {
+        get
+        {
+            var owner = cloudStore?.AuthenticatedUserId ?? "";
+            if (territoryService == null || territoryService.Owner != owner)
+            {
+                territoryService = territoryService ?? new TerritoryService(LocalWalks);
+                territoryService.Refresh(owner);
+                nextTerritoryRetry = Time.realtimeSinceStartup + 30f;
+            }
+            return territoryService;
+        }
+    }
+    public string TerritorySummary => Territories.Summary(currentSessionId, sessionOwnerUserId, HasUnsavedCompletedWalk);
 
     private LocalWalkRepository Checkpoints => checkpoints ??
         (checkpoints = new LocalWalkRepository(Path.Combine(LocalWalks.DirectoryPath, "Active")));
@@ -118,6 +139,41 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     public string LastSavedWalkFilePath => lastSavedWalkFilePath;
     public string SavedWalkDirectoryPath => Path.Combine(Application.persistentDataPath, "WalkSessions");
     public bool IsRouteRecording => recordRoutePoints;
+    // The first accepted route sample is the authoritative walk start. Do not use the
+    // Start Walk button time/location: a walk can begin before GPS has a fresh fix.
+    public bool HasRouteStart => routePoints != null && routePoints.Count > 0;
+    public float DistanceToRouteStartMeters
+    {
+        get
+        {
+            // A stale or inaccurate fix must not tell the player they can close a loop.
+            if (!HasRouteStart || !HasFreshLocation) return -1f;
+            return CalculateDistanceMeters(latitude, longitude, routePoints[0].x, routePoints[0].y);
+        }
+    }
+    public bool IsWithinTerritoryClosureRange => DistanceToRouteStartMeters >= 0f
+        && DistanceToRouteStartMeters <= TerritoryCapture.ClosureMeters;
+    public string TerritoryClosureStatus
+    {
+        get
+        {
+            if (!walkingSessionActive || sessionTerritoryVersion != TerritoryCapture.Version || !HasRouteStart)
+                return "";
+
+            // At the beginning of every walk the player is naturally beside the start.
+            // Wait until the minimum loop distance is covered before showing a return cue.
+            if (sessionDistanceMeters < 200f) return "";
+
+            var distance = DistanceToRouteStartMeters;
+            if (distance < 0f) return "";
+            if (distance <= TerritoryCapture.ClosureMeters)
+                // This only confirms the closing-distance requirement; area, route length,
+                // and non-crossing checks are still validated when the walk is saved.
+                return $"Near your start ({distance:0} m) — within the {TerritoryCapture.ClosureMeters:0} m loop-closing range.";
+
+            return $"Return to your start — {distance - (float)TerritoryCapture.ClosureMeters:0} m to the loop-closing range.";
+        }
+    }
     public int RoutePointCount
     {
         get
@@ -291,6 +347,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         lastSavedWalkFilePath = "";
         completedSessionRecord = null;
         sessionOwnerUserId = cloudStore?.AuthenticatedUserId ?? "";
+        sessionTerritoryVersion = string.IsNullOrWhiteSpace(sessionOwnerUserId) ? 0 : TerritoryCapture.Version;
         lastWalkSaveState = "Walking";
         sessionStatus = "Walking session active.";
 
@@ -397,6 +454,8 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
             var filePath = LocalWalks.Save(record);
             ClearCheckpoint(record.id);
             lastSavedWalkFilePath = filePath;
+            // TerritoryService contains its own errors; territory failures never undo a saved walk.
+            Territories.Refresh(cloudStore?.AuthenticatedUserId ?? "");
             RefreshLastWalkSaveState();
             RequestWalkSync();
             return filePath;
@@ -453,6 +512,12 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     private void Update()
     {
         backgroundTracking?.Pump();
+        var territories = Territories;
+        if (!string.IsNullOrEmpty(territories.Error) && Time.realtimeSinceStartup >= nextTerritoryRetry)
+        {
+            nextTerritoryRetry = Time.realtimeSinceStartup + 30f;
+            territories.Refresh(cloudStore?.AuthenticatedUserId ?? "");
+        }
         if (walkingSessionActive)
         {
             if (hasLocation && UtcSeconds - locationTimestamp > WalkGpsFilter.GapSeconds)
@@ -508,6 +573,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         recordRoutePoints = true;
         currentSessionId = saved.id;
         sessionOwnerUserId = saved.ownerUserId;
+        sessionTerritoryVersion = saved.territoryVersion;
         sessionStartUtc = saved.startedAtUtc;
         sessionEndUtc = "";
         sessionStartTime = Time.realtimeSinceStartup - saved.durationSeconds;
@@ -624,6 +690,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
             finalAccuracyMeters = hasLocation ? horizontalAccuracy : 0f,
             accuracyStatus = accuracyStatus,
             trackingVersion = 1,
+            territoryVersion = sessionTerritoryVersion,
             hasTrackingGaps = gpsFilter.HasGaps,
             nativeSequence = nativeSequence
         };
@@ -751,6 +818,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         public string accuracyStatus;
         // Legacy records remain readable, but have no verified continuity information.
         public int trackingVersion;
+        public int territoryVersion;
         public bool hasTrackingGaps;
         public long nativeSequence;
         public List<WalkRoutePoint> routePoints = new List<WalkRoutePoint>();

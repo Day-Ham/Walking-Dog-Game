@@ -37,10 +37,13 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
 
     [Header("Optional UI")]
     [SerializeField] private TextMeshProUGUI statusText;
+    [SerializeField] private TextMeshProUGUI territoryClaimText;
+    [SerializeField] private TextMeshProUGUI territoryInstructionsText;
 
     private readonly Vector3[] mapCorners = new Vector3[4];
     private float nextMapSyncTime;
     private float nextLayoutSyncTime;
+    private string lastTerritoryClaimMessage;
 #pragma warning restore 0414
     private RectInt lastAndroidRect;
     private bool hasLastAndroidRect;
@@ -64,12 +67,14 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
     {
         nextMapSyncTime = 0f;
         nextLayoutSyncTime = 0f;
+        UpdateTerritoryClaimText();
         SetStatus("Starting OpenFreeMap...");
         CreateOrShowWebView();
     }
 
     private void Update()
     {
+        UpdateTerritoryClaimText();
 #if UNITY_ANDROID && !UNITY_EDITOR
         CreateOrShowWebView();
 
@@ -504,6 +509,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
                 if (HistoricalRouteSamples != null) AddRouteSamples(HistoricalRouteSamples, historyState.routePoints);
                 else AddRoutePoints(HistoricalRoutePoints, historyState.routePoints);
             }
+            AddTerritoryState(historyState);
             return historyState;
         }
 
@@ -534,7 +540,42 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
             AddRouteSamples(manager.RoutePointSamples, state.routePoints);
         }
 
+        AddTerritoryState(state);
         return state;
+    }
+
+    private static void AddTerritoryState(OpenFreeMapState state)
+    {
+        var manager = StepCountAndGpsManager.Instance;
+        var territories = manager != null ? manager.Territories : null;
+        state.territoryRevision = territories?.Revision ?? "";
+        state.territoryTiles = territories == null ? new List<TerritoryCapture.Tile>() : new List<TerritoryCapture.Tile>(territories.Tiles);
+        state.territoryMessage = GetTerritoryMessage(territories);
+    }
+
+    private void UpdateTerritoryClaimText()
+    {
+        if (territoryInstructionsText != null)
+        {
+            territoryInstructionsText.text = "Walk a loop of 200 m or more. Enclose at least 2,500 m².\nFinish within 50 m of your start without crossing your route.";
+        }
+
+        if (territoryClaimText == null) return;
+
+        var manager = StepCountAndGpsManager.Instance;
+        var message = GetTerritoryMessage(manager != null ? manager.Territories : null);
+        if (message == lastTerritoryClaimMessage) return;
+
+        territoryClaimText.text = message;
+        lastTerritoryClaimMessage = message;
+    }
+
+    private static string GetTerritoryMessage(TerritoryService territories)
+    {
+        return territories == null || string.IsNullOrWhiteSpace(territories.Owner)
+            ? "Sign in before walking to claim territory"
+            : !string.IsNullOrEmpty(territories.Error) ? territories.Error
+            : "Your territory · " + territories.Tiles.Count + " tiles";
     }
 
     private void AddRoutePoints(IReadOnlyList<Vector2> sourceRoutePoints, List<OpenFreeMapRoutePoint> destination)
@@ -671,6 +712,9 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         public int zoom;
         public string style;
         public List<OpenFreeMapRoutePoint> routePoints;
+        public List<TerritoryCapture.Tile> territoryTiles;
+        public string territoryRevision;
+        public string territoryMessage;
     }
 
     [Serializable]
