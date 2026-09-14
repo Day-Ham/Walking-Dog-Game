@@ -7,7 +7,9 @@ public static class TerritoryCapture
     public const int Version = 1;
     public const double TileSize = 50;
     public const double Radius = 6378137;
-    public const double ClosureMeters = 25;
+    // A loop may close when its final accepted GPS sample is this close to its first one.
+    // The live walk HUD uses this same value so it never advertises a different range.
+    public const double ClosureMeters = 50;
     public const int MaxTiles = 1000;
 
     [Serializable]
@@ -67,7 +69,7 @@ public static class TerritoryCapture
             if (points.Count == 0 || Length(points[points.Count - 1], point) > 0.01) points.Add(point);
         }
         if (Distance(samples[0], samples[samples.Count - 1]) > ClosureMeters)
-            return Reject(result, "No tiles claimed: finish within 25 m of where you started to close the loop.");
+            return Reject(result, $"No tiles claimed: finish within {ClosureMeters:0} m of where you started to close the loop.");
         if (distance < 200) return Reject(result, "No tiles claimed: walk at least 200 m around a loop.");
         if (points.Count > 1 && Length(points[0], points[points.Count - 1]) < 0.01) points.RemoveAt(points.Count - 1);
         if (points.Count < 3) return Reject(result, "No tiles claimed: the route needs to enclose an area.");

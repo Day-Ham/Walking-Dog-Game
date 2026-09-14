@@ -30,7 +30,7 @@ public sealed class TerritoryTests
     [Test] public void OpenLoopRejectsAndSmallClosingGapIsAccepted()
     {
         var open = Square(); open.routePoints.RemoveAt(open.routePoints.Count - 1);
-        Assert.That(TerritoryCapture.Evaluate(open).message, Does.Contain("within 25 m"));
+        Assert.That(TerritoryCapture.Evaluate(open).message, Does.Contain("within 50 m"));
         var near = Polygon(0, 0, 150, 0, 150, 150, 0, 150, 0, 15);
         Assert.That(TerritoryCapture.Evaluate(near).tiles.Count, Is.EqualTo(9));
     }
