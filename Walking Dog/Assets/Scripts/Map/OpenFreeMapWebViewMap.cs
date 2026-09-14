@@ -37,6 +37,8 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
 
     [Header("Optional UI")]
     [SerializeField] private TextMeshProUGUI statusText;
+    [SerializeField] private TextMeshProUGUI territoryText;
+    [SerializeField] private TextMeshProUGUI territoryInstructionsText;
 
     private readonly Vector3[] mapCorners = new Vector3[4];
     private float nextMapSyncTime;
@@ -377,12 +379,23 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
 
     private void SyncMapStateToWebView()
     {
+        var state = BuildMapState();
+
+        if (territoryText != null)
+        {
+            territoryText.text = state.territoryMessage;
+        }
+
+        if (territoryInstructionsText != null)
+        {
+            territoryInstructionsText.text = "Walk a loop of 200 m or more. Enclose at least 2,500 m².\nFinish within 25 m of your start without crossing your route.";
+        }
+
         if (webView == null)
         {
             return;
         }
 
-        var state = BuildMapState();
         var json = JsonUtility.ToJson(state);
         EvaluateJavaScript($"window.updateDogWalkState && window.updateDogWalkState({json});");
         SetStatus(state.hasLocation ? "OpenFreeMap tracking GPS." : "OpenFreeMap preview location.");

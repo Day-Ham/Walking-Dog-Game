@@ -103,22 +103,6 @@
     .maplibregl-ctrl-top-right {
       display: none;
     }
-    #territory {
-      position: absolute;
-      left: 8px;
-      bottom: 26px;
-      z-index: 4;
-      max-width: calc(100% - 32px);
-      padding: 9px 12px;
-      border-radius: 10px;
-      background: rgba(12, 48, 40, 0.93);
-      color: #e8fff3;
-      font-size: 12px;
-      line-height: 1.4;
-      pointer-events: none;
-    }
-    #territory strong { display: block; font-size: 14px; }
-    #territory span { display: block; margin-top: 3px; color: #c8e1d4; }
   </style>
 </head>
 <body>
@@ -131,7 +115,6 @@
     <div id="raster-attribution">© OpenStreetMap contributors</div>
   </div>
   <div id="status">Loading OpenFreeMap...</div>
-  <div id="territory"><strong id="territory-count">Your territory · 0 tiles</strong><span>Walk a loop of 200 m or more. Enclose at least 2,500 m².<br>Finish within 25 m of your start without crossing your route.</span></div>
 
   <script>
     // Displays a startup error message in the status indicator.
