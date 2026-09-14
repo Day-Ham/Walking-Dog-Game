@@ -707,8 +707,8 @@ RectTransform:
   m_Children:
   - {fileID: 692439212}
   - {fileID: 2000000101}
-  - {fileID: 1686565978507572855}
   - {fileID: 556449817}
+  - {fileID: 1686565978507572855}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -1146,7 +1146,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 55, y: -161}
   m_SizeDelta: {x: 673.9386, y: 287.1167}
   m_Pivot: {x: 0, y: 1}
 --- !u!1 &625094173
@@ -2070,6 +2070,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 937c20a754b5b3e43949679de613d9db, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StepCountAndGpsManager
+  territtoryFlag: 0
   stepsCounted: 0
   latitude: 0
   longitude: 0
@@ -2325,7 +2326,7 @@ RectTransform:
   m_Father: {fileID: 359971482}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
-  m_AnchorMax: {x: 1, y: 1}
+  m_AnchorMax: {x: 1, y: 0.96282893}
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}

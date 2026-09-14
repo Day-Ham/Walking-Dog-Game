@@ -24,6 +24,8 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     private TerritoryService territoryService;
     private float nextTerritoryRetry;
 
+
+    public int territtoryFlag = 0; // for UI Color change with gps text will do this later
     public TerritoryService Territories
     {
         get
