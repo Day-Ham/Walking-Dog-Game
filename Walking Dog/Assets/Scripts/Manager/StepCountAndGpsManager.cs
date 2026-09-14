@@ -20,6 +20,25 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     private AndroidWalkTracking backgroundTracking;
     private long nativeSequence;
     private string recoveryError = "";
+    private int sessionTerritoryVersion;
+    private TerritoryService territoryService;
+    private float nextTerritoryRetry;
+
+    public TerritoryService Territories
+    {
+        get
+        {
+            var owner = cloudStore?.AuthenticatedUserId ?? "";
+            if (territoryService == null || territoryService.Owner != owner)
+            {
+                territoryService = territoryService ?? new TerritoryService(LocalWalks);
+                territoryService.Refresh(owner);
+                nextTerritoryRetry = Time.realtimeSinceStartup + 30f;
+            }
+            return territoryService;
+        }
+    }
+    public string TerritorySummary => Territories.Summary(currentSessionId, sessionOwnerUserId, HasUnsavedCompletedWalk);
 
     private LocalWalkRepository Checkpoints => checkpoints ??
         (checkpoints = new LocalWalkRepository(Path.Combine(LocalWalks.DirectoryPath, "Active")));
@@ -291,6 +310,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         lastSavedWalkFilePath = "";
         completedSessionRecord = null;
         sessionOwnerUserId = cloudStore?.AuthenticatedUserId ?? "";
+        sessionTerritoryVersion = string.IsNullOrWhiteSpace(sessionOwnerUserId) ? 0 : TerritoryCapture.Version;
         lastWalkSaveState = "Walking";
         sessionStatus = "Walking session active.";
 
@@ -397,6 +417,8 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
             var filePath = LocalWalks.Save(record);
             ClearCheckpoint(record.id);
             lastSavedWalkFilePath = filePath;
+            // TerritoryService contains its own errors; territory failures never undo a saved walk.
+            Territories.Refresh(cloudStore?.AuthenticatedUserId ?? "");
             RefreshLastWalkSaveState();
             RequestWalkSync();
             return filePath;
@@ -453,6 +475,12 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     private void Update()
     {
         backgroundTracking?.Pump();
+        var territories = Territories;
+        if (!string.IsNullOrEmpty(territories.Error) && Time.realtimeSinceStartup >= nextTerritoryRetry)
+        {
+            nextTerritoryRetry = Time.realtimeSinceStartup + 30f;
+            territories.Refresh(cloudStore?.AuthenticatedUserId ?? "");
+        }
         if (walkingSessionActive)
         {
             if (hasLocation && UtcSeconds - locationTimestamp > WalkGpsFilter.GapSeconds)
@@ -508,6 +536,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         recordRoutePoints = true;
         currentSessionId = saved.id;
         sessionOwnerUserId = saved.ownerUserId;
+        sessionTerritoryVersion = saved.territoryVersion;
         sessionStartUtc = saved.startedAtUtc;
         sessionEndUtc = "";
         sessionStartTime = Time.realtimeSinceStartup - saved.durationSeconds;
@@ -624,6 +653,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
             finalAccuracyMeters = hasLocation ? horizontalAccuracy : 0f,
             accuracyStatus = accuracyStatus,
             trackingVersion = 1,
+            territoryVersion = sessionTerritoryVersion,
             hasTrackingGaps = gpsFilter.HasGaps,
             nativeSequence = nativeSequence
         };
@@ -751,6 +781,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         public string accuracyStatus;
         // Legacy records remain readable, but have no verified continuity information.
         public int trackingVersion;
+        public int territoryVersion;
         public bool hasTrackingGaps;
         public long nativeSequence;
         public List<WalkRoutePoint> routePoints = new List<WalkRoutePoint>();

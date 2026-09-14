@@ -42,7 +42,8 @@
       -webkit-user-drag: none;
     }
 
-    #raster-route {
+    #raster-route,
+    #raster-territory {
       position: absolute;
       inset: 0;
       z-index: 2;
@@ -102,17 +103,35 @@
     .maplibregl-ctrl-top-right {
       display: none;
     }
+    #territory {
+      position: absolute;
+      left: 8px;
+      bottom: 26px;
+      z-index: 4;
+      max-width: calc(100% - 32px);
+      padding: 9px 12px;
+      border-radius: 10px;
+      background: rgba(12, 48, 40, 0.93);
+      color: #e8fff3;
+      font-size: 12px;
+      line-height: 1.4;
+      pointer-events: none;
+    }
+    #territory strong { display: block; font-size: 14px; }
+    #territory span { display: block; margin-top: 3px; color: #c8e1d4; }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <div id="raster-map">
     <div id="raster-tiles"></div>
+    <svg id="raster-territory" aria-hidden="true"></svg>
     <svg id="raster-route" aria-hidden="true"></svg>
     <div class="current-location-marker raster-current-location-marker"></div>
     <div id="raster-attribution">© OpenStreetMap contributors</div>
   </div>
   <div id="status">Loading OpenFreeMap...</div>
+  <div id="territory"><strong id="territory-count">Your territory · 0 tiles</strong><span>Walk a loop of 200 m or more. Enclose at least 2,500 m².<br>Finish within 25 m of your start without crossing your route.</span></div>
 
   <script>
     // Displays a startup error message in the status indicator.
@@ -157,6 +176,9 @@
       var lastMapError = "";
       var rasterTileSize = 256;
       var rasterTileTemplate = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+      var territoryCacheKey = null;
+      var territoryCache = { type: "FeatureCollection", features: [] };
+      var vectorTerritoryRevision = null;
 
       // Sets the text shown in the status element.
       function setStatus(message) {
@@ -418,6 +440,7 @@
           lastRasterKey = key;
         }
 
+        renderRasterTerritory(layout, zoom);
         renderRasterRoute(layout, zoom);
         setReadyStatus();
       }
@@ -508,7 +531,7 @@
 
           var detailFeatures = map.queryRenderedFeatures([[0, 0], [width, height]])
             .filter(function (feature) {
-              if (!feature || !feature.layer || feature.layer.id === "walk-route-line") {
+              if (!feature || !feature.layer || feature.layer.id.indexOf("walk-route") === 0 || feature.layer.id.indexOf("owned-territory") === 0) {
                 return false;
               }
 
@@ -582,6 +605,63 @@
           .filter(function (point) {
             return Number.isFinite(point[0]) && Number.isFinite(point[1]);
           });
+      }
+
+      function territoryGeometry(nextState) {
+        var tiles = Array.isArray(nextState.territoryTiles) ? nextState.territoryTiles : [];
+        var key = nextState.territoryRevision || JSON.stringify(tiles);
+        if (key === territoryCacheKey) return territoryCache;
+        var features = [];
+        tiles.forEach(function (tile) {
+          if (!tile || !Number.isInteger(tile.x) || !Number.isInteger(tile.y) || Math.abs(tile.x) > 400751 || Math.abs(tile.y) > 258646) return;
+          function corner(x, y) {
+            return [x * 50 / 6378137 * 180 / Math.PI, (2 * Math.atan(Math.exp(y * 50 / 6378137)) - Math.PI / 2) * 180 / Math.PI];
+          }
+          var ring = [corner(tile.x, tile.y), corner(tile.x + 1, tile.y), corner(tile.x + 1, tile.y + 1), corner(tile.x, tile.y + 1), corner(tile.x, tile.y)];
+          features.push({ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [ring] } });
+        });
+        territoryCacheKey = key;
+        territoryCache = { type: "FeatureCollection", features: features };
+        return territoryCache;
+      }
+
+      function renderRasterTerritory(layout, zoom) {
+        var element = document.getElementById("raster-territory");
+        if (!element) return;
+        element.setAttribute("viewBox", "0 0 " + layout.width + " " + layout.height);
+        element.setAttribute("width", String(layout.width));
+        element.setAttribute("height", String(layout.height));
+        element.textContent = "";
+        territoryGeometry(state).features.forEach(function (feature) {
+          var pixels = feature.geometry.coordinates[0].map(function (coordinate) {
+            var point = lonLatToWorldPixels(coordinate[0], coordinate[1], zoom);
+            return { x: point.x - layout.topLeftX, y: point.y - layout.topLeftY };
+          });
+          if (pixels.every(function (p) { return p.x < 0; }) || pixels.every(function (p) { return p.x > layout.width; }) ||
+              pixels.every(function (p) { return p.y < 0; }) || pixels.every(function (p) { return p.y > layout.height; })) return;
+          var polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+          polygon.setAttribute("points", pixels.map(function (p) { return p.x.toFixed(1) + "," + p.y.toFixed(1); }).join(" "));
+          polygon.setAttribute("fill", "#20b77a");
+          polygon.setAttribute("fill-opacity", "0.28");
+          polygon.setAttribute("stroke", "#16855d");
+          polygon.setAttribute("stroke-width", "1.5");
+          element.appendChild(polygon);
+        });
+      }
+
+      function ensureTerritoryLayer() {
+        if (!map || !isMapLoaded) return;
+        var data = territoryGeometry(state);
+        if (!map.getSource("owned-territory")) {
+          map.addSource("owned-territory", { type: "geojson", data: data });
+          vectorTerritoryRevision = territoryCacheKey;
+        } else if (vectorTerritoryRevision !== territoryCacheKey) {
+          map.getSource("owned-territory").setData(data);
+          vectorTerritoryRevision = territoryCacheKey;
+        }
+        var before = map.getLayer("walk-route-casing") ? "walk-route-casing" : undefined;
+        if (!map.getLayer("owned-territory-fill")) map.addLayer({ id: "owned-territory-fill", type: "fill", source: "owned-territory", paint: { "fill-color": "#20b77a", "fill-opacity": 0.28 } }, before);
+        if (!map.getLayer("owned-territory-border")) map.addLayer({ id: "owned-territory-border", type: "line", source: "owned-territory", paint: { "line-color": "#16855d", "line-width": 1.5 } }, before);
       }
 
       // Splits route points into line segments that can be rendered as polylines.
@@ -687,6 +767,14 @@
 
       //territory update
       function updateTerritory(routePoints) {
+
+        // Saved tiles are authoritative when supplied by the app. Keep the older
+        // loop preview available for callers that do not yet provide tile state.
+        if (Array.isArray(state.territoryTiles)) {
+          var previewSource = map.getSource("player-territory");
+          if (previewSource) previewSource.setData({ type: "FeatureCollection", features: [] });
+          return;
+        }
 
         if (completedLoop(routePoints)) {
            createTerritory(routePoints);
@@ -843,6 +931,8 @@
       // Applies the next map state, updates camera and route data, and refreshes readiness.
       function applyState(nextState, animate) {
         state = nextState || state;
+        var territoryLabel = document.getElementById("territory-count");
+        if (territoryLabel) territoryLabel.textContent = state.territoryMessage || "Your territory · 0 tiles";
 
         if (isRasterFallbackActive) {
           renderRasterFallback();
@@ -862,6 +952,7 @@
         }
         // gesture
         applyGestureState(state);
+        ensureTerritoryLayer();
         ensureRouteLayer();
 
         var center = toCenter(state);
