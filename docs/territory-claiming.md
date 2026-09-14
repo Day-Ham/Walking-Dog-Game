@@ -1,34 +1,39 @@
-# Personal territory claiming, version 1
+# Loop-shaped territory claiming (version 2)
 
-New walks started while signed in can claim tiles after Stop Walk successfully saves the completed walk. The live and history maps show the current player's green owned tiles beneath the orange route. The summary reports newly claimed tiles, already owned tiles, or a specific reason for rejection. Ordinary walks still save even when they do not qualify.
+A qualifying completed walk claims the full area enclosed by its recorded GPS trail. The green boundary follows the route instead of snapping to grid cells. Live and history maps show the current player's combined ownership, and the summary reports newly claimed square metres.
 
-## Rules
+## Rules and geometry
 
-- Record a continuous GPS route with accuracy of 10 metres or better. Missing segments, invalid timestamps, and implausible jumps invalidate the claim.
-- Walk at least 200 metres. Finish within 25 metres of the first recorded location.
-- Enclose at least 2,500 square metres with a simple loop. Crossing, touching, or retracing non-adjacent route edges is rejected; this first version does not split complex routes into smaller loops.
-- Claim each grid tile whose centre lies inside the closed route. A tile can extend slightly beyond the walked boundary.
-- The stable grid uses 50-metre Web Mercator cells, approximately 48 metres wide around Manila. Ground dimensions shrink at higher latitudes. This is a gameplay grid, not property ownership or a cadastral map.
-- Processing is bounded to 6,000 GPS samples, 5 km projected width/height, 10,000 candidate cells and 1,000 enclosed tiles per walk. Latitudes beyond ±75° and routes crossing the date line are unsupported.
+- Start a new walk while signed in; save it with Stop Walk.
+- Record a continuous GPS route with accuracy of 10 metres or better, valid increasing timestamps, and no implausible jumps.
+- Walk at least 200 metres, enclose at least 2,500 m², and finish within 25 metres of the first recorded location. The short closing gap is connected by a straight boundary.
+- Crossing, touching or retracing non-adjacent edges is rejected. Complex figure-eight routes are not split into multiple claims.
+- Claims use the full saved route, before display downsampling. Geometry operations use centimetre-rounded Web Mercator coordinates. Displayed area is an approximate geographic surface area, adjusted for latitude.
+- Clipper2 2.0.1 performs polygon union and difference. Overlapping land counts once, adjacent claims merge, and unclaimed holes remain empty in both vector and raster rendering.
+- Processing is bounded to 6,000 GPS samples, 5 km projected width/height, a 10,000-cell bounding-box equivalent and 2.5 million projected square metres per loop. Latitudes beyond ±75° and date-line crossings are unsupported.
 
-## Persistence and account behavior
+Clipper2 source and its Boost Software License are vendored under `Assets/Scripts/ThirdParty/Clipper2`. Official source: https://github.com/AngusJohnson/Clipper2/tree/Clipper2_2.0.1/CSharp/Clipper2Lib
 
-`SavedWalkSession.territoryVersion` marks walks begun with this feature while signed in. Legacy walks, unsigned walks later imported into an account, and unfinished checkpoints are not automatically awarded. Recovery preserves the marker, but a recovered route with tracking gaps cannot claim.
+## Existing claims and persistence
 
-`TerritoryService` processes completed local walks after saving and on account initialization. It retries failed territory writes every 30 seconds. A single per-owner ledger atomically commits both new ownership and the processed walk ID. Repeated saves return the original receipt. Overlapping walks only add unowned tiles. After a crash between walk and territory commits, startup replays missing claims from saved walks.
+Version 1 tile ledgers automatically upgrade atomically to version 2 polygon ledgers. If an accepted tile claim still has its locally saved route, the entire validated loop becomes the claim's shape. If the route is unavailable, its existing tile footprint is preserved as a polygon. Previously rejected claims stay rejected. Upgrade retains a backup and does not reset ownership.
 
-Ledgers live under `Application.persistentDataPath/WalkSessions/Territories`, with filenames derived from SHA-256 of the authenticated UID. Atomic replacement preserves a backup; corrupt primary files can recover the previous ledger and replay missing saved walks. If both copies are unreadable, or a newer ledger version exists, the app preserves them and reports territory saving as pending. It does not reset ownership silently. Signing out or switching accounts clears the previous player's map overlay.
+Each player's ledger stores processed walk IDs, newly added polygon regions, and area receipts together. A retry returns the original receipt without adding ownership. A crash between saving the walk and committing territory is recovered by replaying eligible completed local walks at startup. Failed writes retry every 30 seconds. Signing out or changing accounts clears the previous player's overlay.
 
-Territories are local to this device. Firebase still uploads only the existing walk summary fields. Territory ownership does not sync across devices, compete with other players, expire, or award extra XP/coins. Clearing app data removes local territories. Server-authoritative claims and spatial queries are future work; the prototype sends the owner's compact tile list to the map and caches its geometry by revision.
+New walks use `SavedWalkSession.territoryVersion = 2`. Pending version 1 walks remain eligible; walks predating territory support and unsigned walks later imported into an account do not receive automatic claims. Recovered walks retain their version marker, but tracking gaps invalidate the loop.
 
-## Validation
+Ledgers remain under `Application.persistentDataPath/WalkSessions/Territories`, with owner filenames hashed using SHA-256. Corrupt primary files can recover a backup and replay saved walks. If both copies fail validation or the format is newer than this app supports, files are preserved and the UI reports territory saving as pending.
 
-- Unity EditMode: `TerritoryTests` covers simple/concave loops, closure, crossings/retracing, minimum sizes, gaps, invalid GPS, size limits, stable tiles, repeated/overlapping claims, owner isolation, backup recovery, write failure retries, startup replay, sign-out and the Stop Walk integration. Existing tracking, persistence and Firebase adapter tests remain in the suite.
-- `node scripts/test-map-routes.cjs` checks route breaks plus territory projection, cached geometry, vector/raster rendering, style reload and account clearing.
-- `node scripts/preview-territory-map.cjs` creates a synthetic map preview in the ignored `Walking Dog/Logs` directory. Open it with `?raster` to exercise the fallback.
-- Unity editor entry point `WalkTrackingValidation.CaptureDialogs` renders summary and recovery previews, including successful and pending territory messages.
-- `WalkTrackingValidation.BuildTerritoryAndroid` creates `Walking Dog/Builds/WalkingDog-territories.apk`.
+Territories are personal and local to this device. Firebase uploads only the existing walk summary fields. No multiplayer ownership, territory cloud sync, expiration, or extra XP/coins are included. Clearing app data removes local territories.
 
-## Phone acceptance check
+## Validation and build
 
-Install the new APK over the current app, sign in, wait for accurate GPS, then walk a simple loop around an accessible area. Walk at least 200 m, enclose at least 2,500 m², return within 25 m of the starting fix, and stop. Expect a claim receipt and green tiles on the map. Repeat the loop: it should report already owned tiles. Reopen the app to check persistence. An open route or a route with GPS gaps should save normally with an explanation and no claim. The previous tracking version's screen-lock test passed on the user's Android phone; this new territory build still needs that field acceptance check.
+- Unity EditMode tests cover loop geometry, non-grid boundaries, union/difference, holes, overlaps, migration with/without saved routes, duplicate/restarted saves, account isolation, backup recovery, failed commits, and Stop Walk integration, alongside existing tracking/cloud tests.
+- `node scripts/test-map-routes.cjs` checks route breaks, polygon projection, caching, vector/raster holes, account clearing, style reload, and compatibility with the earlier loop-preview helper.
+- `node scripts/preview-territory-map.cjs` creates a synthetic map fixture in the ignored `Walking Dog/Logs` folder. Add `?raster` when opening it manually to exercise the fallback. Automated browser access to the local preview was blocked by browser URL policy.
+- `WalkTrackingValidation.CaptureDialogs` renders success and pending summary examples.
+- `WalkTrackingValidation.BuildTerritoryAndroid` creates `Walking Dog/Builds/WalkingDog-loop-territories.apk`.
+
+## Phone check
+
+Install the new build over the existing app, keeping its data. Sign in and check that previously claimed areas follow their saved loop where that route remains available. Record a fresh simple loop meeting the existing distance/area/GPS rules. After Stop Walk, expect a filled loop boundary and a receipt in m². Repeating or partly overlapping a loop should only add previously unowned area. Reopen the app to check persistence. GPS gaps and open routes still save normally without a territory award.

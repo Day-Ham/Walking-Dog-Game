@@ -131,7 +131,7 @@
     <div id="raster-attribution">© OpenStreetMap contributors</div>
   </div>
   <div id="status">Loading OpenFreeMap...</div>
-  <div id="territory"><strong id="territory-count">Your territory · 0 tiles</strong><span>Walk a loop of 200 m or more. Enclose at least 2,500 m².<br>Finish within 25 m of your start without crossing your route.</span></div>
+  <div id="territory"><strong id="territory-count">Your territory · 0 m²</strong><span>Claim the whole area inside your loop.<br>Walk 200 m+, enclose 2,500 m²+, finish within 25 m of your start.</span></div>
 
   <script>
     // Displays a startup error message in the status indicator.
@@ -608,17 +608,24 @@
       }
 
       function territoryGeometry(nextState) {
-        var tiles = Array.isArray(nextState.territoryTiles) ? nextState.territoryTiles : [];
-        var key = nextState.territoryRevision || JSON.stringify(tiles);
+        var polygons = Array.isArray(nextState.territoryPolygons) ? nextState.territoryPolygons : [];
+        var key = nextState.territoryRevision || JSON.stringify(polygons);
         if (key === territoryCacheKey) return territoryCache;
         var features = [];
-        tiles.forEach(function (tile) {
-          if (!tile || !Number.isInteger(tile.x) || !Number.isInteger(tile.y) || Math.abs(tile.x) > 400751 || Math.abs(tile.y) > 258646) return;
-          function corner(x, y) {
-            return [x * 50 / 6378137 * 180 / Math.PI, (2 * Math.atan(Math.exp(y * 50 / 6378137)) - Math.PI / 2) * 180 / Math.PI];
-          }
-          var ring = [corner(tile.x, tile.y), corner(tile.x + 1, tile.y), corner(tile.x + 1, tile.y + 1), corner(tile.x, tile.y + 1), corner(tile.x, tile.y)];
-          features.push({ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [ring] } });
+        polygons.forEach(function (polygon) {
+          if (!polygon || !Array.isArray(polygon.rings) || !polygon.rings.length) return;
+          var rings = [], valid = true;
+          polygon.rings.forEach(function (ring) {
+            if (!ring || !Array.isArray(ring.points) || ring.points.length < 3) { valid = false; return; }
+            var coordinates = [];
+            ring.points.forEach(function (p) {
+              if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y) || Math.abs(p.x) > 20037600 || Math.abs(p.y) > 12932400) { valid = false; return; }
+              coordinates.push([p.x / 6378137 * 180 / Math.PI, (2 * Math.atan(Math.exp(p.y / 6378137)) - Math.PI / 2) * 180 / Math.PI]);
+            });
+            if (coordinates.length) coordinates.push(coordinates[0]);
+            rings.push(coordinates);
+          });
+          if (valid) features.push({ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: rings } });
         });
         territoryCacheKey = key;
         territoryCache = { type: "FeatureCollection", features: features };
@@ -633,14 +640,16 @@
         element.setAttribute("height", String(layout.height));
         element.textContent = "";
         territoryGeometry(state).features.forEach(function (feature) {
-          var pixels = feature.geometry.coordinates[0].map(function (coordinate) {
+          var rings = feature.geometry.coordinates.map(function (ring) { return ring.map(function (coordinate) {
             var point = lonLatToWorldPixels(coordinate[0], coordinate[1], zoom);
             return { x: point.x - layout.topLeftX, y: point.y - layout.topLeftY };
-          });
+          }); });
+          var pixels = rings[0];
           if (pixels.every(function (p) { return p.x < 0; }) || pixels.every(function (p) { return p.x > layout.width; }) ||
               pixels.every(function (p) { return p.y < 0; }) || pixels.every(function (p) { return p.y > layout.height; })) return;
-          var polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-          polygon.setAttribute("points", pixels.map(function (p) { return p.x.toFixed(1) + "," + p.y.toFixed(1); }).join(" "));
+          var polygon = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          polygon.setAttribute("d", rings.map(function (ring) { return "M" + ring.map(function (p) { return p.x.toFixed(1) + "," + p.y.toFixed(1); }).join(" L") + " Z"; }).join(" "));
+          polygon.setAttribute("fill-rule", "evenodd");
           polygon.setAttribute("fill", "#20b77a");
           polygon.setAttribute("fill-opacity", "0.28");
           polygon.setAttribute("stroke", "#16855d");
@@ -770,7 +779,7 @@
 
         // Saved tiles are authoritative when supplied by the app. Keep the older
         // loop preview available for callers that do not yet provide tile state.
-        if (Array.isArray(state.territoryTiles)) {
+        if (Array.isArray(state.territoryPolygons) || Array.isArray(state.territoryTiles)) {
           var previewSource = map.getSource("player-territory");
           if (previewSource) previewSource.setData({ type: "FeatureCollection", features: [] });
           return;
@@ -932,7 +941,7 @@
       function applyState(nextState, animate) {
         state = nextState || state;
         var territoryLabel = document.getElementById("territory-count");
-        if (territoryLabel) territoryLabel.textContent = state.territoryMessage || "Your territory · 0 tiles";
+        if (territoryLabel) territoryLabel.textContent = state.territoryMessage || "Your territory · 0 m²";
 
         if (isRasterFallbackActive) {
           renderRasterFallback();

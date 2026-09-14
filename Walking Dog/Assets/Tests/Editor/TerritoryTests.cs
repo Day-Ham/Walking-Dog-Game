@@ -74,22 +74,22 @@ public sealed class TerritoryTests
     {
         var repository = new LocalTerritoryRepository(directory, "alice");
         var first = Square(); var award = repository.Apply(first);
-        Assert.That(award.newTiles.Count, Is.EqualTo(9));
+        Assert.That(award.newAreaSquareMeters, Is.InRange(20000d, 22000d));
         Assert.That(repository.Apply(first), Is.SameAs(award));
         repository = new LocalTerritoryRepository(directory, "alice");
-        Assert.That(repository.Apply(first).newTiles.Count, Is.EqualTo(9), "A retry preserves the original receipt, without adding tiles.");
-        Assert.That(repository.Tiles.Count, Is.EqualTo(9));
-        Assert.That(repository.Apply(Square()).newTiles.Count, Is.Zero);
+        Assert.That(repository.Apply(first).newAreaSquareMeters, Is.EqualTo(award.newAreaSquareMeters), "A retry preserves the original receipt, without adding tiles.");
+        Assert.That(repository.AreaSquareMeters, Is.InRange(20000d, 22000d));
+        Assert.That(repository.Apply(Square()).newAreaSquareMeters, Is.Zero);
         var overlapping = Polygon(100, 0, 250, 0, 250, 150, 100, 150, 100, 0);
-        Assert.That(repository.Apply(overlapping).newTiles.Count, Is.EqualTo(6));
-        Assert.That(new LocalTerritoryRepository(directory, "alice").Tiles.Count, Is.EqualTo(15));
+        Assert.That(repository.Apply(overlapping).newAreaSquareMeters, Is.InRange(13000d, 15000d));
+        Assert.That(new LocalTerritoryRepository(directory, "alice").AreaSquareMeters, Is.InRange(34000d, 36000d));
     }
 
     [Test] public void OwnersAreIsolatedAndIdsCannotChangePaths()
     {
         var alice = new LocalTerritoryRepository(directory, "alice"); alice.Apply(Square());
         var bob = new LocalTerritoryRepository(directory, "bob");
-        Assert.That(bob.Tiles.Count, Is.Zero);
+        Assert.That(bob.AreaSquareMeters, Is.Zero);
         Assert.Throws<ArgumentException>(() => bob.Apply(Square()));
         var unusual = new LocalTerritoryRepository(directory, "../../unusual-owner");
         Assert.That(Path.GetDirectoryName(unusual.FilePath), Is.EqualTo(directory));
@@ -105,8 +105,8 @@ public sealed class TerritoryTests
         File.WriteAllText(path, "truncated");
         service = new TerritoryService(walks); service.Refresh("alice");
         Assert.That(service.Error, Is.Empty);
-        Assert.That(service.Tiles.Count, Is.EqualTo(15));
-        Assert.That(new LocalTerritoryRepository(Path.Combine(directory, "Territories"), "alice").Tiles.Count, Is.EqualTo(15));
+        Assert.That(service.AreaSquareMeters, Is.InRange(34000d, 36000d));
+        Assert.That(new LocalTerritoryRepository(Path.Combine(directory, "Territories"), "alice").AreaSquareMeters, Is.InRange(34000d, 36000d));
     }
 
     [Test] public void FailedCommitDoesNotAwardInMemoryAndRetryWorks()
@@ -114,9 +114,9 @@ public sealed class TerritoryTests
         var repository = new LocalTerritoryRepository(directory, "alice");
         Directory.CreateDirectory(repository.FilePath + ".tmp"); // Deterministic write failure.
         Assert.Catch(() => repository.Apply(Square()));
-        Assert.That(repository.Tiles.Count, Is.Zero);
+        Assert.That(repository.AreaSquareMeters, Is.Zero);
         Directory.Delete(repository.FilePath + ".tmp");
-        Assert.That(repository.Apply(Square()).newTiles.Count, Is.EqualTo(9));
+        Assert.That(repository.Apply(Square()).newAreaSquareMeters, Is.InRange(20000d, 22000d));
     }
 
     [Test] public void CorruptOrFutureLedgersArePreserved()
@@ -125,7 +125,7 @@ public sealed class TerritoryTests
         File.WriteAllText(repository.FilePath, "broken-primary"); File.WriteAllText(repository.FilePath + ".bak", "broken-backup");
         Assert.Catch(() => new LocalTerritoryRepository(directory, "alice"));
         Assert.That(File.ReadAllText(repository.FilePath), Is.EqualTo("broken-primary"));
-        File.WriteAllText(repository.FilePath, "{\"version\":2,\"owner\":\"alice\",\"claims\":[]}");
+        File.WriteAllText(repository.FilePath, "{\"version\":3,\"owner\":\"alice\",\"claims\":[]}");
         Assert.Throws<NotSupportedException>(() => new LocalTerritoryRepository(directory, "alice"));
     }
 
@@ -136,18 +136,80 @@ public sealed class TerritoryTests
         var other = Square(); other.ownerUserId = "bob"; walks.Save(other);
         var drafts = new LocalWalkRepository(Path.Combine(directory, "Active")); drafts.SaveCheckpoint(Square());
         var service = new TerritoryService(walks); service.Refresh("alice");
-        Assert.That(service.Tiles.Count, Is.Zero);
+        Assert.That(service.AreaSquareMeters, Is.Zero);
         var walk = Square(); walks.Save(walk); // Simulates shutdown between completed walk and claim commit.
         service = new TerritoryService(walks); service.Refresh("alice");
-        Assert.That(service.Tiles.Count, Is.EqualTo(9));
-        Assert.That(service.Summary(walk.id, "alice", false), Does.Contain("+9"));
+        Assert.That(service.AreaSquareMeters, Is.InRange(20000d, 22000d));
+        Assert.That(service.Summary(walk.id, "alice", false), Does.Contain("m²"));
         var revision = service.Revision; service.Refresh("");
-        Assert.That(service.Tiles.Count, Is.Zero); Assert.That(service.Revision, Is.Not.EqualTo(revision));
-        service.Refresh("bob"); Assert.That(service.Tiles.Count, Is.EqualTo(9));
+        Assert.That(service.AreaSquareMeters, Is.Zero); Assert.That(service.Revision, Is.Not.EqualTo(revision));
+        service.Refresh("bob"); Assert.That(service.AreaSquareMeters, Is.InRange(20000d, 22000d));
         Assert.That(service.Summary(walk.id, "alice", false), Does.Contain("Sign in"));
     }
 
     private static Walk Square() => Polygon(0, 0, 150, 0, 150, 150, 0, 150, 0, 0);
+
+    [Test] public void LoopClaimFollowsActualVerticesWithoutSnappingToTiles()
+    {
+        var walk = Polygon(0, 0, 150, 0, 110, 150, 0, 100, 0, 0);
+        var result = TerritoryCapture.EvaluateLoop(walk);
+        Assert.That(result.Accepted, Is.True, result.message);
+        Assert.That(result.tiles, Is.Empty);
+        Assert.That(result.polygons[0].rings[0].points.Count, Is.EqualTo(4));
+        var repository = new LocalTerritoryRepository(directory, "alice"); repository.Apply(walk);
+        Assert.That(repository.Polygons.Count, Is.EqualTo(1));
+        Assert.That(repository.Polygons[0].rings[0].points.Count, Is.EqualTo(4));
+        Assert.That(repository.AreaSquareMeters, Is.EqualTo(TerritoryGeometry.Area(result.polygons)).Within(2));
+    }
+
+    [Test] public void UnionAndDifferencePreserveHolesAndDoNotDoubleCountNestedLoops()
+    {
+        var outer = TerritoryCapture.EvaluateLoop(Polygon(0, 0, 300, 0, 300, 300, 0, 300, 0, 0)).polygons;
+        var inner = TerritoryCapture.EvaluateLoop(Polygon(50, 50, 200, 50, 200, 200, 50, 200, 50, 50)).polygons;
+        var difference = TerritoryGeometry.Difference(outer, inner);
+        Assert.That(difference.Count, Is.EqualTo(1));
+        Assert.That(difference[0].rings.Count, Is.EqualTo(2), "Unowned interior must remain a hole.");
+        Assert.That(TerritoryGeometry.Area(difference), Is.EqualTo(TerritoryGeometry.Area(outer) - TerritoryGeometry.Area(inner)).Within(2));
+        var restored = TerritoryGeometry.Union(difference, inner);
+        Assert.That(restored[0].rings.Count, Is.EqualTo(1));
+        Assert.That(TerritoryGeometry.Area(restored), Is.EqualTo(TerritoryGeometry.Area(outer)).Within(2));
+        Assert.That(TerritoryGeometry.Area(TerritoryGeometry.Union(outer, inner)), Is.EqualTo(TerritoryGeometry.Area(outer)).Within(2));
+    }
+
+    [Serializable] private sealed class LegacyLedger
+    {
+        public int version = 1;
+        public string owner = "alice";
+        public List<LocalTerritoryRepository.Claim> claims = new List<LocalTerritoryRepository.Claim>();
+    }
+
+    [Test] public void OldTileClaimUpgradesFromSavedLoopOnceAndKeepsBackup()
+    {
+        var walks = new LocalWalkRepository(directory); var walk = Square(); walk.territoryVersion = 1; walks.Save(walk);
+        var path = new LocalTerritoryRepository(directory, "alice").FilePath;
+        var legacy = new LegacyLedger();
+        legacy.claims.Add(new LocalTerritoryRepository.Claim { walkId = walk.id, message = "+2 tiles", enclosedTiles = 2,
+            newTiles = new List<TerritoryCapture.Tile> { new TerritoryCapture.Tile(269360,32800), new TerritoryCapture.Tile(269361,32800) } });
+        File.WriteAllText(path, JsonUtility.ToJson(legacy));
+        var repository = new LocalTerritoryRepository(directory, "alice", walks.Find);
+        Assert.That(repository.AreaSquareMeters, Is.InRange(20000d, 22000d));
+        Assert.That(repository.Find(walk.id).message, Does.Contain("m²"));
+        Assert.That(File.ReadAllText(path + ".bak"), Does.Contain("\"version\":1"));
+        Assert.That(new LocalTerritoryRepository(directory, "alice", walks.Find).AreaSquareMeters, Is.EqualTo(repository.AreaSquareMeters).Within(0.1));
+        repository.Apply(walk);
+        Assert.That(repository.Revision, Is.EqualTo(1));
+    }
+
+    [Test] public void OldClaimWithoutSavedRouteRetainsItsExistingFootprint()
+    {
+        Directory.CreateDirectory(directory);
+        var path = new LocalTerritoryRepository(directory, "alice").FilePath;
+        var legacy = new LegacyLedger();
+        legacy.claims.Add(new LocalTerritoryRepository.Claim { walkId = "missing-route", message = "+1 tile", enclosedTiles = 1,
+            newTiles = new List<TerritoryCapture.Tile> { new TerritoryCapture.Tile(269360,32800) } });
+        File.WriteAllText(path, JsonUtility.ToJson(legacy));
+        Assert.That(new LocalTerritoryRepository(directory, "alice").AreaSquareMeters, Is.InRange(2300d, 2400d));
+    }
 
     [Test] public void TerritoryWriteFailureKeepsCompletedWalkAndRetriesLater()
     {
@@ -155,9 +217,9 @@ public sealed class TerritoryTests
         File.WriteAllText(Path.Combine(directory, "Territories"), "blocked");
         var service = new TerritoryService(walks); service.Refresh("alice");
         Assert.That(service.Error, Does.Contain("pending"));
-        Assert.That(service.Tiles.Count, Is.Zero); Assert.That(walks.Find(walk.id), Is.Not.Null);
+        Assert.That(service.AreaSquareMeters, Is.Zero); Assert.That(walks.Find(walk.id), Is.Not.Null);
         File.Delete(Path.Combine(directory, "Territories")); service.Refresh("alice");
-        Assert.That(service.Error, Is.Empty); Assert.That(service.Tiles.Count, Is.EqualTo(9));
+        Assert.That(service.Error, Is.Empty); Assert.That(service.AreaSquareMeters, Is.InRange(20000d, 22000d));
     }
 
     [Test] public void StoppingWalkCommitsClaimAndRepeatedSavePreservesReceipt()
@@ -177,13 +239,13 @@ public sealed class TerritoryTests
             Set(manager, "sessionDistanceMeters", 600f);
             manager.EndWalkingSession();
             Assert.That(manager.HasUnsavedCompletedWalk, Is.False);
-            Assert.That(manager.Territories.Tiles.Count, Is.EqualTo(9));
-            Assert.That(manager.TerritorySummary, Does.Contain("+9"));
+            Assert.That(manager.Territories.AreaSquareMeters, Is.InRange(20000d, 22000d));
+            Assert.That(manager.TerritorySummary, Does.Contain("m²"));
             manager.SaveCurrentWalkingSession();
-            Assert.That(manager.Territories.Tiles.Count, Is.EqualTo(9));
-            Assert.That(manager.LocalWalks.Find(manager.CurrentSessionId).territoryVersion, Is.EqualTo(1));
+            Assert.That(manager.Territories.AreaSquareMeters, Is.InRange(20000d, 22000d));
+            Assert.That(manager.LocalWalks.Find(manager.CurrentSessionId).territoryVersion, Is.EqualTo(2));
             manager.ConfigureCloudSync(null);
-            Assert.That(manager.Territories.Tiles.Count, Is.Zero);
+            Assert.That(manager.Territories.AreaSquareMeters, Is.Zero);
             manager.BeginWalkingSession(); manager.EndWalkingSession();
             Assert.That(manager.LocalWalks.Find(manager.CurrentSessionId).territoryVersion, Is.Zero, "Unsigned walks must not later be imported as eligible claims.");
         }
@@ -198,7 +260,7 @@ public sealed class TerritoryTests
     private static void Set(object target, string field, object value) => target.GetType().GetField(field, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(target, value);
     private static Walk Polygon(params double[] coordinates)
     {
-        var walk = new Walk { id = Guid.NewGuid().ToString("N"), ownerUserId = "alice", territoryVersion = 1, trackingVersion = 1,
+        var walk = new Walk { id = Guid.NewGuid().ToString("N"), ownerUserId = "alice", territoryVersion = 2, trackingVersion = 1,
             startedAtUtc = "2026-09-14T00:00:00Z", endedAtUtc = "2026-09-14T00:10:00Z", durationSeconds = 600,
             distanceMeters = 600, routePoints = new List<StepCountAndGpsManager.WalkRoutePoint>() };
         for (int i = 0; i < coordinates.Length; i += 2)

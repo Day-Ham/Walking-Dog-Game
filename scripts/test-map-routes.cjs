@@ -31,11 +31,12 @@ vm.runInNewContext(html.slice(html.indexOf('function renderRasterRoute('), html.
 assert.equal(polylines.length, 2, 'Raster fallback must preserve the same two segments');
 console.log('Map route checks passed: script syntax, gaps, lone points, legacy routes, and raster rendering.');
 
+const samplePolygon = { rings: [{ points: [{x:13468005,y:1640005},{x:13468155,y:1640005},{x:13468105,y:1640155},{x:13468005,y:1640155}] }] };
 const shapes = [];
 const sources = new Map();
 const layers = new Map([['walk-route-casing', {}]]);
 const territoryContext = vm.createContext({
-  state: { territoryTiles: [{ x: 269360, y: 32800 }], territoryRevision: 'alice:1' },
+  state: { territoryPolygons: [samplePolygon], territoryRevision: 'alice:1' },
   territoryCacheKey: null, territoryCache: null, vectorTerritoryRevision: null, isMapLoaded: true,
   lonLatToWorldPixels: (lng, lat) => ({ x: (lng - 120) * 100, y: lat * 10 }),
   document: {
@@ -60,20 +61,26 @@ vm.runInContext('ensureTerritoryLayer(); renderRasterTerritory({width:720,height
 assert.equal(sources.get('owned-territory').data.features.length, 1);
 assert.equal(shapes.length, 1, 'Raster fallback draws territory polygons');
 assert.equal(shapes[0].attributes.fill, '#20b77a');
-territoryContext.state = { territoryTiles: [], territoryRevision: 'signed-out:0' };
+territoryContext.state = { territoryPolygons: [], territoryRevision: 'signed-out:0' };
 vm.runInContext('ensureTerritoryLayer(); renderRasterTerritory({width:720,height:1280,topLeftX:0,topLeftY:0},17)', territoryContext);
 assert.equal(sources.get('owned-territory').data.features.length, 0, 'Signing out clears vector ownership');
 assert.equal(shapes.length, 0, 'Signing out clears raster ownership');
 sources.clear(); layers.delete('owned-territory-fill'); layers.delete('owned-territory-border');
-territoryContext.state = { territoryTiles: [{ x: 269360, y: 32800 }, { x: NaN, y: 0 }, null], territoryRevision: 'alice:2' };
+territoryContext.state = { territoryPolygons: [samplePolygon, { rings: [{ points: [{ x: NaN, y: 0 }] }] }, null], territoryRevision: 'alice:2' };
 vm.runInContext('ensureTerritoryLayer()', territoryContext);
 assert.equal(sources.get('owned-territory').data.features.length, 1, 'Style reload restores valid tiles and rejects malformed tiles');
+const hole = { points: [{x:13468040,y:1640040},{x:13468060,y:1640040},{x:13468060,y:1640060},{x:13468040,y:1640060}] };
+territoryContext.state = { territoryPolygons: [{rings: [samplePolygon.rings[0], hole]}], territoryRevision: 'hole:1' };
+vm.runInContext('ensureTerritoryLayer(); renderRasterTerritory({width:720,height:1280,topLeftX:0,topLeftY:0},17)', territoryContext);
+assert.equal(sources.get('owned-territory').data.features[0].geometry.coordinates.length, 2, 'Vector polygon retains an unowned hole');
+assert.equal(shapes[0].attributes['fill-rule'], 'evenodd');
+assert.equal((shapes[0].attributes.d.match(/M/g) || []).length, 2, 'Raster path retains the same hole');
 console.log('Territory map checks passed: projection, caching, vector layers, raster polygons, account clearing, and style reload.');
 
 const previewUpdates = [];
 let legacyPreviewCalls = 0;
 const previewContext = vm.createContext({
-  state: { territoryTiles: [] },
+  state: { territoryPolygons: [] },
   map: { getSource: () => ({ setData: data => previewUpdates.push(data) }) },
   completedLoop: () => true,
   createTerritory: () => legacyPreviewCalls++

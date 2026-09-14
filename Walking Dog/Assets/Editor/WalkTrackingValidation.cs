@@ -89,7 +89,7 @@ public static class WalkTrackingValidation
 
     public static void BuildTerritoryAndroid()
     {
-        BuildAndroidAt("Builds/WalkingDog-territories.apk");
+        BuildAndroidAt("Builds/WalkingDog-loop-territories.apk");
     }
 
     private static void BuildAndroidAt(string output)
@@ -126,7 +126,7 @@ public static class WalkTrackingValidation
         Capture(canvas, "Logs/walk-summary-preview.png");
         // Exercise the longer territory result without writing to a real player's storage.
         var text = canvas.transform.Find("Safe area/Walk details/Details").GetComponent<TMPro.TMP_Text>();
-        text.text = "824 steps  •  612 m\n9.0 minutes\n\nSaved on device\n\nYour recorded route is ready to review on the map.\n\n<b>Your territory</b>\n+9 new tiles claimed! 3 already owned.";
+        text.text = "824 steps  •  612 m\n9.0 minutes\n\nSaved on device\n\nYour recorded route is ready to review on the map.\n\n<b>Your territory</b>\n+15,600 m² of new territory claimed!";
         Capture(canvas, "Logs/territory-summary-preview.png");
         text.ForceMeshUpdate();
         if (text.isTextOverflowing) throw new Exception("Territory summary overflows.");

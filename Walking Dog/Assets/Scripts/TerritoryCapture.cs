@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 
-// Version 1: personal square tiles on a fixed Web Mercator grid.
+// Version 2 claims the full validated loop. Tile evaluation remains for legacy data/tests.
 public static class TerritoryCapture
 {
-    public const int Version = 1;
+    public const int Version = 2;
     public const double TileSize = 50;
     public const double Radius = 6378137;
     public const double ClosureMeters = 25;
@@ -24,7 +24,8 @@ public static class TerritoryCapture
     {
         public string message;
         public readonly List<Tile> tiles = new List<Tile>();
-        public bool Accepted => tiles.Count > 0;
+        public readonly List<TerritoryGeometry.Polygon> polygons = new List<TerritoryGeometry.Polygon>();
+        public bool Accepted => tiles.Count > 0 || polygons.Count > 0;
     }
 
     private struct Point
@@ -33,10 +34,11 @@ public static class TerritoryCapture
         public Point(double x, double y) { this.x = x; this.y = y; }
     }
 
-    public static Result Evaluate(StepCountAndGpsManager.SavedWalkSession walk)
+    public static Result EvaluateLoop(StepCountAndGpsManager.SavedWalkSession walk) => Evaluate(walk, true);
+    public static Result Evaluate(StepCountAndGpsManager.SavedWalkSession walk, bool fullLoop = false)
     {
         var result = new Result();
-        if (walk == null || walk.territoryVersion != Version || walk.trackingVersion != 1)
+        if (walk == null || (walk.territoryVersion != 1 && walk.territoryVersion != Version) || walk.trackingVersion != 1)
             return Reject(result, "Territories are available for new walks recorded with this update.");
         if (walk.hasTrackingGaps) return Reject(result, "No tiles claimed: GPS gaps interrupted the loop.");
         var samples = walk.routePoints;
@@ -97,6 +99,15 @@ public static class TerritoryCapture
         double scale = Math.Cos(samples[0].latitude * Math.PI / 180);
         if (Math.Abs(area) * 0.5 * scale * scale < 2500)
             return Reject(result, "No tiles claimed: enclose a larger area (at least 2,500 m²).");
+        if (fullLoop)
+        {
+            if (Math.Abs(area) * 0.5 > 2500000) return Reject(result, "No territory claimed: this loop is too large.");
+            var ring = new TerritoryGeometry.Ring();
+            foreach (var p in points) ring.points.Add(new TerritoryGeometry.Point(p.x, p.y));
+            result.polygons.Add(new TerritoryGeometry.Polygon { rings = new List<TerritoryGeometry.Ring> { ring } });
+            result.message = "Loop completed.";
+            return result;
+        }
         for (int x = left; x <= right; x++)
             for (int y = bottom; y <= top; y++)
                 if (Contains(points, new Point((x + 0.5) * TileSize, (y + 0.5) * TileSize)))

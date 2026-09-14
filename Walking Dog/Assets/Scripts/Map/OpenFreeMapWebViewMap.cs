@@ -544,11 +544,11 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         var manager = StepCountAndGpsManager.Instance;
         var territories = manager != null ? manager.Territories : null;
         state.territoryRevision = territories?.Revision ?? "";
-        state.territoryTiles = territories == null ? new List<TerritoryCapture.Tile>() : new List<TerritoryCapture.Tile>(territories.Tiles);
+        state.territoryPolygons = territories == null ? new List<TerritoryGeometry.Polygon>() : new List<TerritoryGeometry.Polygon>(territories.Polygons);
         state.territoryMessage = territories == null || string.IsNullOrWhiteSpace(territories.Owner)
             ? "Sign in before walking to claim territory"
             : !string.IsNullOrEmpty(territories.Error) ? territories.Error
-            : "Your territory · " + territories.Tiles.Count + " tiles";
+            : "Your territory · " + territories.AreaSquareMeters.ToString("N0") + " m²";
     }
 
     private void AddRoutePoints(IReadOnlyList<Vector2> sourceRoutePoints, List<OpenFreeMapRoutePoint> destination)
@@ -685,7 +685,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         public int zoom;
         public string style;
         public List<OpenFreeMapRoutePoint> routePoints;
-        public List<TerritoryCapture.Tile> territoryTiles;
+        public List<TerritoryGeometry.Polygon> territoryPolygons;
         public string territoryRevision;
         public string territoryMessage;
     }

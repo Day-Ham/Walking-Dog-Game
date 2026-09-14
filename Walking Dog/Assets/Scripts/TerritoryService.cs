@@ -14,6 +14,8 @@ public sealed class TerritoryService
     public string Owner => owner;
     public string Error { get; private set; } = "";
     public IReadOnlyList<TerritoryCapture.Tile> Tiles => repository?.Tiles ?? Empty;
+    public IReadOnlyList<TerritoryGeometry.Polygon> Polygons => repository?.Polygons ?? Array.Empty<TerritoryGeometry.Polygon>();
+    public double AreaSquareMeters => repository?.AreaSquareMeters ?? 0;
     public string Revision => generation + ":" + (repository?.Revision ?? 0);
 
     public void Refresh(string authenticatedOwner)
@@ -24,11 +26,11 @@ public sealed class TerritoryService
         if (string.IsNullOrWhiteSpace(owner)) return;
         try
         {
-            if (repository == null) repository = new LocalTerritoryRepository(Path.Combine(walks.DirectoryPath, "Territories"), owner);
+            if (repository == null) repository = new LocalTerritoryRepository(Path.Combine(walks.DirectoryPath, "Territories"), owner, walks.Find);
             var completed = walks.LoadAll();
             completed.Sort((a, b) => { int order = string.CompareOrdinal(a.endedAtUtc, b.endedAtUtc); return order != 0 ? order : string.CompareOrdinal(a.id, b.id); });
             foreach (var walk in completed)
-                if (walk.ownerUserId == owner && walk.territoryVersion == TerritoryCapture.Version && repository.Find(walk.id) == null)
+                if (walk.ownerUserId == owner && (walk.territoryVersion == 1 || walk.territoryVersion == TerritoryCapture.Version) && repository.Find(walk.id) == null)
                     repository.Apply(walk);
             Error = "";
         }
