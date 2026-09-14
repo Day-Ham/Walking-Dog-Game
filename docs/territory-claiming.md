@@ -6,7 +6,7 @@ A qualifying completed walk claims the full area enclosed by its recorded GPS tr
 
 - Start a new walk while signed in; save it with Stop Walk.
 - Record a continuous GPS route with accuracy of 10 metres or better, valid increasing timestamps, and no implausible jumps.
-- Walk at least 200 metres, enclose at least 2,500 m², and finish within 25 metres of the first recorded location. The short closing gap is connected by a straight boundary.
+- Walk at least 200 metres, enclose at least 2,500 m², and finish within 50 metres of the first recorded location. The short closing gap is connected by a straight boundary. The Unity territory instructions and return-to-start cue use this same closing range.
 - Crossing, touching or retracing non-adjacent edges is rejected. Complex figure-eight routes are not split into multiple claims.
 - Claims use the full saved route, before display downsampling. Geometry operations use centimetre-rounded Web Mercator coordinates. Displayed area is an approximate geographic surface area, adjusted for latitude.
 - Clipper2 2.0.1 performs polygon union and difference. Overlapping land counts once, adjacent claims merge, and unclaimed holes remain empty in both vector and raster rendering.

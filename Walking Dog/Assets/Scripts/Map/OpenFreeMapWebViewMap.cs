@@ -37,10 +37,14 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
 
     [Header("Optional UI")]
     [SerializeField] private TextMeshProUGUI statusText;
+    [SerializeField] private TextMeshProUGUI territoryClaimText;
+    [SerializeField] private TextMeshProUGUI territoryInstructionsText;
 
     private readonly Vector3[] mapCorners = new Vector3[4];
     private float nextMapSyncTime;
     private float nextLayoutSyncTime;
+    private string lastTerritoryClaimMessage;
+    private float nextTerritoryTextTime;
 #pragma warning restore 0414
     private RectInt lastAndroidRect;
     private bool hasLastAndroidRect;
@@ -64,12 +68,15 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
     {
         nextMapSyncTime = 0f;
         nextLayoutSyncTime = 0f;
+        nextTerritoryTextTime = 0f;
+        UpdateTerritoryClaimText();
         SetStatus("Starting OpenFreeMap...");
         CreateOrShowWebView();
     }
 
     private void Update()
     {
+        UpdateTerritoryClaimText();
 #if UNITY_ANDROID && !UNITY_EDITOR
         CreateOrShowWebView();
 
@@ -545,7 +552,32 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         var territories = manager != null ? manager.Territories : null;
         state.territoryRevision = territories?.Revision ?? "";
         state.territoryPolygons = territories == null ? new List<TerritoryGeometry.Polygon>() : new List<TerritoryGeometry.Polygon>(territories.Polygons);
-        state.territoryMessage = territories == null || string.IsNullOrWhiteSpace(territories.Owner)
+        state.territoryMessage = GetTerritoryMessage(territories);
+    }
+
+    private void UpdateTerritoryClaimText()
+    {
+        // Polygon area calculation should follow map refreshes, not every rendered frame.
+        if (Time.unscaledTime < nextTerritoryTextTime) return;
+        nextTerritoryTextTime = Time.unscaledTime + Mathf.Max(0.1f, mapSyncIntervalSeconds);
+        if (territoryInstructionsText != null)
+        {
+            territoryInstructionsText.text = $"Walk a loop of 200 m or more. Enclose at least 2,500 m².\nFinish within {TerritoryCapture.ClosureMeters:0} m of your start without crossing your route.";
+        }
+
+        if (territoryClaimText == null) return;
+
+        var manager = StepCountAndGpsManager.Instance;
+        var message = GetTerritoryMessage(manager != null ? manager.Territories : null);
+        if (message == lastTerritoryClaimMessage) return;
+
+        territoryClaimText.text = message;
+        lastTerritoryClaimMessage = message;
+    }
+
+    private static string GetTerritoryMessage(TerritoryService territories)
+    {
+        return territories == null || string.IsNullOrWhiteSpace(territories.Owner)
             ? "Sign in before walking to claim territory"
             : !string.IsNullOrEmpty(territories.Error) ? territories.Error
             : "Your territory · " + territories.AreaSquareMeters.ToString("N0") + " m²";
