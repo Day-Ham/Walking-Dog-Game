@@ -145,8 +145,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     public string LastSavedWalkFilePath => lastSavedWalkFilePath;
     public string SavedWalkDirectoryPath => Path.Combine(Application.persistentDataPath, "WalkSessions");
     public bool IsRouteRecording => recordRoutePoints;
-    // The first accepted route sample is the authoritative walk start. Do not use the
-    // Start Walk button time/location: a walk can begin before GPS has a fresh fix.
+   
     public bool HasRouteStart => routePoints != null && routePoints.Count > 0;
     public float DistanceToRouteStartMeters
     {
@@ -171,18 +170,19 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
             if (sessionDistanceMeters < 200f) return "";
 
             var distance = DistanceToRouteStartMeters;
-            if (distance < 0f) return "";
+            if (distance < 0f) return "";            
             if (distance <= TerritoryCapture.ClosureMeters)
             {    // This only confirms the closing-distance requirement; area, route length,
                 // and non-crossing checks are still validated when the walk is saved.
+              
                 territtoryFlag = 2; //signal to green
-                return $"Near your start ({distance:0} m) — within the {TerritoryCapture.ClosureMeters:0} m loop-closing range.";
+                return $"You are now within claimable territory range ({distance:0} m) — within the {TerritoryCapture.ClosureMeters:0} m Starting point range. End walk to claim.";
                
             }
             
             territtoryFlag = 1; //signal to yellow
 
-            return $"Return to your start — {distance - (float)TerritoryCapture.ClosureMeters:0} m to the loop-closing range.";
+            return $"Finish your territory — {distance - (float)TerritoryCapture.ClosureMeters:0} m to the starting point range";
         }
     }
     public int RoutePointCount
