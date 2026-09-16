@@ -36,7 +36,7 @@ public static class WalkTrackingValidation
         if (panel.activeSelf || !liveMap.enabled || !launch.gameObject.activeInHierarchy)
             throw new Exception("History Back did not restore the walk screen.");
         launch.onClick.Invoke();
-        if (!panel.activeSelf || UnityEngine.Object.FindObjectsByType<Canvas>(FindObjectsSortMode.None)
+        if (!panel.activeSelf || UnityEngine.Object.FindObjectsByType<Canvas>(FindObjectsSortMode.None) // update this obsolete?
             .Count(c => c.name == "Walk History Canvas") != 1)
             throw new Exception("Reopening history created a duplicate overlay.");
         history.Close();
