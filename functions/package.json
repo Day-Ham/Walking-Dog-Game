@@ -1,0 +1,12 @@
+{
+  "name": "walking-dog-leaderboard",
+  "private": true,
+  "main": "index.js",
+  "engines": { "node": "22" },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:emulator": "firebase emulators:exec --only firestore --project demo-walking-dog --config ../firebase.json \"npm test\""
+  },
+  "dependencies": { "firebase-admin": "^13.0.0", "firebase-functions": "^6.0.0" },
+  "devDependencies": { "@firebase/rules-unit-testing": "^4.0.0", "firebase": "^11.0.0", "firebase-tools": "^14.0.0" }
+}

@@ -44,7 +44,25 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Profiles, rewards, GPS routes, and all other paths need separate rules.
+    // Shared summaries only; clients can never create or change score totals.
+    match /leaderboards/allTime/players/{userId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // An owner may choose a public nickname, but cannot submit scores here.
+    match /leaderboardProfiles/{userId} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && request.resource.data.keys().hasAll(['displayName', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['displayName', 'updatedAt'])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.matches('[A-Za-z0-9][A-Za-z0-9 _-]{2,23}')
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // Receipts, rewards, GPS routes, and all other paths remain private.
     match /{document=**} {
       allow read, write: if false;
     }
