@@ -7,7 +7,8 @@ const path = require("node:path");
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require("@firebase/rules-unit-testing");
 const { initializeApp, deleteApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
-const { doc, setDoc, getDoc, getDocs, collection, query, orderBy, limit, serverTimestamp } = require("firebase/firestore");
+const { doc, setDoc, getDoc, getDocs, collection, query, orderBy, limit, serverTimestamp,
+  runTransaction, writeBatch, deleteDoc } = require("firebase/firestore");
 const { countWalk, refreshDisplayName, PLAYERS } = require("../leaderboard");
 
 // Fail closed: these integration tests must never use a real database.
@@ -40,7 +41,7 @@ test("duplicate delivery and backfill count one walk only once", async () => {
   assert.equal(data.totalDistanceMeters, 75);
   assert.equal(data.completedWalkCount, 1);
   assert.match(data.displayName, /^Walker-[0-9a-f]{8}$/);
-  assert.deepEqual(Object.keys(data).sort(), ["schemaVersion", "displayName", "totalSteps", "totalDistanceMeters", "completedWalkCount", "updatedAt"].sort());
+  assert.deepEqual(Object.keys(data).sort(), ["schemaVersion", "displayName", "totalSteps", "totalDistanceMeters", "completedWalkCount", "lastWalkId", "updatedAt"].sort());
 });
 
 test("concurrent different walks accumulate and users stay separate", async () => {
@@ -103,7 +104,8 @@ test("clients cannot forge scores, receipts, or read the board signed out", asyn
   const client = environment.authenticatedContext("alice").firestore();
   await assertFails(setDoc(doc(client, `${PLAYERS}/alice`), { totalSteps: 999 }));
   await assertFails(setDoc(doc(client, "leaderboardReceipts/alice/walks/one"), { countedAt: serverTimestamp() }));
-  await assertFails(getDoc(doc(client, "leaderboardReceipts/alice/walks/one")));
+  await assertSucceeds(getDoc(doc(client, "leaderboardReceipts/alice/walks/one")));
+  await assertFails(getDoc(doc(client, "leaderboardReceipts/bob/walks/one")));
   const guest = environment.unauthenticatedContext().firestore();
   await assertFails(getDocs(collection(guest, PLAYERS)));
 });
@@ -130,4 +132,104 @@ test("existing private walk save/retry rules remain intact", async () => {
   await assertSucceeds(getDoc(ref));
   await assertFails(getDoc(doc(bob, "users/alice/walks/one")));
   await assertFails(setDoc(ref, { ...payload, steps: 999, uploadedAt: serverTimestamp() }));
+});
+
+// Same transaction protocol as the Unity writer, executed under actual client
+// rules instead of Admin privileges. These tests are the Spark security boundary.
+async function countClient(client, uid, id) {
+  return runTransaction(client, async tx => {
+    const receiptRef = doc(client, `leaderboardReceipts/${uid}/walks/${id}`);
+    if ((await tx.get(receiptRef)).exists()) return "already-counted";
+    const walkData = (await tx.get(doc(client, `users/${uid}/walks/${id}`))).data();
+    const playerRef = doc(client, `${PLAYERS}/${uid}`);
+    const old = (await tx.get(playerRef)).data() || { totalSteps: 0, totalDistanceMeters: 0, completedWalkCount: 0 };
+    const profile = (await tx.get(doc(client, `leaderboardProfiles/${uid}`))).data();
+    tx.set(playerRef, { schemaVersion: 1, displayName: profile?.displayName || old.displayName || "Walker-Test",
+      totalSteps: old.totalSteps + walkData.steps, totalDistanceMeters: old.totalDistanceMeters + walkData.distanceMeters,
+      completedWalkCount: old.completedWalkCount + 1, lastWalkId: id, updatedAt: serverTimestamp() });
+    tx.set(receiptRef, { countedAt: serverTimestamp() });
+    return "counted";
+  });
+}
+
+test("Spark client can count a saved walk once and retry without duplication", async () => {
+  const client = environment.authenticatedContext("alice").firestore();
+  await seed("alice", "one");
+  await assertSucceeds(countClient(client, "alice", "one"));
+  assert.equal(await countClient(client, "alice", "one"), "already-counted");
+  assert.equal((await player("alice")).get("totalSteps"), 100);
+  assert.equal((await player("alice")).get("completedWalkCount"), 1);
+});
+
+test("Spark concurrent walks preserve totals, including fractional distance", async () => {
+  const client = environment.authenticatedContext("alice").firestore();
+  await Promise.all([seed("alice", "one", 100, 12.345), seed("alice", "two", 200, 56.789)]);
+  await assertSucceeds(Promise.all([countClient(client, "alice", "one"), countClient(client, "alice", "two")]));
+  assert.equal((await player("alice")).get("totalSteps"), 300);
+  assert.equal((await player("alice")).get("totalDistanceMeters"), 12.345 + 56.789);
+});
+
+function forgedBatch(client, id, overrides = {}, withReceipt = true, uid = "alice") {
+  const batch = writeBatch(client);
+  batch.set(doc(client, `${PLAYERS}/${uid}`), { schemaVersion: 1, displayName: "Walker-Test", totalSteps: 100,
+    totalDistanceMeters: 75, completedWalkCount: 1, lastWalkId: id, updatedAt: serverTimestamp(), ...overrides });
+  if (withReceipt) batch.set(doc(client, `leaderboardReceipts/${uid}/walks/${id}`), { countedAt: serverTimestamp() });
+  return batch;
+}
+
+test("Spark rejects missing walk, missing receipt, forged delta and foreign ownership", async () => {
+  const client = environment.authenticatedContext("alice").firestore();
+  await assertFails(forgedBatch(client, "missing").commit());
+  await seed("alice", "one");
+  await assertFails(forgedBatch(client, "one", {}, false).commit());
+  await assertFails(forgedBatch(client, "one", { totalSteps: 999 }).commit());
+  await assertFails(forgedBatch(client, "one", { totalDistanceMeters: 999 }).commit());
+  await assertFails(forgedBatch(client, "one", { completedWalkCount: 2 }).commit());
+  await seed("bob", "one");
+  await assertFails(forgedBatch(client, "one", {}, true, "bob").commit());
+  assert.equal((await player("alice")).exists, false);
+});
+
+test("Spark forbids receipt replacement/deletion and counting a walk twice", async () => {
+  const client = environment.authenticatedContext("alice").firestore();
+  await seed("alice", "one");
+  await countClient(client, "alice", "one");
+  await assertFails(forgedBatch(client, "one", { totalSteps: 200, totalDistanceMeters: 150, completedWalkCount: 2 }).commit());
+  await assertFails(deleteDoc(doc(client, "leaderboardReceipts/alice/walks/one")));
+  await assertFails(deleteDoc(doc(client, `${PLAYERS}/alice`)));
+  await assertFails(setDoc(doc(client, "leaderboardReceipts/alice/walks/one"), { countedAt: serverTimestamp() }));
+});
+
+test("Spark rejects two receipts paired with only one score increment", async () => {
+  const client = environment.authenticatedContext("alice").firestore();
+  await seed("alice", "one");
+  await seed("alice", "two");
+  const batch = forgedBatch(client, "one");
+  batch.set(doc(client, "leaderboardReceipts/alice/walks/two"), { countedAt: serverTimestamp() });
+  await assertFails(batch.commit());
+});
+
+test("Spark nickname and public label update atomically without changing scores", async () => {
+  const client = environment.authenticatedContext("alice").firestore();
+  await seed("alice", "one");
+  await countClient(client, "alice", "one");
+  const profileRef = doc(client, "leaderboardProfiles/alice");
+  await assertFails(setDoc(profileRef, { displayName: "New Walker", updatedAt: serverTimestamp() }));
+  const batch = writeBatch(client);
+  batch.set(profileRef, { displayName: "New Walker", updatedAt: serverTimestamp() });
+  batch.update(doc(client, `${PLAYERS}/alice`), { displayName: "New Walker", updatedAt: serverTimestamp() });
+  await assertSucceeds(batch.commit());
+  assert.equal((await player("alice")).get("displayName"), "New Walker");
+  assert.equal((await player("alice")).get("totalSteps"), 100);
+  const cheat = writeBatch(client);
+  cheat.set(profileRef, { displayName: "Cheat Walker", updatedAt: serverTimestamp() });
+  cheat.update(doc(client, `${PLAYERS}/alice`), { displayName: "Cheat Walker", totalSteps: 999, updatedAt: serverTimestamp() });
+  await assertFails(cheat.commit());
+});
+
+test("Spark cannot count a newly invented walk and score in the same batch", async () => {
+  const client = environment.authenticatedContext("alice").firestore();
+  const batch = forgedBatch(client, "one");
+  batch.set(doc(client, "users/alice/walks/one"), { ...walk("one"), uploadedAt: serverTimestamp() });
+  await assertFails(batch.commit());
 });

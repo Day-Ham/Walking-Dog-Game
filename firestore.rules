@@ -44,10 +44,71 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Shared summaries only; clients can never create or change score totals.
+    function validName(name) {
+      return name is string && name.matches('[A-Za-z0-9][A-Za-z0-9 _-]{2,23}');
+    }
+
+    function validPlayer(data) {
+      let fields = ['schemaVersion', 'displayName', 'totalSteps', 'totalDistanceMeters',
+                    'completedWalkCount', 'lastWalkId', 'updatedAt'];
+      return data.keys().hasAll(fields) && data.keys().hasOnly(fields)
+        && data.schemaVersion == 1 && validName(data.displayName)
+        && data.totalSteps is int && data.totalSteps >= 0 && data.totalSteps <= 9007199254740991
+        && isMeasurement(data.totalDistanceMeters)
+        && data.completedWalkCount is int && data.completedWalkCount > 0
+        && data.completedWalkCount <= 9007199254740991
+        && data.lastWalkId is string && data.lastWalkId.matches('[A-Za-z0-9_-]{1,128}')
+        && data.updatedAt == request.time;
+    }
+
+    function profileMatches(userId, name) {
+      let profile = /databases/$(database)/documents/leaderboardProfiles/$(userId);
+      return !existsAfter(profile) || getAfter(profile).data.displayName == name;
+    }
+
+    // Spark-compatible aggregation: the only permitted score increase is exactly
+    // one saved walk, with its new receipt committed in the same atomic operation.
+    function countsSavedWalk(userId, data, oldSteps, oldDistance, oldCount) {
+      let walk = get(/databases/$(database)/documents/users/$(userId)/walks/$(data.lastWalkId)).data;
+      let receipt = /databases/$(database)/documents/leaderboardReceipts/$(userId)/walks/$(data.lastWalkId);
+      return walk.schemaVersion == 1 && walk.id == data.lastWalkId
+        && walk.steps is int && walk.steps >= 0 && walk.steps <= 2147483647
+        && isMeasurement(walk.distanceMeters)
+        && (walk.steps > 0 || walk.distanceMeters > 0)
+        && !exists(receipt) && getAfter(receipt).data.countedAt == request.time
+        && data.totalSteps == oldSteps + walk.steps
+        && data.totalDistanceMeters == oldDistance + walk.distanceMeters
+        && data.completedWalkCount == oldCount + 1;
+    }
+
     match /leaderboards/allTime/players/{userId} {
       allow read: if request.auth != null;
-      allow write: if false;
+      allow create: if isOwner(userId) && validPlayer(request.resource.data)
+        && profileMatches(userId, request.resource.data.displayName)
+        && countsSavedWalk(userId, request.resource.data, 0, 0, 0);
+      allow update: if isOwner(userId) && validPlayer(request.resource.data)
+        && profileMatches(userId, request.resource.data.displayName)
+        && (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'updatedAt'])
+          || countsSavedWalk(userId, request.resource.data, resource.data.totalSteps,
+              resource.data.totalDistanceMeters, resource.data.completedWalkCount));
+      allow delete: if false;
+    }
+
+    match /leaderboardReceipts/{userId}/walks/{walkId} {
+      function pairedScoreUpdate() {
+        let player = /databases/$(database)/documents/leaderboards/allTime/players/$(userId);
+        let oldCount = exists(player) ? get(player).data.completedWalkCount : 0;
+        return getAfter(player).data.lastWalkId == walkId
+          && getAfter(player).data.completedWalkCount == oldCount + 1
+          && getAfter(player).data.updatedAt == request.time;
+      }
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && request.resource.data.keys().hasAll(['countedAt'])
+        && request.resource.data.keys().hasOnly(['countedAt'])
+        && request.resource.data.countedAt == request.time
+        && pairedScoreUpdate();
+      allow update, delete: if false;
     }
 
     // An owner may choose a public nickname, but cannot submit scores here.
@@ -56,13 +117,15 @@ service cloud.firestore {
       allow create, update: if isOwner(userId)
         && request.resource.data.keys().hasAll(['displayName', 'updatedAt'])
         && request.resource.data.keys().hasOnly(['displayName', 'updatedAt'])
-        && request.resource.data.displayName is string
-        && request.resource.data.displayName.matches('[A-Za-z0-9][A-Za-z0-9 _-]{2,23}')
-        && request.resource.data.updatedAt == request.time;
+        && validName(request.resource.data.displayName)
+        && request.resource.data.updatedAt == request.time
+        && (!exists(/databases/$(database)/documents/leaderboards/allTime/players/$(userId))
+          || getAfter(/databases/$(database)/documents/leaderboards/allTime/players/$(userId)).data.displayName
+            == request.resource.data.displayName);
       allow delete: if false;
     }
 
-    // Receipts, rewards, GPS routes, and all other paths remain private.
+    // Rewards, GPS routes, and all other paths remain private.
     match /{document=**} {
       allow read, write: if false;
     }

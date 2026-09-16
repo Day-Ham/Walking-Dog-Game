@@ -39,7 +39,7 @@ async function countWalk(db, uid, walkId) {
         !Number.isSafeInteger(completedWalkCount) || completedWalkCount < 1)
       throw new Error("Invalid or overflowing leaderboard totals");
     tx.set(playerRef, { schemaVersion: 1, displayName: displayName(uid, profile.data()),
-      totalSteps, totalDistanceMeters, completedWalkCount, updatedAt: FieldValue.serverTimestamp() });
+      totalSteps, totalDistanceMeters, completedWalkCount, lastWalkId: walkId, updatedAt: FieldValue.serverTimestamp() });
     tx.create(receiptRef, { countedAt: FieldValue.serverTimestamp() });
     return "counted";
   });

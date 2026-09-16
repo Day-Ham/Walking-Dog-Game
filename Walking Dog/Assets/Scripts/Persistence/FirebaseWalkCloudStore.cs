@@ -20,7 +20,14 @@ public sealed class FirebaseWalkCloudStore : IWalkCloudStore, IDisposable
         if (auth == null) throw new ArgumentNullException(nameof(auth));
         if (firestore == null) throw new ArgumentNullException(nameof(firestore));
         currentUserId = () => auth.CurrentUser?.UserId ?? "";
-        setDocument = (path, data) => firestore.Document(path).SetAsync(data);
+        setDocument = async (path, data) =>
+        {
+            await firestore.Document(path).SetAsync(data);
+            // A failed/cancelled leaderboard transaction leaves this upload
+            // retryable. Stable walk IDs and atomic receipts prevent double credit.
+            var parts = path.Split('/');
+            await WalkingDog.Leaderboards.FirebaseLeaderboardWriter.CountWalkAsync(firestore, parts[1], parts[3]);
+        };
         serverTimestamp = FieldValue.ServerTimestamp;
     }
 

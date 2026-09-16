@@ -1,6 +1,6 @@
 {
     "name": "WalkingDog.Persistence.Tests",
-    "references": ["WalkingDog.Runtime"],
+    "references": ["WalkingDog.Runtime", "Unity.TextMeshPro", "UnityEngine.UI"],
     "includePlatforms": ["Editor"],
     "optionalUnityReferences": ["TestAssemblies"]
 }

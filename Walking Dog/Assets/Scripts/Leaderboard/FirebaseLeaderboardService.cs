@@ -8,7 +8,8 @@ using Firebase.Firestore;
 
 namespace WalkingDog.Leaderboards
 {
-    // Plain service: no GameObjects, UI references, polling or automatic writes.
+    // Plain service: no GameObjects or UI references. Reconciles the owner's
+    // saved cloud walks when loading; rules validate every score transaction.
     // Create/call/dispose on Unity's main thread after Firebase initialization.
     public sealed class FirebaseLeaderboardService : ILeaderboardService
     {
@@ -22,19 +23,19 @@ namespace WalkingDog.Leaderboards
         private FirebaseAuth auth;
         private int authRevision;
         private bool disposed;
+        private FirebaseFirestore firestore;
+        private FirebaseLeaderboardWriter.ReconciliationProgress reconciliation = new FirebaseLeaderboardWriter.ReconciliationProgress();
         public string AuthenticatedUserId => disposed ? "" : currentUser() ?? "";
 
         public FirebaseLeaderboardService(FirebaseAuth auth, FirebaseFirestore firestore)
             : this(() => auth.CurrentUser?.UserId,
                 (uid, metric) => FetchAsync(firestore, uid, metric),
-                (uid, name) => firestore.Document($"leaderboardProfiles/{uid}").SetAsync(new Dictionary<string, object>
-                {
-                    ["displayName"] = name, ["updatedAt"] = FieldValue.ServerTimestamp
-                }))
+                (uid, name) => FirebaseLeaderboardWriter.SaveNameAsync(firestore, uid, name))
         {
             if (auth == null) throw new ArgumentNullException(nameof(auth));
             if (firestore == null) throw new ArgumentNullException(nameof(firestore));
             this.auth = auth;
+            this.firestore = firestore;
             auth.StateChanged += OnAuthChanged;
         }
 
@@ -62,9 +63,24 @@ namespace WalkingDog.Leaderboards
                 throw new ArgumentOutOfRangeException(nameof(metric));
             var uid = RequireUser(cancellationToken);
             var revision = authRevision;
-            var result = await WaitAsync(read(uid, metric), cancellationToken);
+            LeaderboardSnapshot result;
+            try { result = await WaitAsync(LoadWithReconciliationAsync(uid, metric, cancellationToken), cancellationToken); }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && !disposed && revision == authRevision)
+            { throw new TimeoutException("Leaderboard sync is taking longer. Refresh to continue."); }
             CheckAccount(uid, revision, cancellationToken);
             return result;
+        }
+
+        private async Task<LeaderboardSnapshot> LoadWithReconciliationAsync(string uid, LeaderboardMetric metric, CancellationToken token)
+        {
+            using (var linked = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token))
+            {
+                // Stop paged work on timeout even though native reads cannot be cancelled.
+                linked.CancelAfter(timeout);
+                if (firestore != null) await FirebaseLeaderboardWriter.ReconcileAsync(firestore, uid, reconciliation, linked.Token);
+                linked.Token.ThrowIfCancellationRequested();
+                return await read(uid, metric);
+            }
         }
 
         public async Task SaveDisplayNameAsync(string displayName, CancellationToken cancellationToken)
@@ -135,7 +151,11 @@ namespace WalkingDog.Leaderboards
             return new LeaderboardSnapshot(metric, uid, entries.AsReadOnly(), own);
         }
 
-        private void OnAuthChanged(object sender, EventArgs args) { authRevision++; }
+        private void OnAuthChanged(object sender, EventArgs args)
+        {
+            authRevision++;
+            reconciliation = new FirebaseLeaderboardWriter.ReconciliationProgress();
+        }
         private static async Task<bool> AsResult(Task task) { await task; return true; }
         private static async void Observe(Task task) { try { await task; } catch (Exception) { } }
 
