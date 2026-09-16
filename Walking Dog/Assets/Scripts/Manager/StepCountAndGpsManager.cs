@@ -26,6 +26,8 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
 
 
     public int territtoryFlag = 0; // for UI Color change with gps text will do this later
+
+    
     public TerritoryService Territories
     {
         get
@@ -117,6 +119,10 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     public bool IsWalkingSessionActive => walkingSessionActive;
     public bool HasWalkingSession => hasWalkingSession;
     public int WalkingSessionSteps => recoveredSteps + Mathf.Max(0, (walkingSessionActive ? stepsCounted : sessionEndSteps) - sessionStartSteps);
+   
+    
+    public int getTFlag() { return territtoryFlag;}
+
     public float WalkingSessionDurationSeconds
     {
         get
@@ -139,8 +145,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     public string LastSavedWalkFilePath => lastSavedWalkFilePath;
     public string SavedWalkDirectoryPath => Path.Combine(Application.persistentDataPath, "WalkSessions");
     public bool IsRouteRecording => recordRoutePoints;
-    // The first accepted route sample is the authoritative walk start. Do not use the
-    // Start Walk button time/location: a walk can begin before GPS has a fresh fix.
+   
     public bool HasRouteStart => routePoints != null && routePoints.Count > 0;
     public float DistanceToRouteStartMeters
     {
@@ -165,13 +170,19 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
             if (sessionDistanceMeters < 200f) return "";
 
             var distance = DistanceToRouteStartMeters;
-            if (distance < 0f) return "";
+            if (distance < 0f) return "";            
             if (distance <= TerritoryCapture.ClosureMeters)
-                // This only confirms the closing-distance requirement; area, route length,
+            {    // This only confirms the closing-distance requirement; area, route length,
                 // and non-crossing checks are still validated when the walk is saved.
-                return $"Near your start ({distance:0} m) — within the {TerritoryCapture.ClosureMeters:0} m loop-closing range.";
+              
+                territtoryFlag = 2; //signal to green
+                return $"You are now within claimable territory range ({distance:0} m) — within the {TerritoryCapture.ClosureMeters:0} m Starting point range. End walk to claim.";
+               
+            }
+            
+            territtoryFlag = 1; //signal to yellow
 
-            return $"Return to your start — {distance - (float)TerritoryCapture.ClosureMeters:0} m to the loop-closing range.";
+            return $"Finish your territory — {distance - (float)TerritoryCapture.ClosureMeters:0} m to the starting point range";
         }
     }
     public int RoutePointCount

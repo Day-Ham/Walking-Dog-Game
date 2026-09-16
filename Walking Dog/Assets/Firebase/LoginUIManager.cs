@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using TMPro;
 using Firebase.Auth;
+using System.Collections;
 
 public class LoginUIManager : MonoBehaviour
 {
@@ -15,7 +16,7 @@ public class LoginUIManager : MonoBehaviour
 
     [Header("Scene Transition")]
     public string gameSceneName = "SampleScene";
-
+    public GameObject sceneTransistionAnimator; // Animator for scene transition
     private void Start()
     {
         // Hook up button listeners
@@ -77,14 +78,31 @@ public class LoginUIManager : MonoBehaviour
         FirebaseLoginManager.Instance.RegisterUser(email, password);
     }
 
+    //brackey style scene transition
+    public void loadNextScene(string sceneName)
+    {
+        StartCoroutine(loadLevel(sceneName));
+    }
+
+    IEnumerator loadLevel(string sceneName)
+    {
+    sceneTransistionAnimator.GetComponent<Animator>().SetTrigger("EnterScene");
+        Debug.Log("TRIGGERED ANIMATION");
+        yield return new WaitForSeconds(1.0f);
+        SceneManager.LoadScene(sceneName);
+
+    }
+
+
     private void HandleLoginSuccess(FirebaseUser user)
     {
         UpdateStatus("Login successful!");
         ResetButtons();
         
         if (!string.IsNullOrEmpty(gameSceneName))
-        {
-            SceneManager.LoadScene(gameSceneName);
+        {   
+        //    SceneManager.LoadScene(gameSceneName);
+        loadNextScene(gameSceneName);
         }
         else
         {

@@ -77,6 +77,18 @@ public class GPSUIController : MonoBehaviour
         SetText(longText, $"Longitude: {manager.Longitude:0.000000}");
         SetText(latText, $"Latitude: {manager.Latitude:0.000000}");
         SetText(accuracyText, BuildTrackingStatus(manager));
+        switch (manager.getTFlag())
+        {
+            case 1:
+                accuracyText.color = Color.yellow;
+                break;
+            case 2:
+                accuracyText.color = Color.green;
+                break;
+        default:
+                break;  
+        }
+
         UpdateWalkingSessionButton(manager);
     }
 
@@ -216,6 +228,10 @@ public class GPSUIController : MonoBehaviour
         if (!string.IsNullOrEmpty(manager.TerritoryClosureStatus)) return manager.TerritoryClosureStatus;
         // Keep tracking feedback concise for the dedicated status row.
         
+       
+
+
+
         if (!string.IsNullOrEmpty(manager.RecoveryError)) return "Recovery save failed — keep the app open";
         return tracking == "Recording" && manager.HasTrackingGaps ? "Recording • route has gaps" : tracking;
     }
