@@ -1,16 +1,24 @@
+using System.Collections;
 using UnityEngine;
 
 public class DisableanimatedObject : MonoBehaviour
 {
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
-    void Start()
+    private bool disableScheduled;
+
+    // Called by the LeaderboardExit animation event. Disabling during that
+    // callback makes TMP_InputField dispose its generated mesh immediately,
+    // which Unity does not permit in an animation-event callback.
+    public void setActiveFalse()
     {
-        
+        if (disableScheduled || !gameObject.activeSelf) return;
+        disableScheduled = true;
+        StartCoroutine(DisableNextFrame());
     }
 
-    // Update is called once per frame
-    void Update()
+    private IEnumerator DisableNextFrame()
     {
-        
+        yield return null;
+        gameObject.SetActive(false);
+        disableScheduled = false;
     }
 }

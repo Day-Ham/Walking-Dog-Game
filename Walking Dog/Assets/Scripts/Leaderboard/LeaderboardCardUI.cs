@@ -5,10 +5,12 @@ namespace WalkingDog.Leaderboards
 {
     public sealed class LeaderboardCardUI : MonoBehaviour
     {
+
+        // UI elements for displaying leaderboard entry information in the card
         [SerializeField] private TMP_Text playerName;
         [SerializeField] private TMP_Text details;
 
-        public void Bind(LeaderboardEntry entry, int position, bool isCurrentPlayer, LeaderboardMetric metric)
+        public void Bind(LeaderboardEntry entry, int position, bool isCurrentPlayer, LeaderboardMetric metric) // connects the leaderboard entry data to the UI elements
         {
             playerName.richText = false;
             playerName.text = entry.DisplayName;
