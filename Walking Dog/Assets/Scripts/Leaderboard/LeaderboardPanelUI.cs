@@ -13,7 +13,7 @@ namespace WalkingDog.Leaderboards
     // remain usable: enabling loads the board; disabling cancels and restores maps.
     public sealed class LeaderboardPanelUI : MonoBehaviour
     {
-        [SerializeField] private RectTransform content;
+        [SerializeField] private RectTransform content; // the content and position of the template
         [SerializeField] private LeaderboardCardUI cardTemplate;
         [SerializeField] private ScrollRect scroll;
         [SerializeField] private TMP_Text status;
@@ -33,7 +33,7 @@ namespace WalkingDog.Leaderboards
         private bool destroyed;
         private bool busy;
         private string observedUser = "";
-        private LeaderboardMetric metric = LeaderboardMetric.Distance;
+        private LeaderboardMetric metric = LeaderboardMetric.Distance; //display the leaderboard distance
         internal Func<Task<ILeaderboardService>> ServiceFactory;
         internal int VisibleCardCount => cards.Count;
         internal string StatusText => status.text;
@@ -69,7 +69,7 @@ namespace WalkingDog.Leaderboards
             }
         }
 
-        public void OnRefresh() { _ = RefreshAsync(); }
+        public void OnRefresh() { _ = RefreshAsync(); } //refresh function for leaderboard and the discard task
         public void ShowDistance() { metric = LeaderboardMetric.Distance; OnRefresh(); }
         public void ShowSteps() { metric = LeaderboardMetric.Steps; OnRefresh(); }
         public void OnSaveNickname() { _ = SaveNicknameAsync(); }
@@ -134,21 +134,21 @@ namespace WalkingDog.Leaderboards
             finally { if (IsCurrent(request)) { busy = false; SetButtons(); } }
         }
 
-        internal void Render(LeaderboardSnapshot data)
+        internal void Render(LeaderboardSnapshot data) //display card data
         {
-            ClearCards();
-            for (int i = 0; i < data.Entries.Count; i++)
+            ClearCards(); //clear previous garbage card before rendering new data
+            for (int i = 0; i < data.Entries.Count; i++) // check all entries
             {
-                var card = Instantiate(cardTemplate, content);
+                var card = Instantiate(cardTemplate, content); // create the card game object
                 card.name = "Player " + (i + 1);
                 card.Bind(data.Entries[i], i + 1, data.Entries[i].PlayerId == data.CurrentPlayerId, data.Metric);
                 card.gameObject.SetActive(true);
                 cards.Add(card.gameObject);
             }
-            LayoutRebuilder.ForceRebuildLayoutImmediate(content);
+            LayoutRebuilder.ForceRebuildLayoutImmediate(content); 
             scroll.StopMovement();
             scroll.horizontalNormalizedPosition = 0;
-            status.text = data.Entries.Count == 0 ? "No ranked walks yet. Finish a walk and sync to join."
+            status.text = data.Entries.Count == 0 ? "No ranked walks yet. Finish a walk and connect to the internet to join."
                 : "All time · " + (data.Metric == LeaderboardMetric.Distance ? "Distance" : "Steps") + " · Swipe to see more";
             var own = data.CurrentPlayer;
             personalTotals.text = own == null ? "You · No synced walks counted yet"
@@ -156,7 +156,7 @@ namespace WalkingDog.Leaderboards
             if (own != null && !nickname.isFocused) nickname.SetTextWithoutNotify(own.DisplayName);
         }
 
-        private async Task SaveNicknameAsync()
+        private async Task SaveNicknameAsync() // save nickname function for the leaderboard
         {
             if (busy || destroyed || !isActiveAndEnabled) return;
             var name = nickname.text.Trim();
@@ -180,7 +180,7 @@ namespace WalkingDog.Leaderboards
             finally { if (IsCurrent(request)) { busy = false; SetButtons(); } }
         }
 
-        private void SetButtons()
+        private void SetButtons() // set buttons 
         {
             refresh.interactable = !busy;
             distance.interactable = metric != LeaderboardMetric.Distance;

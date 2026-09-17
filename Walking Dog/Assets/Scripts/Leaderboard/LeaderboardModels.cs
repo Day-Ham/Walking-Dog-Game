@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace WalkingDog.Leaderboards
 {
-    public enum LeaderboardMetric { Distance, Steps }
+    public enum LeaderboardMetric { Distance, Steps } // the leaderboard score
 
     public sealed class LeaderboardEntry
     {
@@ -25,7 +25,7 @@ namespace WalkingDog.Leaderboards
             CompletedWalkCount = walkCount;
         }
 
-        internal static bool TryParse(string id, IDictionary<string, object> fields, out LeaderboardEntry entry)
+        internal static bool TryParse(string id, IDictionary<string, object> fields, out LeaderboardEntry entry) //parse function from the entry
         {
             entry = null;
             if (fields == null || !fields.TryGetValue("schemaVersion", out var version) || !(version is long v) || v != 1
@@ -37,7 +37,7 @@ namespace WalkingDog.Leaderboards
             if (distance is double floating) d = floating;
             else if (distance is long integer) d = integer;
             else return false;
-            if (double.IsNaN(d) || double.IsInfinity(d) || d < 0) return false;
+            if (double.IsNaN(d) || double.IsInfinity(d) || d < 0) return false; // return a false if its an errorr value 
             entry = new LeaderboardEntry(id, text, d, s, c);
             return true;
         }
@@ -61,7 +61,7 @@ namespace WalkingDog.Leaderboards
         }
     }
 
-    public static class LeaderboardNames
+    public static class LeaderboardNames // for character display names type
     {
         // Same ASCII policy as backend and rules. Never derive names from email.
         public static bool IsValid(string value) => value != null
