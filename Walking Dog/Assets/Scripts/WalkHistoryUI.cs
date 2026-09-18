@@ -1,12 +1,9 @@
 using System;
-using System.Collections;
 using System.Threading.Tasks;
 using TMPro;
-using Unity.VectorGraphics;
 using UnityEngine;
-using UnityEngine.InputSystem;
-using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using UnityEngine.InputSystem;
 
 // Opened by the scene's History button. Builds the history overlay on demand.
 [DisallowMultipleComponent]
@@ -33,10 +30,8 @@ public sealed class WalkHistoryUI : MonoBehaviour
     [SerializeField]
     private TMP_Text mapStatus; // keep for map status messages
 
+ 
 
-    [SerializeField]
-
-    private Animator walkhistoryAnimator; // keep for animation
 
     private WalkHistorySession session; // keep
     private bool initializing; // keep for status
@@ -83,22 +78,6 @@ public sealed class WalkHistoryUI : MonoBehaviour
             }
         }
     }
-
-
-    IEnumerator CloseAniPlay( )
-    {
-        walkhistoryAnimator.SetTrigger("CloseMenu");
-        yield return new WaitForSeconds(1f);
-        this.Close();
-
-    }
-    public void CloseAni()
-    {
-        StartCoroutine(CloseAniPlay());
-
-    }
-
-
 
     // Closes history and map panels, invalidates pending loads, resets the session, and restores other maps.
     public void Close()

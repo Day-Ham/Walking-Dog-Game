@@ -578,7 +578,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
     private static string GetTerritoryMessage(TerritoryService territories)
     {
         return territories == null || string.IsNullOrWhiteSpace(territories.Owner)
-            ? "Sign in first to see territory"
+            ? "Sign in before walking to claim territory"
             : !string.IsNullOrEmpty(territories.Error) ? territories.Error
             : "Your territory · " + territories.AreaSquareMeters.ToString("N0") + " m²";
     }
