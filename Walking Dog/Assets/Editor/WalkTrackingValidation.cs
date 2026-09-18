@@ -92,6 +92,11 @@ public static class WalkTrackingValidation
         BuildAndroidAt("Builds/WalkingDog-loop-territories.apk");
     }
 
+    public static void BuildGoogleMapAndroid()
+    {
+        BuildAndroidAt("Builds/WalkingDog-google-map.apk");
+    }
+
     private static void BuildAndroidAt(string output)
     {
         var options = new BuildPlayerOptions
