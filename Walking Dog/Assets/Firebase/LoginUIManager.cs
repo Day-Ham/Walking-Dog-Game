@@ -87,7 +87,6 @@ public class LoginUIManager : MonoBehaviour
     IEnumerator loadLevel(string sceneName)
     {
     sceneTransistionAnimator.GetComponent<Animator>().SetTrigger("EnterScene");
-        Debug.Log("TRIGGERED ANIMATION");
         yield return new WaitForSeconds(1.0f);
         SceneManager.LoadScene(sceneName);
 
@@ -106,7 +105,7 @@ public class LoginUIManager : MonoBehaviour
         }
         else
         {
-            Debug.LogError("Game Scene Name is not set in LoginUIManager!");
+            Debug.LogError("Game Scene Name is missing or not set");
         }
     }
 
