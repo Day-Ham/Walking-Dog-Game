@@ -2,6 +2,7 @@ package com.walkingdog.auth;
 
 import android.app.Activity;
 import android.os.CancellationSignal;
+import android.util.Log;
 import androidx.credentials.Credential;
 import androidx.credentials.CredentialManager;
 import androidx.credentials.CredentialManagerCallback;
@@ -20,6 +21,7 @@ import org.json.JSONObject;
 /** Credential Manager owns the account picker. Unity exchanges the ID token with Firebase. */
 @androidx.annotation.Keep
 public final class GoogleSignInBridge {
+    private static final String TAG = "WalkingDogGoogleSignIn";
     private static CancellationSignal cancellation;
     private static String result = "";
     private static int generation;
@@ -57,7 +59,15 @@ public final class GoogleSignInBridge {
                             }
                         }
                         @Override public void onError(GetCredentialException error) {
-                            String message = error instanceof GetCredentialCancellationException
+                            // Credential Manager's cancellation exception normally means that the
+                            // system picker was dismissed. Keep the platform detail in logcat so
+                            // configuration/device failures are not mistaken for a user cancel.
+                            Log.w(TAG, "Credential Manager failed: " + error.getClass().getName()
+                                + "; " + String.valueOf(error.getMessage()), error);
+                            String detail = String.valueOf(error.getMessage());
+                            String message = detail.toLowerCase(java.util.Locale.ROOT).contains("account reauth failed")
+                                ? "Google needs you to reauthenticate this account in Android Settings, then retry."
+                                : error instanceof GetCredentialCancellationException
                                 ? "Google sign-in was canceled."
                                 : error instanceof NoCredentialException
                                 ? "No Google account is available. Add an account on this device and try again."

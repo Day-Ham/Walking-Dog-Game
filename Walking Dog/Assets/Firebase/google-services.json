@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "13373242265-q4f162huncpg2p0p61e26f0rhdcvg1ss.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.TheVeryEvilCompany.WalkingDog",
+            "certificate_hash": "bbde24cb97f9c8fc48c3ba9620be189ea69f1c05"
+          }
+        },
+        {
           "client_id": "13373242265-pqgelh38f6haoh1mh0hc7lc1q15f9oj9.apps.googleusercontent.com",
           "client_type": 3
         }
