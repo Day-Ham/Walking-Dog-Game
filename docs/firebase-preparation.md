@@ -8,8 +8,12 @@ in `StepCounterTestAmar`, so completed walks owned by the signed-in player are
 eligible for upload after initialization. Email/password login and registration are implemented in
 `Assets/Firebase/FirebaseLoginManager.cs` and `LoginUIManager.cs`. The title scene
 has both managers and its UI references assigned, and loads `StepCounterTestAmar`
-after successful authentication. Google sign-in is enabled in the console but
-has no Unity implementation yet. Live login/upload testing remains pending.
+after successful authentication. Google sign-in now has an Android Credential Manager
+implementation, a title-screen button, and a Firebase credential exchange. The Web
+OAuth client ID supplied by the project owner is configured in the title scene.
+The owner also supplied an updated Firebase configuration with this machine's
+debug signing fingerprint registered; see `docs/google-sign-in.md`.
+Live Google login/upload testing remains pending.
 
 ## Current behavior
 

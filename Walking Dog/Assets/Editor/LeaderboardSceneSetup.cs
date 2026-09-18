@@ -117,6 +117,13 @@ public static class LeaderboardSceneSetup
         Set(controller, "steps", steps);
         Set(controller, "nickname", input);
         Set(controller, "saveNickname", save);
+        // Visibility must follow the controller's root, not just its background.
+        panel.Find("LeaderBG").gameObject.SetActive(true);
+        var launch = canvas.transform.Find("Walk Screen Safe Area/Leaderboard Button").GetComponent<Button>();
+        launch.onClick = new Button.ButtonClickedEvent();
+        back.onClick = new Button.ButtonClickedEvent();
+        UnityEditor.Events.UnityEventTools.AddBoolPersistentListener(launch.onClick, panel.gameObject.SetActive, true);
+        UnityEditor.Events.UnityEventTools.AddBoolPersistentListener(back.onClick, panel.gameObject.SetActive, false);
         panel.gameObject.SetActive(false);
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);

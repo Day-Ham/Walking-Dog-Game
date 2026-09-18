@@ -12,6 +12,7 @@ public class LoginUIManager : MonoBehaviour
     public TMP_InputField passwordInputField;
     public Button loginButton;
     public Button registerButton;
+    public Button googleSignInButton;
     public TextMeshProUGUI statusText;
 
     [Header("Scene Transition")]
@@ -22,6 +23,7 @@ public class LoginUIManager : MonoBehaviour
         // Hook up button listeners
         if (loginButton != null) loginButton.onClick.AddListener(OnLoginClicked);
         if (registerButton != null) registerButton.onClick.AddListener(OnRegisterClicked);
+        if (googleSignInButton != null) googleSignInButton.onClick.AddListener(OnGoogleSignInClicked);
 
         // Subscribe to Firebase Login Manager events
         FirebaseLoginManager.Instance.OnLoginSuccess += HandleLoginSuccess;
@@ -32,6 +34,9 @@ public class LoginUIManager : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (loginButton != null) loginButton.onClick.RemoveListener(OnLoginClicked);
+        if (registerButton != null) registerButton.onClick.RemoveListener(OnRegisterClicked);
+        if (googleSignInButton != null) googleSignInButton.onClick.RemoveListener(OnGoogleSignInClicked);
         // Unsubscribe from events to prevent memory leaks
         if (FirebaseLoginManager.Instance != null)
         {
@@ -56,6 +61,7 @@ public class LoginUIManager : MonoBehaviour
         UpdateStatus("Logging in...");
         loginButton.interactable = false;
         registerButton.interactable = false;
+        if (googleSignInButton != null) googleSignInButton.interactable = false;
 
         FirebaseLoginManager.Instance.LoginUser(email, password);
     }
@@ -74,8 +80,18 @@ public class LoginUIManager : MonoBehaviour
         UpdateStatus("Registering...");
         loginButton.interactable = false;
         registerButton.interactable = false;
+        if (googleSignInButton != null) googleSignInButton.interactable = false;
 
         FirebaseLoginManager.Instance.RegisterUser(email, password);
+    }
+
+    private void OnGoogleSignInClicked()
+    {
+        UpdateStatus("Opening Google sign-in…");
+        loginButton.interactable = false;
+        registerButton.interactable = false;
+        googleSignInButton.interactable = false;
+        FirebaseLoginManager.Instance.LoginWithGoogle();
     }
 
     //brackey style scene transition
@@ -138,6 +154,7 @@ public class LoginUIManager : MonoBehaviour
 
     private void ResetButtons()
     {
+        if (googleSignInButton != null) googleSignInButton.interactable = true;
         if (loginButton != null) loginButton.interactable = true;
         if (registerButton != null) registerButton.interactable = true;
     }

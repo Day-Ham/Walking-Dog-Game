@@ -51,7 +51,7 @@ namespace WalkingDog.Leaderboards
         {
             if (!Application.isPlaying) return;
             foreach (var map in FindObjectsByType<OpenFreeMapWebViewMap>(FindObjectsSortMode.None))
-                if (map.enabled) { map.enabled = false; hiddenMaps.Add(map); }
+                if (map.enabled) { map.Suspend(this); if (!hiddenMaps.Contains(map)) hiddenMaps.Add(map); }
             OnRefresh();
         }
 
@@ -216,7 +216,7 @@ namespace WalkingDog.Leaderboards
             if (status != null) status.text = "";
             if (personalTotals != null) personalTotals.text = "";
             if (nickname != null) nickname.SetTextWithoutNotify("");
-            foreach (var map in hiddenMaps) if (map != null) map.enabled = true;
+            foreach (var map in hiddenMaps) if (map != null) map.Resume(this);
             hiddenMaps.Clear();
         }
 

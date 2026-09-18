@@ -46,9 +46,33 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
     private string lastTerritoryClaimMessage;
     private float nextTerritoryTextTime;
 #pragma warning restore 0414
-    private RectInt lastAndroidRect;
-    private bool hasLastAndroidRect;
     private bool webViewVisible;
+    private readonly HashSet<UnityEngine.Object> visibilityBlockers = new HashSet<UnityEngine.Object>();
+    private volatile bool viewWanted;
+    private volatile bool destroyed;
+    private volatile bool creationQueued;
+    private volatile string nativeError;
+    private bool paused;
+    private bool developmentBuild;
+    private float nextCreateAttempt;
+
+    public bool IsMapVisible => isActiveAndEnabled && !paused && visibilityBlockers.Count == 0;
+
+    // Each overlay owns its own block. Repeated opens and overlapping dialogs are safe.
+    public void Suspend(UnityEngine.Object owner)
+    {
+        if (owner == null) return;
+        visibilityBlockers.Add(owner);
+        viewWanted = false;
+        SetWebViewVisible(false);
+    }
+
+    public void Resume(UnityEngine.Object owner)
+    {
+        visibilityBlockers.Remove(owner);
+        viewWanted = IsMapVisible;
+        ForceSync();
+    }
 
 #if UNITY_ANDROID && !UNITY_EDITOR
     private AndroidJavaObject activity;
@@ -58,9 +82,24 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
 
     private void Awake()
     {
+        developmentBuild = Debug.isDebugBuild;
         if (mapArea == null)
         {
             mapArea = GetComponent<RectTransform>();
+        }
+        if (statusText == null)
+        {
+            var label = new GameObject("Map status", typeof(RectTransform), typeof(TextMeshProUGUI));
+            label.transform.SetParent(mapArea, false);
+            statusText = label.GetComponent<TextMeshProUGUI>();
+            statusText.rectTransform.anchorMin = Vector2.zero;
+            statusText.rectTransform.anchorMax = Vector2.one;
+            statusText.rectTransform.offsetMin = new Vector2(12, 12);
+            statusText.rectTransform.offsetMax = new Vector2(-12, -12);
+            statusText.fontSize = 24;
+            statusText.alignment = TextAlignmentOptions.Center;
+            statusText.color = new Color(0.13f, 0.2f, 0.24f);
+            statusText.raycastTarget = false;
         }
     }
 
@@ -71,12 +110,25 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         nextTerritoryTextTime = 0f;
         UpdateTerritoryClaimText();
         SetStatus("Starting OpenFreeMap...");
-        CreateOrShowWebView();
+        viewWanted = IsMapVisible;
     }
 
     private void Update()
     {
         UpdateTerritoryClaimText();
+    }
+
+    private void LateUpdate()
+    {
+        visibilityBlockers.RemoveWhere(owner => owner == null);
+        viewWanted = IsMapVisible;
+        if (!viewWanted) return;
+        if (nativeError != null)
+        {
+            SetStatus("Map could not start. Retrying…");
+            Debug.LogWarning("OpenFreeMap: " + nativeError);
+            nativeError = null;
+        }
 #if UNITY_ANDROID && !UNITY_EDITOR
         CreateOrShowWebView();
 
@@ -98,16 +150,22 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
 
     private void OnDisable()
     {
+        viewWanted = false;
         SetWebViewVisible(false);
     }
 
     private void OnDestroy()
     {
+        destroyed = true;
+        viewWanted = false;
         DestroyWebView();
     }
 
     private void OnApplicationPause(bool isPaused)
     {
+        paused = isPaused;
+        viewWanted = IsMapVisible;
+        ForceSync();
 #if UNITY_ANDROID && !UNITY_EDITOR
         RunOnAndroidUiThread(() =>
         {
@@ -136,6 +194,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
     private void CreateOrShowWebView()
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
+        if (!viewWanted || destroyed || creationQueued) return;
         if (webView != null)
         {
             if (!webViewVisible)
@@ -146,6 +205,9 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
             return;
         }
 
+        if (Time.unscaledTime < nextCreateAttempt) return;
+        nextCreateAttempt = Time.unscaledTime + 3f;
+
         activity = GetUnityActivity();
         if (activity == null)
         {
@@ -153,17 +215,19 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
             return;
         }
 
+        // OnEnable can run before the CanvasScaler/safe area has a valid layout.
+        Canvas.ForceUpdateCanvases();
         var rect = CalculateAndroidRect();
+        if (rect.width <= 1 || rect.height <= 1) return;
         var safeHtmlFileName = GetSafeHtmlFileName();
         SetStatus("Loading OpenFreeMap...");
 
+        creationQueued = true;
         RunOnAndroidUiThread(() =>
         {
-            if (webView != null)
+            try
             {
-                SetWebViewVisibleOnUiThread(true);
-                return;
-            }
+                if (!viewWanted || destroyed || webView != null) return;
 
             EnableWebViewDebuggingForDevelopmentBuilds();
 
@@ -172,13 +236,18 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
             ClearWebViewCache(webView);
 
             layoutParams = CreateLayoutParams(rect);
-            lastAndroidRect = rect;
-            hasLastAndroidRect = true;
 
             activity.Call("addContentView", webView, layoutParams);
             webView.Call("bringToFront");
             LoadMapHtmlFromAssets(webView, safeHtmlFileName);
             webViewVisible = true;
+            }
+            catch (Exception exception)
+            {
+                nativeError = exception.Message;
+                DestroyWebView();
+            }
+            finally { creationQueued = false; }
         });
 #endif
     }
@@ -316,7 +385,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
 
     private void EnableWebViewDebuggingForDevelopmentBuilds()
     {
-        if (!Debug.isDebugBuild)
+        if (!developmentBuild)
         {
             return;
         }
@@ -359,13 +428,8 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         }
 
         var rect = CalculateAndroidRect();
-        if (hasLastAndroidRect && rect == lastAndroidRect)
-        {
-            return;
-        }
-
-        lastAndroidRect = rect;
-        hasLastAndroidRect = true;
+        // Reassert attachment and z-order even with unchanged bounds. Unity can
+        // replace/reorder its native content during startup and activity resume.
 
         RunOnAndroidUiThread(() =>
         {
@@ -379,6 +443,19 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
             layoutParams.Set("leftMargin", Mathf.Max(0, rect.x));
             layoutParams.Set("topMargin", Mathf.Max(0, rect.y));
             webView.Call("setLayoutParams", layoutParams);
+            if (!viewWanted || destroyed) return;
+            using (var parent = webView.Call<AndroidJavaObject>("getParent"))
+            using (var content = activity.Call<AndroidJavaObject>("findViewById", 16908290)) // android.R.id.content
+            {
+                if (parent == null || !parent.Call<bool>("equals", content))
+                {
+                    if (parent != null) parent.Call("removeView", webView);
+                    activity.Call("addContentView", webView, layoutParams);
+                }
+            }
+            webView.Call("bringToFront");
+            webView.Call("setVisibility", ViewVisible);
+            webViewVisible = true;
         });
     }
 
@@ -415,6 +492,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
 
     private void SetWebViewVisibleOnUiThread(bool isVisible)
     {
+        isVisible = isVisible && viewWanted && !destroyed;
         if (webView == null)
         {
             webViewVisible = false;
@@ -471,7 +549,11 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
             return;
         }
 
-        activity.Call("runOnUiThread", new AndroidJavaRunnable(action));
+        activity.Call("runOnUiThread", new AndroidJavaRunnable(() =>
+        {
+            try { action(); }
+            catch (Exception exception) { nativeError = exception.Message; creationQueued = false; }
+        }));
     }
 #else
     private void SetWebViewVisible(bool isVisible)

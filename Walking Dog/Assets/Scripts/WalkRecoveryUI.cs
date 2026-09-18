@@ -53,7 +53,7 @@ public sealed class WalkRecoveryUI : MonoBehaviour
             hiddenMaps.Clear();
             // Android WebViews sit above Unity canvases; hide them while a dialog is open.
             foreach (var map in FindObjectsByType<OpenFreeMapWebViewMap>())
-                if (map.enabled) { hiddenMaps.Add(map); map.enabled = false; }
+                if (map.enabled) { hiddenMaps.Add(map); map.Suspend(this); }
         }
         canvasObject.SetActive(true);
         var manager = StepCountAndGpsManager.Instance;
@@ -88,7 +88,7 @@ public sealed class WalkRecoveryUI : MonoBehaviour
         pending = null;
         summary = false;
         if (canvasObject != null) canvasObject.SetActive(false);
-        foreach (var map in hiddenMaps) if (map != null && map.gameObject.activeInHierarchy) map.enabled = true;
+        foreach (var map in hiddenMaps) if (map != null) map.Resume(this);
         hiddenMaps.Clear();
     }
 

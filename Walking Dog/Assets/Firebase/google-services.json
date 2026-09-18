@@ -12,7 +12,20 @@
           "package_name": "com.TheVeryEvilCompany.WalkingDog"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "13373242265-l1unvefq15de470d4a36450ebsouc8sj.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.TheVeryEvilCompany.WalkingDog",
+            "certificate_hash": "3306b023834125cd16c6358593cdfd06db585a6c"
+          }
+        },
+        {
+          "client_id": "13373242265-pqgelh38f6haoh1mh0hc7lc1q15f9oj9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBtC4AVEFrmyqKJO2WGa3NQyGtkDO-RU0E"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "13373242265-pqgelh38f6haoh1mh0hc7lc1q15f9oj9.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

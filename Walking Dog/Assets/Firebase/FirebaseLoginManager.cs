@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Threading;
 using UnityEngine;
 using Firebase;
 using Firebase.Auth;
@@ -11,6 +12,10 @@ public class FirebaseLoginManager : MonoBehaviour
 
     private FirebaseAuth auth;
     private FirebaseUser user;
+    [Tooltip("Optional Web OAuth client ID. Normally read from the updated google-services.json Android resources.")]
+    [SerializeField] private string googleWebClientId = "";
+    private CancellationTokenSource googleLogin;
+    public bool IsGoogleLoginInProgress => googleLogin != null;
 
     public bool IsFirebaseReady { get; private set; }
     public string InitializationError { get; private set; }
@@ -91,6 +96,7 @@ public class FirebaseLoginManager : MonoBehaviour
 
     public void LoginUser(string email, string password)
     {
+        if (IsGoogleLoginInProgress) return;
         if (!IsFirebaseReady)
         {
             OnLoginFailed?.Invoke(InitializationError ?? "Firebase is not ready yet.");
@@ -121,6 +127,7 @@ public class FirebaseLoginManager : MonoBehaviour
 
     public void RegisterUser(string email, string password)
     {
+        if (IsGoogleLoginInProgress) return;
         if (!IsFirebaseReady)
         {
             OnRegisterFailed?.Invoke(InitializationError ?? "Firebase is not ready yet.");
@@ -149,8 +156,49 @@ public class FirebaseLoginManager : MonoBehaviour
         });
     }
 
+    public async void LoginWithGoogle()
+    {
+        if (IsGoogleLoginInProgress) return;
+        if (!IsFirebaseReady)
+        {
+            OnLoginFailed?.Invoke(InitializationError ?? "Firebase is not ready yet.");
+            return;
+        }
+        var request = new CancellationTokenSource();
+        googleLogin = request;
+        try
+        {
+            string token = await AndroidGoogleSignIn.GetIdTokenAsync(googleWebClientId, request.Token);
+            request.Token.ThrowIfCancellationRequested();
+            using (var credential = GoogleAuthProvider.GetCredential(token, null))
+            {
+                var signedInUser = await auth.SignInWithCredentialAsync(credential);
+                if (this == null || Instance != this || request.IsCancellationRequested) return;
+                OnLoginSuccess?.Invoke(signedInUser);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception exception)
+        {
+            if (this != null && Instance == this && !request.IsCancellationRequested)
+            {
+                var message = exception is InvalidOperationException ? exception.Message
+                    : "Google authentication failed. Please retry or use email/password.";
+                OnLoginFailed?.Invoke(message);
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(googleLogin, request)) googleLogin = null;
+            request.Dispose();
+        }
+    }
+
     public void SignOutUser()
     {
+        // Do not race a pending Firebase credential exchange with sign-out.
+        if (IsGoogleLoginInProgress) return;
+        AndroidGoogleSignIn.SignOut();
         if (auth != null && auth.CurrentUser != null)
         {
             auth.SignOut();
@@ -164,6 +212,7 @@ public class FirebaseLoginManager : MonoBehaviour
 
     private void OnDestroy()
     {
+        googleLogin?.Cancel();
         if (auth != null) auth.StateChanged -= AuthStateChanged;
         IsFirebaseReady = false;
         if (Instance == this) Instance = null;
