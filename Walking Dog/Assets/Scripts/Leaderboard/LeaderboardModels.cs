@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 namespace WalkingDog.Leaderboards
 {
     public enum LeaderboardMetric { Distance, Steps } // the leaderboard score
+    public enum LeaderboardScope { Global, Friends }
 
     public sealed class LeaderboardEntry
     {
@@ -46,15 +47,18 @@ namespace WalkingDog.Leaderboards
     public sealed class LeaderboardSnapshot
     {
         public LeaderboardMetric Metric { get; }
+        public LeaderboardScope Scope { get; }
         public string CurrentPlayerId { get; }
         public IReadOnlyList<LeaderboardEntry> Entries { get; }
         // Null until this player has a counted walk. This does not mean zero global rank.
         public LeaderboardEntry CurrentPlayer { get; }
 
         public LeaderboardSnapshot(LeaderboardMetric metric, string currentPlayerId,
-            IReadOnlyList<LeaderboardEntry> entries, LeaderboardEntry currentPlayer)
+            IReadOnlyList<LeaderboardEntry> entries, LeaderboardEntry currentPlayer,
+            LeaderboardScope scope = LeaderboardScope.Global)
         {
             Metric = metric;
+            Scope = scope;
             CurrentPlayerId = currentPlayerId;
             Entries = entries;
             CurrentPlayer = currentPlayer;
@@ -73,6 +77,7 @@ namespace WalkingDog.Leaderboards
     {
         string AuthenticatedUserId { get; }
         Task<LeaderboardSnapshot> LoadAsync(LeaderboardMetric metric, CancellationToken cancellationToken);
+        Task<LeaderboardSnapshot> LoadAsync(LeaderboardMetric metric, LeaderboardScope scope, CancellationToken cancellationToken);
         Task SaveDisplayNameAsync(string displayName, CancellationToken cancellationToken);
     }
 }
