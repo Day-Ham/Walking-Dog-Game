@@ -34,12 +34,16 @@ namespace WalkingDog.Leaderboards
         private bool busy;
         private string observedUser = "";
         private LeaderboardMetric metric = LeaderboardMetric.Distance; //display the leaderboard distance
+        private LeaderboardScope scope = LeaderboardScope.Global;
+        private Button globalTab, friendsTab, manageFriends;
+        private FriendsPanelUI friendsPanel;
         internal Func<Task<ILeaderboardService>> ServiceFactory;
         internal int VisibleCardCount => cards.Count;
         internal string StatusText => status.text;
 
         private void Awake()
         {
+            EnsureFriendControls();
             cardTemplate.gameObject.SetActive(false);
             refresh.onClick.AddListener(OnRefresh);
             distance.onClick.AddListener(ShowDistance);
@@ -72,9 +76,11 @@ namespace WalkingDog.Leaderboards
         public void OnRefresh() { _ = RefreshAsync(); } //refresh function for leaderboard and the discard task
         public void ShowDistance() { metric = LeaderboardMetric.Distance; OnRefresh(); }
         public void ShowSteps() { metric = LeaderboardMetric.Steps; OnRefresh(); }
+        public void ShowGlobal() { scope = LeaderboardScope.Global; OnRefresh(); }
+        public void ShowFriends() { scope = LeaderboardScope.Friends; OnRefresh(); }
         public void OnSaveNickname() { _ = SaveNicknameAsync(); }
 
-        private async Task<ILeaderboardService> GetServiceAsync()
+        internal async Task<ILeaderboardService> GetServiceAsync()
         {
             if (service != null) return service;
             if (initialization == null) initialization = ServiceFactory != null ? ServiceFactory() : CreateServiceAsync();
@@ -108,6 +114,7 @@ namespace WalkingDog.Leaderboards
         {
             if (!isActiveAndEnabled || destroyed) return;
             var selected = metric;
+            var selectedScope = scope;
             int request = BeginRequest("Loading leaderboard…");
             var token = pending.Token;
             ClearCards();
@@ -118,7 +125,7 @@ namespace WalkingDog.Leaderboards
                 if (!IsCurrent(request)) return;
                 if (string.IsNullOrEmpty(store.AuthenticatedUserId))
                 { status.text = "Sign in to see the leaderboard."; return; }
-                var data = await store.LoadAsync(selected, token);
+                var data = await store.LoadAsync(selected, selectedScope, token);
                 if (!IsCurrent(request)) return;
                 Render(data);
             }
@@ -148,8 +155,11 @@ namespace WalkingDog.Leaderboards
             LayoutRebuilder.ForceRebuildLayoutImmediate(content); 
             scroll.StopMovement();
             scroll.horizontalNormalizedPosition = 0;
-            status.text = data.Entries.Count == 0 ? "No ranked walks yet. Finish a walk and connect to the internet to join."
-                : "All time · " + (data.Metric == LeaderboardMetric.Distance ? "Distance" : "Steps") + " · Swipe to see more";
+            status.text = data.Entries.Count == 0
+                ? data.Scope == LeaderboardScope.Friends ? "No ranked walks yet. Add friends and sync a completed walk."
+                    : "No ranked walks yet. Finish a walk and connect to the internet to join."
+                : (data.Scope == LeaderboardScope.Friends ? "Friends" : "Global") + " · All time · "
+                    + (data.Metric == LeaderboardMetric.Distance ? "Distance" : "Steps") + " · Swipe to see more";
             var own = data.CurrentPlayer;
             personalTotals.text = own == null ? "You · No synced walks counted yet"
                 : $"You · {own.TotalDistanceMeters / 1000d:N2} km · {own.TotalSteps:N0} steps\n{own.CompletedWalkCount:N0} completed walks";
@@ -187,6 +197,8 @@ namespace WalkingDog.Leaderboards
             steps.interactable = metric != LeaderboardMetric.Steps;
             saveNickname.interactable = !busy && service != null && !string.IsNullOrEmpty(service.AuthenticatedUserId);
             nickname.interactable = saveNickname.interactable;
+            if (globalTab != null) globalTab.interactable = scope != LeaderboardScope.Global;
+            if (friendsTab != null) friendsTab.interactable = scope != LeaderboardScope.Friends;
         }
 
         private void ClearCards()
@@ -211,6 +223,7 @@ namespace WalkingDog.Leaderboards
 
         private void OnDisable()
         {
+            if (friendsPanel != null) friendsPanel.gameObject.SetActive(false);
             CancelRequest();
             ClearCards();
             if (status != null) status.text = "";
@@ -218,6 +231,24 @@ namespace WalkingDog.Leaderboards
             if (nickname != null) nickname.SetTextWithoutNotify("");
             foreach (var map in hiddenMaps) if (map != null) map.Resume(this);
             hiddenMaps.Clear();
+        }
+
+        // Build from the screen's existing typography and buttons, so already
+        // wired scenes gain the feature without replacing the teammate's artwork.
+        internal void EnsureFriendControls()
+        {
+            if (globalTab != null) return;
+            var parent = refresh.transform.parent;
+            globalTab = FriendsPanelUI.MakeButton(parent, refresh, "Global rankings", "Global", .10f, .695f, .48f, .745f);
+            friendsTab = FriendsPanelUI.MakeButton(parent, refresh, "Friends rankings", "Friends", .52f, .695f, .90f, .745f);
+            manageFriends = FriendsPanelUI.MakeButton(parent, refresh, "Manage friends", "Manage friends", .53f, .025f, .90f, .077f);
+            FriendsPanelUI.Place(scroll.transform, .10f, .30f, .90f, .68f);
+            globalTab.onClick.AddListener(ShowGlobal);
+            friendsTab.onClick.AddListener(ShowFriends);
+            manageFriends.onClick.AddListener(() => {
+                if (friendsPanel == null) friendsPanel = FriendsPanelUI.Create(parent, this, refresh, status, nickname);
+                friendsPanel.gameObject.SetActive(true);
+            });
         }
 
         private void OnDestroy()

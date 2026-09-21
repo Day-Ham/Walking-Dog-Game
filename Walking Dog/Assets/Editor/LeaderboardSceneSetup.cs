@@ -150,6 +150,46 @@ public static class LeaderboardSceneSetup
         // Preview rows are never saved into the scene or sent to Firebase.
     }
 
+    public static void CaptureFriendsPreview()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        var canvas = GameObject.Find("Canvas").GetComponent<Canvas>();
+        // The scene's startup fade only animates away in Play mode.
+        var fade = canvas.transform.Find("CrossfadePanel");
+        if (fade != null) fade.gameObject.SetActive(false);
+        foreach (var safeArea in canvas.GetComponentsInChildren<WalkScreenSafeArea>(true)) safeArea.enabled = false;
+        var panel = canvas.transform.Find("Leaderboard Screen").GetComponent<LeaderboardPanelUI>();
+        panel.gameObject.SetActive(true);
+        var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+        typeof(LeaderboardPanelUI).GetMethod("EnsureFriendControls", flags).Invoke(panel, null);
+        var entries = new[] {
+            new LeaderboardEntry("friend", "Mochi Walker", 24600, 32180, 12),
+            new LeaderboardEntry("me", "My Walking Dog", 18500, 26400, 9)
+        };
+        typeof(LeaderboardPanelUI).GetField("scope", flags).SetValue(panel, LeaderboardScope.Friends);
+        typeof(LeaderboardPanelUI).GetMethod("SetButtons", flags).Invoke(panel, null);
+        typeof(LeaderboardPanelUI).GetMethod("Render", flags).Invoke(panel,
+            new object[] { new LeaderboardSnapshot(LeaderboardMetric.Distance, "me", entries, entries[1], LeaderboardScope.Friends) });
+        foreach (var size in new[] { new Vector2Int(720, 1280), new Vector2Int(946, 2048) })
+            Capture(canvas, "Logs/friends-rankings-" + size.x + "x" + size.y + ".png", size.x, size.y);
+        var safe = panel.transform.Find("LeaderBG/LeaderSafeArea");
+        var friends = (FriendsPanelUI)typeof(FriendsPanelUI).GetMethod("Create", BindingFlags.Static | BindingFlags.NonPublic)
+            .Invoke(null, new object[] { safe, panel, safe.Find("RefreshLeaders").GetComponent<Button>(),
+                safe.Find("Leaderboard Status").GetComponent<TMP_Text>(), safe.Find("Nickname").GetComponent<TMP_InputField>() });
+        friends.gameObject.SetActive(true);
+        typeof(FriendsPanelUI).GetField("observedUser", flags).SetValue(friends, "aBcDeFgHiJkLmNoPqRsTuVwXyZ12");
+        ((TMP_Text)typeof(FriendsPanelUI).GetField("code", flags).GetValue(friends)).text = "aBcDeFgHiJkLmNoPqRsTuVwXyZ12";
+        ((TMP_Text)typeof(FriendsPanelUI).GetField("message", flags).GetValue(friends)).text = "Accept incoming requests to compare rankings.";
+        typeof(FriendsPanelUI).GetMethod("Render", flags).Invoke(friends, new object[] { new[] {
+            new FriendEntry("friend1", "Mochi Walker", "friend1", false),
+            new FriendEntry("friend2", "Weekend Walker", "aBcDeFgHiJkLmNoPqRsTuVwXyZ12", false),
+            new FriendEntry("friend3", "My Walking Buddy", "friend3", true)
+        } });
+        foreach (var size in new[] { new Vector2Int(720, 1280), new Vector2Int(946, 2048) })
+            Capture(canvas, "Logs/friends-manager-" + size.x + "x" + size.y + ".png", size.x, size.y);
+        // Preview-only data is never saved or sent to Firebase.
+    }
+
     private static void Capture(Canvas canvas, string path, int width, int height)
     {
         Directory.CreateDirectory("Logs");

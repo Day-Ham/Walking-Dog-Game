@@ -1,5 +1,10 @@
 # Leaderboard data and UI handoff
 
+> Current feature: see [Friends and friends-only rankings](friends-leaderboard.md)
+> for the scoped service, connected runtime UI and updated deployment requirements.
+> The original handoff below predates the connected UI and Spark-compatible client
+> aggregation now implemented in `FirebaseLeaderboardWriter` and `firestore.rules`.
+
 This feature adds an all-time distance/steps leaderboard without modifying scenes,
 prefabs, existing UI scripts, walk recording, login, or the walk upload payload.
 The existing `FirebaseWalkBootstrap` also stays unchanged. Nothing runs until UI
