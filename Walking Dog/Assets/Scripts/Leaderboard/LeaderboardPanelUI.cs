@@ -35,16 +35,21 @@ namespace WalkingDog.Leaderboards
         private string observedUser = "";
         private LeaderboardMetric metric = LeaderboardMetric.Distance; //display the leaderboard distance
         private LeaderboardScope scope = LeaderboardScope.Global;
-        private Button globalTab, friendsTab, manageFriends;
-        private FriendsPanelUI friendsPanel;
+        // KEEP: assign these once the runtime-created controls are added to the scene.
+        [SerializeField] private Button globalTab, friendsTab, manageFriends;
+        [SerializeField] private FriendsPanelUI friendsPanel;
         internal Func<Task<ILeaderboardService>> ServiceFactory;
         internal int VisibleCardCount => cards.Count;
         internal string StatusText => status.text;
 
         private void Awake()
         {
-            EnsureFriendControls();
+            // DELETE this call after Global, Friends, and Manage Friends are scene objects.
+           // EnsureFriendControls();
             cardTemplate.gameObject.SetActive(false);
+
+            // DELETE these listeners after assigning the same public methods in each Button's
+            // Inspector On Click() event. Keep the public methods themselves.
             refresh.onClick.AddListener(OnRefresh);
             distance.onClick.AddListener(ShowDistance);
             steps.onClick.AddListener(ShowSteps);
@@ -73,12 +78,34 @@ namespace WalkingDog.Leaderboards
             }
         }
 
-        public void OnRefresh() { _ = RefreshAsync(); } //refresh function for leaderboard and the discard task
+        #region KEEP — CONNECT THESE METHODS TO INSPECTOR BUTTON EVENTS
+
+        // Refresh button -> OnRefresh
+        public void OnRefresh() { _ = RefreshAsync(); }
+        // Distance button -> ShowDistance
         public void ShowDistance() { metric = LeaderboardMetric.Distance; OnRefresh(); }
+        // Steps button -> ShowSteps
         public void ShowSteps() { metric = LeaderboardMetric.Steps; OnRefresh(); }
+        // Global tab -> ShowGlobal
         public void ShowGlobal() { scope = LeaderboardScope.Global; OnRefresh(); }
+        // Friends tab -> ShowFriends
         public void ShowFriends() { scope = LeaderboardScope.Friends; OnRefresh(); }
+        // Save nickname button -> OnSaveNickname
         public void OnSaveNickname() { _ = SaveNicknameAsync(); }
+        // Manage friends button -> OpenFriendsPanel
+        public void OpenFriendsPanel()
+        {
+            if (friendsPanel == null)
+            {
+                Debug.LogWarning("Assign Friends Panel on LeaderboardPanelUI in the Inspector.");
+                return;
+            }
+            friendsPanel.gameObject.SetActive(true);
+        }
+
+        #endregion
+
+       
 
         internal async Task<ILeaderboardService> GetServiceAsync()
         {
@@ -141,7 +168,9 @@ namespace WalkingDog.Leaderboards
             finally { if (IsCurrent(request)) { busy = false; SetButtons(); } }
         }
 
-        internal void Render(LeaderboardSnapshot data) //display card data
+       
+    
+        internal void Render(LeaderboardSnapshot data)
         {
             ClearCards(); //clear previous garbage card before rendering new data
             for (int i = 0; i < data.Entries.Count; i++) // check all entries
@@ -233,9 +262,10 @@ namespace WalkingDog.Leaderboards
             hiddenMaps.Clear();
         }
 
-        // Build from the screen's existing typography and buttons, so already
-        // wired scenes gain the feature without replacing the teammate's artwork.
-        internal void EnsureFriendControls()
+
+
+
+        /* internal void EnsureFriendControls()
         {
             if (globalTab != null) return;
             var parent = refresh.transform.parent;
@@ -245,17 +275,18 @@ namespace WalkingDog.Leaderboards
             FriendsPanelUI.Place(scroll.transform, .10f, .30f, .90f, .68f);
             globalTab.onClick.AddListener(ShowGlobal);
             friendsTab.onClick.AddListener(ShowFriends);
-            manageFriends.onClick.AddListener(() => {
-                if (friendsPanel == null) friendsPanel = FriendsPanelUI.Create(parent, this, refresh, status, nickname);
-                friendsPanel.gameObject.SetActive(true);
-            });
+            manageFriends.onClick.AddListener(OpenFriendsPanel);
         }
 
+        #endregion
+       */
         private void OnDestroy()
         {
             destroyed = true;
             CancelRequest();
             service?.Dispose();
+            // DELETE these RemoveListener calls only after the matching Awake AddListener
+            // calls have been deleted and events are wired through the Inspector instead.
             if (refresh != null) refresh.onClick.RemoveListener(OnRefresh);
             if (distance != null) distance.onClick.RemoveListener(ShowDistance);
             if (steps != null) steps.onClick.RemoveListener(ShowSteps);
