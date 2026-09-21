@@ -217,8 +217,10 @@ test("Spark nickname and public label update atomically without changing scores"
   await assertFails(setDoc(profileRef, { displayName: "New Walker", updatedAt: serverTimestamp() }));
   const batch = writeBatch(client);
   batch.set(profileRef, { displayName: "New Walker", updatedAt: serverTimestamp() });
+  batch.set(doc(client, "friendCodes/alice"), { displayName: "New Walker", updatedAt: serverTimestamp() });
   batch.update(doc(client, `${PLAYERS}/alice`), { displayName: "New Walker", updatedAt: serverTimestamp() });
   await assertSucceeds(batch.commit());
+  assert.equal((await getDoc(doc(client, "friendCodes/alice"))).data().displayName, "New Walker");
   assert.equal((await player("alice")).get("displayName"), "New Walker");
   assert.equal((await player("alice")).get("totalSteps"), 100);
   const cheat = writeBatch(client);
@@ -232,4 +234,86 @@ test("Spark cannot count a newly invented walk and score in the same batch", asy
   const batch = forgedBatch(client, "one");
   batch.set(doc(client, "users/alice/walks/one"), { ...walk("one"), uploadedAt: serverTimestamp() });
   await assertFails(batch.commit());
+});
+
+async function registerFriend(client, uid) {
+  return setDoc(doc(client, `friendCodes/${uid}`), { displayName: `Walker ${uid}`, updatedAt: serverTimestamp() });
+}
+function friendBatch(client, owner, other, requestedBy, status = "pending") {
+  const batch = writeBatch(client);
+  const data = { requestedBy, status, updatedAt: serverTimestamp() };
+  batch.set(doc(client, `friends/${owner}/links/${other}`), data);
+  batch.set(doc(client, `friends/${other}/links/${owner}`), data);
+  return batch;
+}
+function removeFriend(client, owner, other) {
+  const batch = writeBatch(client);
+  batch.delete(doc(client, `friends/${owner}/links/${other}`));
+  batch.delete(doc(client, `friends/${other}/links/${owner}`));
+  return batch.commit();
+}
+async function friendAccounts() {
+  const alice = environment.authenticatedContext("alice").firestore();
+  const bob = environment.authenticatedContext("bob").firestore();
+  const mallory = environment.authenticatedContext("mallory").firestore();
+  await Promise.all([registerFriend(alice, "alice"), registerFriend(bob, "bob")]);
+  return { alice, bob, mallory };
+}
+
+test("friend codes support exact lookup, prohibit browsing, and protect ownership", async () => {
+  const { alice, bob } = await friendAccounts();
+  await assertSucceeds(getDoc(doc(bob, "friendCodes/alice")));
+  await assertFails(getDocs(collection(bob, "friendCodes")));
+  await assertFails(registerFriend(bob, "alice"));
+  await assertFails(setDoc(doc(alice, "friendCodes/alice"), { displayName: "<script>", updatedAt: serverTimestamp() }));
+  const guest = environment.unauthenticatedContext().firestore();
+  await assertFails(getDoc(doc(guest, "friendCodes/alice")));
+});
+
+test("only recipient can accept; strangers cannot see or change friendships", async () => {
+  const { alice, bob, mallory } = await friendAccounts();
+  await assertSucceeds(friendBatch(alice, "alice", "bob", "alice").commit());
+  await assertSucceeds(getDocs(collection(alice, "friends/alice/links")));
+  await assertFails(getDocs(collection(bob, "friends/alice/links")));
+  await assertFails(getDoc(doc(mallory, "friends/alice/links/bob")));
+  await assertFails(friendBatch(alice, "alice", "bob", "alice", "accepted").commit());
+  await assertFails(friendBatch(mallory, "alice", "bob", "alice", "accepted").commit());
+  await assertSucceeds(friendBatch(bob, "alice", "bob", "alice", "accepted").commit());
+  assert.equal((await getDoc(doc(alice, "friends/alice/links/bob"))).data().status, "accepted");
+  assert.equal((await getDoc(doc(bob, "friends/bob/links/alice"))).data().status, "accepted");
+  await assertFails(removeFriend(mallory, "alice", "bob"));
+  await assertSucceeds(removeFriend(bob, "alice", "bob"));
+  assert.equal((await getDoc(doc(alice, "friends/alice/links/bob"))).exists(), false);
+  assert.equal((await getDoc(doc(bob, "friends/bob/links/alice"))).exists(), false);
+});
+
+test("friend requests reject self, unknown players, forged sender and unilateral changes", async () => {
+  const { alice } = await friendAccounts();
+  await assertFails(friendBatch(alice, "alice", "alice", "alice").commit());
+  await assertFails(friendBatch(alice, "alice", "missing", "alice").commit());
+  await assertFails(friendBatch(alice, "alice", "bob", "bob").commit());
+  await assertFails(friendBatch(alice, "alice", "bob", "alice", "accepted").commit());
+  await assertFails(setDoc(doc(alice, "friends/alice/links/bob"), { requestedBy: "alice", status: "pending", updatedAt: serverTimestamp() }));
+  await assertSucceeds(friendBatch(alice, "alice", "bob", "alice").commit());
+  await assertFails(deleteDoc(doc(alice, "friends/alice/links/bob")));
+});
+
+test("cancel and decline clear both copies; crossed sends cannot overwrite a request", async () => {
+  const { alice, bob } = await friendAccounts();
+  await friendBatch(alice, "alice", "bob", "alice").commit();
+  await assertFails(friendBatch(bob, "bob", "alice", "bob").commit());
+  await assertSucceeds(removeFriend(alice, "alice", "bob"));
+  await assertSucceeds(friendBatch(bob, "bob", "alice", "bob").commit());
+  await assertSucceeds(removeFriend(alice, "alice", "bob"));
+  await assertFails(friendBatch(alice, "bob", "alice", "bob", "accepted").commit());
+  assert.equal((await getDoc(doc(bob, "friends/bob/links/alice"))).exists(), false);
+});
+
+test("friend acceptance cannot change the sender or leave mismatched records", async () => {
+  const { alice, bob } = await friendAccounts();
+  await friendBatch(alice, "alice", "bob", "alice").commit();
+  await assertFails(friendBatch(bob, "alice", "bob", "bob", "accepted").commit());
+  await assertFails(setDoc(doc(bob, "friends/bob/links/alice"), { requestedBy: "alice", status: "accepted", updatedAt: serverTimestamp() }));
+  await assertSucceeds(friendBatch(bob, "alice", "bob", "alice", "accepted").commit());
+  await assertFails(friendBatch(alice, "alice", "bob", "alice").commit());
 });

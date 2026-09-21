@@ -59,6 +59,9 @@ namespace WalkingDog.Leaderboards
                 transaction.Set(db.Document($"leaderboardProfiles/{uid}"), new Dictionary<string, object> {
                     ["displayName"] = name, ["updatedAt"] = FieldValue.ServerTimestamp
                 });
+                transaction.Set(db.Document($"friendCodes/{uid}"), new Dictionary<string, object> {
+                    ["displayName"] = name, ["updatedAt"] = FieldValue.ServerTimestamp
+                });
                 if (player.Exists) transaction.Update(playerRef, new Dictionary<string, object> {
                     ["displayName"] = name, ["updatedAt"] = FieldValue.ServerTimestamp
                 });
@@ -88,7 +91,7 @@ namespace WalkingDog.Leaderboards
             }
         }
 
-        private static string DefaultName(string uid)
+        internal static string DefaultName(string uid)
         {
             using (var sha = SHA256.Create())
             {

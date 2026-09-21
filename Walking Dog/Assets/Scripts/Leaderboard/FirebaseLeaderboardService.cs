@@ -11,7 +11,7 @@ namespace WalkingDog.Leaderboards
     // Plain service: no GameObjects or UI references. Reconciles the owner's
     // saved cloud walks when loading; rules validate every score transaction.
     // Create/call/dispose on Unity's main thread after Firebase initialization.
-    public sealed class FirebaseLeaderboardService : ILeaderboardService
+    public sealed partial class FirebaseLeaderboardService : ILeaderboardService, IFriendsService
     {
         public const int PageSize = 50;
         private const string PlayersPath = "leaderboards/allTime/players";
@@ -58,20 +58,25 @@ namespace WalkingDog.Leaderboards
         }
 
         public async Task<LeaderboardSnapshot> LoadAsync(LeaderboardMetric metric, CancellationToken cancellationToken) // the load async itslef 
+            => await LoadAsync(metric, LeaderboardScope.Global, cancellationToken);
+
+        public async Task<LeaderboardSnapshot> LoadAsync(LeaderboardMetric metric, LeaderboardScope scope, CancellationToken cancellationToken)
         {
             if (metric != LeaderboardMetric.Distance && metric != LeaderboardMetric.Steps)
                 throw new ArgumentOutOfRangeException(nameof(metric));
+            if (scope != LeaderboardScope.Global && scope != LeaderboardScope.Friends)
+                throw new ArgumentOutOfRangeException(nameof(scope));
             var uid = RequireUser(cancellationToken);
             var revision = authRevision;
             LeaderboardSnapshot result;
-            try { result = await WaitAsync(LoadWithReconciliationAsync(uid, metric, cancellationToken), cancellationToken); }
+            try { result = await WaitAsync(LoadWithReconciliationAsync(uid, metric, scope, cancellationToken), cancellationToken); }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && !disposed && revision == authRevision)
             { throw new TimeoutException("Leaderboard sync is taking longer. Refresh to continue."); }
             CheckAccount(uid, revision, cancellationToken);
             return result;
         }
 
-        private async Task<LeaderboardSnapshot> LoadWithReconciliationAsync(string uid, LeaderboardMetric metric, CancellationToken token) // load with reconciliation, if the user has any unsynced data, it will reconcile it with the server before loading the leaderboard
+        private async Task<LeaderboardSnapshot> LoadWithReconciliationAsync(string uid, LeaderboardMetric metric, LeaderboardScope scope, CancellationToken token)
         {
             using (var linked = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token))
             {
@@ -79,7 +84,8 @@ namespace WalkingDog.Leaderboards
                 linked.CancelAfter(timeout);
                 if (firestore != null) await FirebaseLeaderboardWriter.ReconcileAsync(firestore, uid, reconciliation, linked.Token);
                 linked.Token.ThrowIfCancellationRequested();
-                return await read(uid, metric);
+                return scope == LeaderboardScope.Friends
+                    ? await FetchFriendsBoardAsync(uid, metric, linked.Token) : await read(uid, metric);
             }
         }
 

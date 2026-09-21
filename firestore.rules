@@ -125,6 +125,49 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Share a code explicitly; the directory cannot be browsed or searched.
+    match /friendCodes/{userId} {
+      allow get: if request.auth != null;
+      allow list: if false;
+      allow create, update: if isOwner(userId)
+        && request.resource.data.keys().hasAll(['displayName', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['displayName', 'updatedAt'])
+        && validName(request.resource.data.displayName)
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // Each relationship has two identical records, committed atomically. Only
+    // the recipient can accept; either participant can decline/cancel/remove.
+    match /friends/{userId}/links/{otherId} {
+      function participant() { return isOwner(userId) || isOwner(otherId); }
+      function mirror() {
+        return /databases/$(database)/documents/friends/$(otherId)/links/$(userId);
+      }
+      function validLink() {
+        let data = request.resource.data;
+        return userId != otherId
+          && data.keys().hasAll(['requestedBy', 'status', 'updatedAt'])
+          && data.keys().hasOnly(['requestedBy', 'status', 'updatedAt'])
+          && data.updatedAt == request.time
+          && getAfter(mirror()).data == data;
+      }
+      allow get: if participant();
+      allow list: if isOwner(userId);
+      allow create: if participant() && validLink()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.requestedBy == request.auth.uid
+        && exists(/databases/$(database)/documents/friendCodes/$(userId))
+        && exists(/databases/$(database)/documents/friendCodes/$(otherId))
+        && !exists(mirror());
+      allow update: if participant() && validLink()
+        && resource.data.status == 'pending'
+        && resource.data.requestedBy != request.auth.uid
+        && request.resource.data.status == 'accepted'
+        && request.resource.data.requestedBy == resource.data.requestedBy;
+      allow delete: if participant() && !existsAfter(mirror());
+    }
+
     // Rewards, GPS routes, and all other paths remain private.
     match /{document=**} {
       allow read, write: if false;
