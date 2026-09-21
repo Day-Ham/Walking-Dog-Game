@@ -73,13 +73,12 @@ public sealed class WalkHistoryUI : MonoBehaviour
         panel.SetActive(true);
         RefreshHistory();
         
-        otherMaps.Clear();
         foreach (var map in FindObjectsOfType<OpenFreeMapWebViewMap>())
         {
             if (map != openFreeMap && map.enabled)
             {
-                map.enabled = false;
-                otherMaps.Add(map);
+                map.Suspend(this);
+                if (!otherMaps.Contains(map)) otherMaps.Add(map);
             }
         }
     }
@@ -111,7 +110,7 @@ public sealed class WalkHistoryUI : MonoBehaviour
         
         foreach (var map in otherMaps)
         {
-            if (map != null) map.enabled = true;
+            if (map != null) map.Resume(this);
         }
         otherMaps.Clear();
     }
