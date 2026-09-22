@@ -325,6 +325,37 @@ function reserveCode(client, uid, code) {
   return batch.commit();
 }
 
+test("fresh account registers its profile and short code, then saves and restores a photo", async () => {
+  const uid = "fresh-install";
+  const client = environment.authenticatedContext(uid).firestore();
+  const profile = doc(client, `friendCodes/${uid}`);
+  // Mirror RegisterCodeAsync: both private profile and public directory are absent.
+  await assertSucceeds(runTransaction(client, async tx => {
+    assert.equal((await tx.get(doc(client, `leaderboardProfiles/${uid}`))).exists(), false);
+    assert.equal((await tx.get(profile)).exists(), false);
+    tx.set(profile, { displayName: "Walker-Fresh", photoUrl: "", updatedAt: serverTimestamp() }, { merge: true });
+  }));
+  assert.equal((await getDocs(collection(client, `friends/${uid}/links`))).empty, true);
+  const reservation = doc(client, `friendCodeOwners/${uid}`);
+  const lookup = doc(client, "friendCodeLookup/ABCD2345");
+  await assertSucceeds(runTransaction(client, async tx => {
+    assert.equal((await tx.get(reservation)).exists(), false);
+    assert.equal((await tx.get(lookup)).exists(), false);
+    tx.set(reservation, { code: "ABCD2345" });
+    tx.set(lookup, { playerId: uid });
+  }));
+  // A second client installation recovers the same account code from the server.
+  const reinstall = environment.authenticatedContext(uid).firestore();
+  assert.equal((await getDoc(doc(reinstall, `friendCodeOwners/${uid}`))).data().code, "ABCD2345");
+  for (const photoUrl of ["data:image/jpeg;base64,/9j/AAAA", "https://lh3.googleusercontent.com/a/photo=s96-c", ""]) {
+    await assertSucceeds(setDoc(profile, { photoUrl, updatedAt: serverTimestamp() }, { merge: true }));
+    const saved = (await getDoc(doc(reinstall, `friendCodes/${uid}`))).data();
+    assert.equal(saved.photoUrl, photoUrl);
+    assert.equal(saved.displayName, "Walker-Fresh");
+  }
+  assert.equal((await getDoc(doc(client, `${PLAYERS}/${uid}`))).exists(), false);
+});
+
 test("short codes require paired unique immutable reservations and exact authenticated lookup", async () => {
   const { alice, bob } = await friendAccounts();
   await assertFails(setDoc(doc(alice, "friendCodeOwners/alice"), { code: "ABCDEFGH" }));

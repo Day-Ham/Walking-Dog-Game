@@ -80,12 +80,37 @@ disables that root after its last frame; the friends animation still closes only
 
 ## Verification and rollout
 
+**Deployment verified September 22, 2026, 05:09 UTC:** the live `walky-aa25c`
+Firestore rules now exactly match this repository, including `photoUrl`,
+`friendCodeOwners` and `friendCodeLookup`. The previously active September 21 rules
+lacked all three and blocked both photo saves and fresh-account registration.
+The fix is server-side; devices already running the profile-picture APK can reopen
+the screens and retry without reinstalling or rebuilding. The fresh-account
+regression passed; the emulator suite is now **24/25**, with only the same existing
+fractional-distance concurrent-scoring failure. Device retesting is still needed
+to confirm the complete Android picker-to-save flow.
+
+If an existing account can load rankings but both photo options fail, and a fresh
+account has no friend code, check the **deployed** rules first. Rules that only
+allow `displayName` and `updatedAt` on `friendCodes` reject the new client's initial
+profile registration (which includes `photoUrl`, even when empty). Rules without
+`friendCodeOwners` and `friendCodeLookup` also reject short-code registration.
+Reinstalling or clearing app data cannot correct these server permissions. Deploy
+the rules from the same feature version, reopen the leaderboard and Manage friends,
+and retry the photo selection. Google-photo restoration requires an account with
+a Google photo; email-only accounts otherwise return to initials.
+
+The emulator regression `fresh account registers its profile and short code, then
+saves and restores a photo` covers an account with no existing profile, walks,
+friend links or code, plus reading the same code from a second client installation.
+
 September 22, 2026: **76/76 Unity EditMode tests passed** after the short-code,
 profile-picture and scene-wiring changes. Android `ProfilePhotoPicker.java` also
-compiled against the installed Android SDK. Firestore emulator: **23/24 passed**,
+compiled against the installed Android SDK. Initial Firestore emulator run: **23/24 passed**,
 including every new short-code and photo test. The one failure is the previously
-documented fractional-distance concurrent-scoring test below. No rules deployment,
-APK build or physical-device photo-picker test was performed.
+documented fractional-distance concurrent-scoring test below. That initial check
+preceded the rules deployment recorded above; no APK build or physical-device
+photo-picker test was performed locally.
 
 Run the Unity EditMode suite and `npm.cmd run test:emulator` from `functions/`.
 The emulator suite covers code privacy/ownership, mirrored writes, forged sender,
