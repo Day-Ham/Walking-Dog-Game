@@ -4,9 +4,56 @@ using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using WalkingDog.Leaderboards;
+using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
 
 public sealed class FriendsTests
 {
+    [Test]
+    public void ShareCodesAreShortAndNormalizeTypedFormatting()
+    {
+        for (int i = 0; i < 100; i++)
+        {
+            var code = FriendCodes.Create();
+            Assert.That(code.Length, Is.EqualTo(8));
+            Assert.That(FriendCodes.Normalize("  " + FriendCodes.Format(code).ToLowerInvariant() + "  "), Is.EqualTo(code));
+        }
+        Assert.That(FriendCodes.Normalize("bad/code"), Is.Null);
+        Assert.That(FriendCodes.Normalize("ABCD-0123"), Is.Null);
+    }
+
+    [Test]
+    public void PhotosOnlyAllowGoogleHttpsAndFallbackInitials()
+    {
+        const string photo = "https://lh3.googleusercontent.com/a/photo=s96-c";
+        Assert.That(ProfilePhotos.Normalize(photo), Is.EqualTo(photo));
+        foreach (var invalid in new[] { "http://lh3.googleusercontent.com/a", "https://evil.test/a", "https://googleusercontent.com.evil.test/a", "file:///photo", "https://user@lh3.googleusercontent.com/a", "https://lh3.googleusercontent.com:444/a" })
+            Assert.That(ProfilePhotos.Normalize(invalid), Is.Empty);
+        Assert.That(ProfilePhotos.Initials("Mochi Walker"), Is.EqualTo("MW"));
+        Assert.That(ProfilePhotos.Initials(""), Is.EqualTo("?"));
+    }
+
+    [Test]
+    public void UploadedThumbnailRendersAndRebindingClearsPreviousPicture()
+    {
+        var source = new Texture2D(4, 4);
+        var row = new GameObject("Photo test", typeof(RectTransform), typeof(Image), typeof(ProfilePhotoUI));
+        try
+        {
+            var upload = ProfilePhotos.UploadPrefix + Convert.ToBase64String(source.EncodeToJPG());
+            Assert.That(ProfilePhotos.IsUpload(upload), Is.True);
+            var photo = row.GetComponent<ProfilePhotoUI>();
+            photo.Bind("first", "First Walker", upload, null);
+            Assert.That(row.GetComponent<Image>().sprite, Is.Not.Null);
+            Assert.That(row.transform.Find("Profile initials").gameObject.activeSelf, Is.False);
+            photo.Bind("second", "Second Walker", "", null);
+            Assert.That(row.GetComponent<Image>().sprite, Is.Null);
+            Assert.That(row.GetComponentInChildren<TMP_Text>().text, Is.EqualTo("SW"));
+        }
+        finally { UnityEngine.Object.DestroyImmediate(row); UnityEngine.Object.DestroyImmediate(source); }
+    }
+
     [Test]
     public void RankingsIncludeSelfAndAcceptedFriendsOutsideGlobalTopFifty()
     {

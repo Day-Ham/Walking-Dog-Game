@@ -126,13 +126,44 @@ service cloud.firestore {
     }
 
     // Share a code explicitly; the directory cannot be browsed or searched.
+    // Immutable, paired reservations prevent collisions, code theft and multiple
+    // codes per account. A player's old UID remains a valid legacy lookup.
+    match /friendCodeOwners/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId)
+        && request.resource.data.keys().hasOnly(['code'])
+        && request.resource.data.code is string
+        && request.resource.data.code.matches('[A-HJ-NP-Z2-9]{8}')
+        && !exists(/databases/$(database)/documents/friendCodeLookup/$(request.resource.data.code))
+        && getAfter(/databases/$(database)/documents/friendCodeLookup/$(request.resource.data.code)).data.playerId == userId;
+      allow update, delete: if false;
+    }
+    match /friendCodeLookup/{code} {
+      allow get: if request.auth != null;
+      allow list: if false;
+      allow create: if request.auth != null
+        && code.matches('[A-HJ-NP-Z2-9]{8}')
+        && request.resource.data.keys().hasOnly(['playerId'])
+        && request.resource.data.playerId == request.auth.uid
+        && !exists(/databases/$(database)/documents/friendCodeOwners/$(request.auth.uid))
+        && getAfter(/databases/$(database)/documents/friendCodeOwners/$(request.auth.uid)).data.code == code;
+      allow update, delete: if false;
+    }
+
     match /friendCodes/{userId} {
       allow get: if request.auth != null;
       allow list: if false;
       allow create, update: if isOwner(userId)
         && request.resource.data.keys().hasAll(['displayName', 'updatedAt'])
-        && request.resource.data.keys().hasOnly(['displayName', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['displayName', 'photoUrl', 'updatedAt'])
         && validName(request.resource.data.displayName)
+        && (!('photoUrl' in request.resource.data) || (request.resource.data.photoUrl is string
+          && request.resource.data.photoUrl.size() <= 32768
+          && (request.resource.data.photoUrl == ''
+            || (request.resource.data.photoUrl.size() <= 2048
+              && request.resource.data.photoUrl.matches('https://[A-Za-z0-9-]+[.]googleusercontent[.]com/.*'))
+            || request.resource.data.photoUrl.matches('data:image/jpeg;base64,/9j/[A-Za-z0-9+/]*={0,2}'))))
         && request.resource.data.updatedAt == request.time;
       allow delete: if false;
     }

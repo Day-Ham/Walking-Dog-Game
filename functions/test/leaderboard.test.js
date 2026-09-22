@@ -317,3 +317,82 @@ test("friend acceptance cannot change the sender or leave mismatched records", a
   await assertSucceeds(friendBatch(bob, "alice", "bob", "alice", "accepted").commit());
   await assertFails(friendBatch(alice, "alice", "bob", "alice").commit());
 });
+
+function reserveCode(client, uid, code) {
+  const batch = writeBatch(client);
+  batch.set(doc(client, `friendCodeOwners/${uid}`), { code });
+  batch.set(doc(client, `friendCodeLookup/${code}`), { playerId: uid });
+  return batch.commit();
+}
+
+test("fresh account registers its profile and short code, then saves and restores a photo", async () => {
+  const uid = "fresh-install";
+  const client = environment.authenticatedContext(uid).firestore();
+  const profile = doc(client, `friendCodes/${uid}`);
+  // Mirror RegisterCodeAsync: both private profile and public directory are absent.
+  await assertSucceeds(runTransaction(client, async tx => {
+    assert.equal((await tx.get(doc(client, `leaderboardProfiles/${uid}`))).exists(), false);
+    assert.equal((await tx.get(profile)).exists(), false);
+    tx.set(profile, { displayName: "Walker-Fresh", photoUrl: "", updatedAt: serverTimestamp() }, { merge: true });
+  }));
+  assert.equal((await getDocs(collection(client, `friends/${uid}/links`))).empty, true);
+  const reservation = doc(client, `friendCodeOwners/${uid}`);
+  const lookup = doc(client, "friendCodeLookup/ABCD2345");
+  await assertSucceeds(runTransaction(client, async tx => {
+    assert.equal((await tx.get(reservation)).exists(), false);
+    assert.equal((await tx.get(lookup)).exists(), false);
+    tx.set(reservation, { code: "ABCD2345" });
+    tx.set(lookup, { playerId: uid });
+  }));
+  // A second client installation recovers the same account code from the server.
+  const reinstall = environment.authenticatedContext(uid).firestore();
+  assert.equal((await getDoc(doc(reinstall, `friendCodeOwners/${uid}`))).data().code, "ABCD2345");
+  for (const photoUrl of ["data:image/jpeg;base64,/9j/AAAA", "https://lh3.googleusercontent.com/a/photo=s96-c", ""]) {
+    await assertSucceeds(setDoc(profile, { photoUrl, updatedAt: serverTimestamp() }, { merge: true }));
+    const saved = (await getDoc(doc(reinstall, `friendCodes/${uid}`))).data();
+    assert.equal(saved.photoUrl, photoUrl);
+    assert.equal(saved.displayName, "Walker-Fresh");
+  }
+  assert.equal((await getDoc(doc(client, `${PLAYERS}/${uid}`))).exists(), false);
+});
+
+test("short codes require paired unique immutable reservations and exact authenticated lookup", async () => {
+  const { alice, bob } = await friendAccounts();
+  await assertFails(setDoc(doc(alice, "friendCodeOwners/alice"), { code: "ABCDEFGH" }));
+  await assertFails(setDoc(doc(alice, "friendCodeLookup/ABCDEFGH"), { playerId: "alice" }));
+  await assertFails(reserveCode(alice, "bob", "ABCDEFGH"));
+  await assertFails(reserveCode(alice, "alice", "ABCD0123"));
+  await assertSucceeds(reserveCode(alice, "alice", "ABCDEFGH"));
+  assert.equal((await getDoc(doc(bob, "friendCodeLookup/ABCDEFGH"))).data().playerId, "alice");
+  await assertFails(reserveCode(bob, "bob", "ABCDEFGH"));
+  await assertFails(reserveCode(alice, "alice", "ZYXWVU32"));
+  await assertFails(getDoc(doc(bob, "friendCodeOwners/alice")));
+  await assertFails(getDocs(collection(bob, "friendCodeLookup")));
+  await assertFails(deleteDoc(doc(alice, "friendCodeLookup/ABCDEFGH")));
+  await assertFails(getDoc(doc(environment.unauthenticatedContext().firestore(), "friendCodeLookup/ABCDEFGH")));
+});
+
+test("concurrent claims for the same short code cannot bind two players", async () => {
+  const { alice, bob } = await friendAccounts();
+  const outcomes = await Promise.allSettled([reserveCode(alice, "alice", "ABCDEFGH"), reserveCode(bob, "bob", "ABCDEFGH")]);
+  assert.equal(outcomes.filter(result => result.status === "fulfilled").length, 1);
+  const winner = (await getDoc(doc(alice, "friendCodeLookup/ABCDEFGH"))).data().playerId;
+  assert.equal((await db.doc(`friendCodeOwners/${winner}`).get()).data().code, "ABCDEFGH");
+  assert.equal((await db.doc(`friendCodeOwners/${winner === "alice" ? "bob" : "alice"}`).get()).exists, false);
+});
+
+test("public photos are owner controlled, bounded, and preserved by nickname merges", async () => {
+  const { alice, bob } = await friendAccounts();
+  const ref = doc(alice, "friendCodes/alice");
+  for (const photoUrl of ["https://lh3.googleusercontent.com/a/photo=s96-c", "data:image/jpeg;base64,/9j/AAAA"]) {
+    await assertSucceeds(setDoc(ref, { photoUrl, updatedAt: serverTimestamp() }, { merge: true }));
+    assert.equal((await getDoc(doc(bob, "friendCodes/alice"))).data().photoUrl, photoUrl);
+    await assertSucceeds(setDoc(ref, { displayName: "New Name", updatedAt: serverTimestamp() }, { merge: true }));
+    assert.equal((await getDoc(ref)).data().photoUrl, photoUrl);
+  }
+  for (const photoUrl of ["http://lh3.googleusercontent.com/a", "https://evil.test/a", "https://lh3.googleusercontent.com.evil.test/a", "data:image/jpeg;base64,/9j/" + "A".repeat(32768), "data:image/png;base64,AAAA", 42])
+    await assertFails(setDoc(ref, { photoUrl, updatedAt: serverTimestamp() }, { merge: true }));
+  await assertFails(setDoc(doc(bob, "friendCodes/alice"), { photoUrl: "", updatedAt: serverTimestamp() }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { photoUrl: "", updatedAt: serverTimestamp() }, { merge: true }));
+  await assertFails(setDoc(ref, { totalSteps: 123, updatedAt: serverTimestamp() }, { merge: true }));
+});

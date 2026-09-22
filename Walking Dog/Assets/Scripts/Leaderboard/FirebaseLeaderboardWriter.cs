@@ -61,7 +61,7 @@ namespace WalkingDog.Leaderboards
                 });
                 transaction.Set(db.Document($"friendCodes/{uid}"), new Dictionary<string, object> {
                     ["displayName"] = name, ["updatedAt"] = FieldValue.ServerTimestamp
-                });
+                }, SetOptions.MergeAll);
                 if (player.Exists) transaction.Update(playerRef, new Dictionary<string, object> {
                     ["displayName"] = name, ["updatedAt"] = FieldValue.ServerTimestamp
                 });
