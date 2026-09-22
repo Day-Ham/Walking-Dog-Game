@@ -9,9 +9,16 @@ namespace WalkingDog.Leaderboards
         // UI elements for displaying leaderboard entry information in the card
         [SerializeField] private TMP_Text playerName;
         [SerializeField] private TMP_Text details;
+        [SerializeField] private ProfilePhotoUI profilePhoto;
 
         public void Bind(LeaderboardEntry entry, int position, bool isCurrentPlayer, LeaderboardMetric metric) // connects the leaderboard entry data to the UI elements
         {
+            if (profilePhoto == null)
+            {
+                var slot = transform.Find("Image");
+                if (slot != null) profilePhoto = slot.GetComponent<ProfilePhotoUI>() ?? slot.gameObject.AddComponent<ProfilePhotoUI>();
+            }
+            if (profilePhoto != null) profilePhoto.Bind(entry.PlayerId, entry.DisplayName, entry.PhotoUrl, playerName.font);
             playerName.richText = false;
             playerName.text = entry.DisplayName;
             details.richText = false;

@@ -13,14 +13,16 @@ namespace WalkingDog.Leaderboards
     {
         public string PlayerId { get; }
         public string DisplayName { get; }
+        public string PhotoUrl { get; }
         public double TotalDistanceMeters { get; }
         public long TotalSteps { get; }
         public long CompletedWalkCount { get; }
 
-        public LeaderboardEntry(string playerId, string displayName, double distanceMeters, long steps, long walkCount)
+        public LeaderboardEntry(string playerId, string displayName, double distanceMeters, long steps, long walkCount, string photoUrl = "")
         {
             PlayerId = playerId;
             DisplayName = displayName;
+            PhotoUrl = photoUrl;
             TotalDistanceMeters = distanceMeters;
             TotalSteps = steps;
             CompletedWalkCount = walkCount;
@@ -52,16 +54,18 @@ namespace WalkingDog.Leaderboards
         public IReadOnlyList<LeaderboardEntry> Entries { get; }
         // Null until this player has a counted walk. This does not mean zero global rank.
         public LeaderboardEntry CurrentPlayer { get; }
+        public string CurrentPlayerPhotoUrl { get; }
 
         public LeaderboardSnapshot(LeaderboardMetric metric, string currentPlayerId,
             IReadOnlyList<LeaderboardEntry> entries, LeaderboardEntry currentPlayer,
-            LeaderboardScope scope = LeaderboardScope.Global)
+            LeaderboardScope scope = LeaderboardScope.Global, string currentPlayerPhotoUrl = "")
         {
             Metric = metric;
             Scope = scope;
             CurrentPlayerId = currentPlayerId;
             Entries = entries;
             CurrentPlayer = currentPlayer;
+            CurrentPlayerPhotoUrl = currentPlayerPhotoUrl;
         }
     }
 

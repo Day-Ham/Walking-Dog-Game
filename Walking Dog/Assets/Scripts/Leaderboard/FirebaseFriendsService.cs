@@ -9,6 +9,30 @@ namespace WalkingDog.Leaderboards
 {
     public sealed partial class FirebaseLeaderboardService
     {
+        public Task<string> GetFriendCodeAsync(CancellationToken token)
+            => FriendOperationAsync(async (uid, revision, work) =>
+            {
+                var owner = firestore.Document($"friendCodeOwners/{uid}");
+                for (int attempt = 0; attempt < 5; attempt++)
+                {
+                    var candidate = FriendCodes.Create();
+                    var code = await firestore.RunTransactionAsync(async transaction =>
+                    {
+                        var existing = await transaction.GetSnapshotAsync(owner);
+                        if (existing.Exists) return existing.GetValue<string>("code");
+                        var lookup = firestore.Document($"friendCodeLookup/{candidate}");
+                        var claimed = await transaction.GetSnapshotAsync(lookup);
+                        CheckAccount(uid, revision, work);
+                        if (claimed.Exists) return null;
+                        transaction.Set(owner, new Dictionary<string, object> { ["code"] = candidate });
+                        transaction.Set(lookup, new Dictionary<string, object> { ["playerId"] = uid });
+                        return candidate;
+                    });
+                    if (code != null) return FriendCodes.Format(code);
+                }
+                throw new FriendRequestException("Couldn't create a friend code. Please try again.");
+            }, token);
+
         public Task<IReadOnlyList<FriendEntry>> LoadFriendsAsync(CancellationToken token)
             => FriendOperationAsync<IReadOnlyList<FriendEntry>>(async (uid, revision, work) =>
             {
@@ -24,7 +48,7 @@ namespace WalkingDog.Leaderboards
                     {
                         var link = group[i];
                         string name = names[i].Exists ? names[i].GetValue<string>("displayName") : FirebaseLeaderboardWriter.DefaultName(link.Id);
-                        result.Add(new FriendEntry(link.Id, name, link.GetValue<string>("requestedBy"), link.GetValue<string>("status") == "accepted"));
+                        result.Add(new FriendEntry(link.Id, name, link.GetValue<string>("requestedBy"), link.GetValue<string>("status") == "accepted", ReadPhoto(names[i])));
                     }
                 }
                 return result.OrderBy(f => f.Accepted ? 2 : f.RequestedBy == uid ? 1 : 0)
@@ -39,15 +63,22 @@ namespace WalkingDog.Leaderboards
             if (!Enum.IsDefined(typeof(FriendAction), action)) throw new ArgumentOutOfRangeException(nameof(action));
             await FriendOperationAsync(async (uid, revision, work) =>
             {
-                if (uid == friendCode) throw new FriendRequestException("That is your own friend code.");
+                string targetId = friendCode;
+                var shortCode = FriendCodes.Normalize(friendCode);
+                if (action == FriendAction.Send && shortCode != null)
+                {
+                    var lookup = await firestore.Document($"friendCodeLookup/{shortCode}").GetSnapshotAsync(Source.Server);
+                    if (lookup.Exists) targetId = lookup.GetValue<string>("playerId");
+                }
+                if (uid == targetId) throw new FriendRequestException("That is your own friend code.");
                 await RegisterCodeAsync(uid, revision, work);
                 CheckAccount(uid, revision, work);
-                var own = firestore.Document($"friends/{uid}/links/{friendCode}");
-                var other = firestore.Document($"friends/{friendCode}/links/{uid}");
+                var own = firestore.Document($"friends/{uid}/links/{targetId}");
+                var other = firestore.Document($"friends/{targetId}/links/{uid}");
                 await firestore.RunTransactionAsync(async transaction =>
                 {
                     var link = await transaction.GetSnapshotAsync(own);
-                    var target = await transaction.GetSnapshotAsync(firestore.Document($"friendCodes/{friendCode}"));
+                    var target = await transaction.GetSnapshotAsync(firestore.Document($"friendCodes/{targetId}"));
                     CheckAccount(uid, revision, work);
                     if (action == FriendAction.Remove)
                     {
@@ -96,9 +127,45 @@ namespace WalkingDog.Leaderboards
                 var existing = await transaction.GetSnapshotAsync(codeRef);
                 CheckAccount(uid, revision, token);
                 var name = profile.Exists ? profile.GetValue<string>("displayName") : FirebaseLeaderboardWriter.DefaultName(uid);
-                if (!existing.Exists || existing.GetValue<string>("displayName") != name)
-                    transaction.Set(codeRef, new Dictionary<string, object> { ["displayName"] = name, ["updatedAt"] = FieldValue.ServerTimestamp });
+                var savedPhoto = ReadPhoto(existing);
+                var photo = ProfilePhotos.IsUpload(savedPhoto) ? savedPhoto : ProfilePhotos.Normalize(auth?.CurrentUser?.PhotoUrl?.AbsoluteUri);
+                if (!existing.Exists || existing.GetValue<string>("displayName") != name || ReadPhoto(existing) != photo)
+                    transaction.Set(codeRef, new Dictionary<string, object> {
+                        ["displayName"] = name, ["photoUrl"] = photo, ["updatedAt"] = FieldValue.ServerTimestamp
+                    }, SetOptions.MergeAll);
             });
+
+        public Task SaveProfilePhotoAsync(string uploadedPhoto, CancellationToken token)
+            => FriendOperationAsync(async (uid, revision, work) =>
+            {
+                if (!string.IsNullOrEmpty(uploadedPhoto) && !ProfilePhotos.IsUpload(uploadedPhoto))
+                    throw new ArgumentException("Choose a profile thumbnail smaller than 24 KB.", nameof(uploadedPhoto));
+                await RegisterCodeAsync(uid, revision, work);
+                CheckAccount(uid, revision, work);
+                await firestore.Document($"friendCodes/{uid}").SetAsync(new Dictionary<string, object> {
+                    ["photoUrl"] = string.IsNullOrEmpty(uploadedPhoto) ? ProfilePhotos.Normalize(auth?.CurrentUser?.PhotoUrl?.AbsoluteUri) : uploadedPhoto,
+                    ["updatedAt"] = FieldValue.ServerTimestamp
+                }, SetOptions.MergeAll);
+                return true;
+            }, token);
+
+        private static string ReadPhoto(DocumentSnapshot profile)
+            => profile.Exists && profile.TryGetValue<string>("photoUrl", out var photo) ? ProfilePhotos.Normalize(photo) : "";
+
+        private async Task<LeaderboardSnapshot> WithPhotosAsync(LeaderboardSnapshot board, CancellationToken token)
+        {
+            var players = board.Entries.Select(p => p.PlayerId).Concat(new[] { board.CurrentPlayerId }).Distinct().ToList();
+            var photos = new Dictionary<string, string>();
+            foreach (var group in Chunk(players, 10))
+            {
+                token.ThrowIfCancellationRequested();
+                var profiles = await Task.WhenAll(group.Select(id => firestore.Document($"friendCodes/{id}").GetSnapshotAsync(Source.Server)));
+                for (int i = 0; i < group.Count; i++) photos[group[i]] = ReadPhoto(profiles[i]);
+            }
+            LeaderboardEntry Decorate(LeaderboardEntry entry) => entry == null ? null : new LeaderboardEntry(
+                entry.PlayerId, entry.DisplayName, entry.TotalDistanceMeters, entry.TotalSteps, entry.CompletedWalkCount, photos[entry.PlayerId]);
+            return new LeaderboardSnapshot(board.Metric, board.CurrentPlayerId, board.Entries.Select(Decorate).ToList().AsReadOnly(), Decorate(board.CurrentPlayer), board.Scope, photos[board.CurrentPlayerId]);
+        }
 
         private async Task<List<DocumentSnapshot>> ReadLinksAsync(string uid, CancellationToken token)
         {

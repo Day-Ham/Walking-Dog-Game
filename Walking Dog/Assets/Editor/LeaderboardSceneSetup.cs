@@ -161,7 +161,6 @@ public static class LeaderboardSceneSetup
         var panel = canvas.transform.Find("Leaderboard Screen").GetComponent<LeaderboardPanelUI>();
         panel.gameObject.SetActive(true);
         var flags = BindingFlags.NonPublic | BindingFlags.Instance;
-        typeof(LeaderboardPanelUI).GetMethod("EnsureFriendControls", flags).Invoke(panel, null);
         var entries = new[] {
             new LeaderboardEntry("friend", "Mochi Walker", 24600, 32180, 12),
             new LeaderboardEntry("me", "My Walking Dog", 18500, 26400, 9)
@@ -173,12 +172,10 @@ public static class LeaderboardSceneSetup
         foreach (var size in new[] { new Vector2Int(720, 1280), new Vector2Int(946, 2048) })
             Capture(canvas, "Logs/friends-rankings-" + size.x + "x" + size.y + ".png", size.x, size.y);
         var safe = panel.transform.Find("LeaderBG/LeaderSafeArea");
-        var friends = (FriendsPanelUI)typeof(FriendsPanelUI).GetMethod("Create", BindingFlags.Static | BindingFlags.NonPublic)
-            .Invoke(null, new object[] { safe, panel, safe.Find("RefreshLeaders").GetComponent<Button>(),
-                safe.Find("Leaderboard Status").GetComponent<TMP_Text>(), safe.Find("Nickname").GetComponent<TMP_InputField>() });
+        var friends = panel.GetComponentInChildren<FriendsPanelUI>(true);
         friends.gameObject.SetActive(true);
         typeof(FriendsPanelUI).GetField("observedUser", flags).SetValue(friends, "aBcDeFgHiJkLmNoPqRsTuVwXyZ12");
-        ((TMP_Text)typeof(FriendsPanelUI).GetField("code", flags).GetValue(friends)).text = "aBcDeFgHiJkLmNoPqRsTuVwXyZ12";
+        ((TMP_Text)typeof(FriendsPanelUI).GetField("code", flags).GetValue(friends)).text = "ABCD-EFGH";
         ((TMP_Text)typeof(FriendsPanelUI).GetField("message", flags).GetValue(friends)).text = "Accept incoming requests to compare rankings.";
         typeof(FriendsPanelUI).GetMethod("Render", flags).Invoke(friends, new object[] { new[] {
             new FriendEntry("friend1", "Mochi Walker", "friend1", false),

@@ -317,3 +317,51 @@ test("friend acceptance cannot change the sender or leave mismatched records", a
   await assertSucceeds(friendBatch(bob, "alice", "bob", "alice", "accepted").commit());
   await assertFails(friendBatch(alice, "alice", "bob", "alice").commit());
 });
+
+function reserveCode(client, uid, code) {
+  const batch = writeBatch(client);
+  batch.set(doc(client, `friendCodeOwners/${uid}`), { code });
+  batch.set(doc(client, `friendCodeLookup/${code}`), { playerId: uid });
+  return batch.commit();
+}
+
+test("short codes require paired unique immutable reservations and exact authenticated lookup", async () => {
+  const { alice, bob } = await friendAccounts();
+  await assertFails(setDoc(doc(alice, "friendCodeOwners/alice"), { code: "ABCDEFGH" }));
+  await assertFails(setDoc(doc(alice, "friendCodeLookup/ABCDEFGH"), { playerId: "alice" }));
+  await assertFails(reserveCode(alice, "bob", "ABCDEFGH"));
+  await assertFails(reserveCode(alice, "alice", "ABCD0123"));
+  await assertSucceeds(reserveCode(alice, "alice", "ABCDEFGH"));
+  assert.equal((await getDoc(doc(bob, "friendCodeLookup/ABCDEFGH"))).data().playerId, "alice");
+  await assertFails(reserveCode(bob, "bob", "ABCDEFGH"));
+  await assertFails(reserveCode(alice, "alice", "ZYXWVU32"));
+  await assertFails(getDoc(doc(bob, "friendCodeOwners/alice")));
+  await assertFails(getDocs(collection(bob, "friendCodeLookup")));
+  await assertFails(deleteDoc(doc(alice, "friendCodeLookup/ABCDEFGH")));
+  await assertFails(getDoc(doc(environment.unauthenticatedContext().firestore(), "friendCodeLookup/ABCDEFGH")));
+});
+
+test("concurrent claims for the same short code cannot bind two players", async () => {
+  const { alice, bob } = await friendAccounts();
+  const outcomes = await Promise.allSettled([reserveCode(alice, "alice", "ABCDEFGH"), reserveCode(bob, "bob", "ABCDEFGH")]);
+  assert.equal(outcomes.filter(result => result.status === "fulfilled").length, 1);
+  const winner = (await getDoc(doc(alice, "friendCodeLookup/ABCDEFGH"))).data().playerId;
+  assert.equal((await db.doc(`friendCodeOwners/${winner}`).get()).data().code, "ABCDEFGH");
+  assert.equal((await db.doc(`friendCodeOwners/${winner === "alice" ? "bob" : "alice"}`).get()).exists, false);
+});
+
+test("public photos are owner controlled, bounded, and preserved by nickname merges", async () => {
+  const { alice, bob } = await friendAccounts();
+  const ref = doc(alice, "friendCodes/alice");
+  for (const photoUrl of ["https://lh3.googleusercontent.com/a/photo=s96-c", "data:image/jpeg;base64,/9j/AAAA"]) {
+    await assertSucceeds(setDoc(ref, { photoUrl, updatedAt: serverTimestamp() }, { merge: true }));
+    assert.equal((await getDoc(doc(bob, "friendCodes/alice"))).data().photoUrl, photoUrl);
+    await assertSucceeds(setDoc(ref, { displayName: "New Name", updatedAt: serverTimestamp() }, { merge: true }));
+    assert.equal((await getDoc(ref)).data().photoUrl, photoUrl);
+  }
+  for (const photoUrl of ["http://lh3.googleusercontent.com/a", "https://evil.test/a", "https://lh3.googleusercontent.com.evil.test/a", "data:image/jpeg;base64,/9j/" + "A".repeat(32768), "data:image/png;base64,AAAA", 42])
+    await assertFails(setDoc(ref, { photoUrl, updatedAt: serverTimestamp() }, { merge: true }));
+  await assertFails(setDoc(doc(bob, "friendCodes/alice"), { photoUrl: "", updatedAt: serverTimestamp() }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { photoUrl: "", updatedAt: serverTimestamp() }, { merge: true }));
+  await assertFails(setDoc(ref, { totalSteps: 123, updatedAt: serverTimestamp() }, { merge: true }));
+});

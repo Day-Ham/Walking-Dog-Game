@@ -15,9 +15,10 @@ visible in friend management but do not receive a fabricated score or rank.
 4. Return to Rankings and select Friends. Remove friend ends the relationship
    for both players. It does not delete either player's walks or scores.
 
-For this first version the code is the existing Firebase player UID, with a Copy
-button. The recipient must open Manage friends once (or save a nickname in the new
-build) to register their code. Codes are exact and case-sensitive. No email search,
+Friend codes now contain **eight characters**, shown as `ABCD-EFGH`, with a Copy
+button. Open Manage friends once to register a permanent code. Short codes accept
+lowercase and the optional hyphen; ambiguous I/O/0/1 characters are excluded.
+Existing UID codes still work and remain case-sensitive. No email search,
 contact upload, push notifications, or realtime listeners are introduced. Refresh
 when reopening or using the refresh buttons; changes made on another device appear
 on the next refresh. Global scores remain visible to signed-in users: the Friends
@@ -27,9 +28,13 @@ tab is a ranking filter, not a change to score privacy.
 
 - `FirebaseLeaderboardService` implements `IFriendsService` and has a new scoped
   `LoadAsync` overload. The original overload still loads Global.
-- `friendCodes/{uid}` stores only a public display name and update timestamp.
+- `friendCodes/{uid}` stores a public display name, optional profile picture and update timestamp.
   Signed-in users may look up an exact code; listing the directory is denied.
   Private leaderboard profiles, walks and GPS data retain their existing rules.
+- `friendCodeOwners/{uid}` and `friendCodeLookup/{code}` reserve one immutable
+  short code per account atomically. Collision retries generate another random
+  code; nobody can overwrite an existing claim. Only the owner can read their
+  reservation; signed-in users can perform exact code lookups, but cannot list codes.
 - `friends/{uid}/links/{otherUid}` and its mirror store `requestedBy`, `status`
   (`pending` or `accepted`) and `updatedAt`. Both copies must be created, accepted,
   or deleted atomically. Only the recipient can accept. Both participants may
@@ -40,11 +45,47 @@ tab is a ranking filter, not a change to score privacy.
   snapshot; the ranking reflects relationships observed when refresh began.
 - Native Firebase writes can finish after a timeout. Refresh to check the result
   before retrying. Duplicate sends cannot create duplicate friendships.
-- `LeaderboardPanelUI` creates the tabs and management button from existing UI
-  templates at runtime. `FriendsPanelUI` creates the scrollable overlay. Existing
-  scene references and artwork are reused; no scene migration is required.
+- The tabs and animated friend manager are scene objects with Inspector wiring.
+  Friend rows and leaderboard cards remain dynamic. `ProfilePhotoUI` renders the
+  same portrait in both views, with initials and an identity-based colour as fallback.
+
+## Profile pictures
+
+Google sign-in pictures are synced when opening rankings or Manage friends.
+The leaderboard also provides **Phone photo** and **Use Google photo** buttons,
+plus your current picture even before your first ranked walk. Phone photo opens
+Android's system document picker, which grants access only to the selected image.
+The image is orientation-corrected, centre-cropped and resized to 192×192, then
+encoded as a JPEG of at most 24,000 bytes. The thumbnail is saved on the public
+profile, not the original image or its EXIF metadata. This uses the existing
+Firestore architecture and does not require a Storage SDK, bucket or billing change.
+
+An uploaded picture takes precedence over Google refreshes, including after
+relaunching or signing in on another device. Use Google photo clears that override;
+email-only accounts then display initials. Cancelling the picker leaves the current
+picture unchanged. Phone selection is Android-only; the Editor can render saved
+thumbnails and test the UI but cannot open a phone gallery.
+
+The public `photoUrl` field contains an HTTPS Google photo URL, an inline JPEG
+thumbnail, or an empty string. Rules cap its length at 32,768 characters and restrict
+the accepted URL/encoding formats. Name changes merge the profile so they preserve
+its photo. Rankings fetch public profiles in batches of ten (one additional read per
+displayed player); image-download failures keep initials visible. Closing rows aborts
+downloads and releases their textures. No full-resolution originals are stored.
+
+The scene also fixes the misassigned friend-code/status labels and missing friends-panel
+reference. Leaderboard visibility now follows its controller root, so the hidden
+screen does not suspend the walking map at startup. The existing exit animation
+disables that root after its last frame; the friends animation still closes only itself.
 
 ## Verification and rollout
+
+September 22, 2026: **76/76 Unity EditMode tests passed** after the short-code,
+profile-picture and scene-wiring changes. Android `ProfilePhotoPicker.java` also
+compiled against the installed Android SDK. Firestore emulator: **23/24 passed**,
+including every new short-code and photo test. The one failure is the previously
+documented fractional-distance concurrent-scoring test below. No rules deployment,
+APK build or physical-device photo-picker test was performed.
 
 Run the Unity EditMode suite and `npm.cmd run test:emulator` from `functions/`.
 The emulator suite covers code privacy/ownership, mirrored writes, forged sender,
@@ -62,8 +103,9 @@ The rankings and friend manager were also rendered and visually checked at
 720×1280 and 946×2048. `LeaderboardSceneSetup.CaptureFriendsPreview` reproduces
 these previews using local sample data without saving the scene or contacting Firebase.
 
-Deploy the updated **Firestore rules before distributing the new client**. Both
-friends management and nickname saves use the new `friendCodes` path. The feature
+Deploy the updated **Firestore rules before distributing the new client**. Short
+codes require the two reservation paths, and pictures require the optional public
+profile field. The feature
 uses the existing Spark-compatible client/rules architecture; no new Cloud Function,
 billing upgrade, composite index or historical backfill is required.
 

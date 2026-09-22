@@ -706,8 +706,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: WalkingDog.Runtime::WalkingDog.Leaderboards.FriendsPanelUI
   owner: {fileID: 1897177375}
-  message: {fileID: 1242048556}
-  code: {fileID: 1242048556}
+  message: {fileID: 1004369919}
+  code: {fileID: 576208839}
   input: {fileID: 1311032225}
   send: {fileID: 327232028}
   refresh: {fileID: 1336980822}
@@ -4625,7 +4625,7 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 1689251880}
+      - m_Target: {fileID: 1897177373}
         m_TargetAssemblyTypeName: UnityEngine.GameObject, UnityEngine
         m_MethodName: SetActive
         m_Mode: 6
@@ -8000,7 +8000,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &1689251881
 RectTransform:
   m_ObjectHideFlags: 0
@@ -8093,6 +8093,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b3e2a7d7f63cd0845bdf650da28c38e7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DisableanimatedObject
+  disableTarget: {fileID: 1897177373}
 --- !u!1 &1699870956
 GameObject:
   m_ObjectHideFlags: 0
@@ -8898,7 +8899,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1897177374
 RectTransform:
   m_ObjectHideFlags: 0
@@ -8944,7 +8945,7 @@ MonoBehaviour:
   globalTab: {fileID: 1196945044}
   friendsTab: {fileID: 262855975}
   manageFriends: {fileID: 1122105275}
-  friendsPanel: {fileID: 0}
+  friendsPanel: {fileID: 162123229}
 --- !u!1 &1911547239
 GameObject:
   m_ObjectHideFlags: 0

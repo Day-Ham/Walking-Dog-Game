@@ -11,7 +11,7 @@ namespace WalkingDog.Leaderboards
     // Plain service: no GameObjects or UI references. Reconciles the owner's
     // saved cloud walks when loading; rules validate every score transaction.
     // Create/call/dispose on Unity's main thread after Firebase initialization.
-    public sealed partial class FirebaseLeaderboardService : ILeaderboardService, IFriendsService
+    public sealed partial class FirebaseLeaderboardService : ILeaderboardService, IFriendsService, IPlayerProfileService
     {
         public const int PageSize = 50;
         private const string PlayersPath = "leaderboards/allTime/players";
@@ -82,10 +82,15 @@ namespace WalkingDog.Leaderboards
             {
                 // Stop paged work on timeout even though native reads cannot be cancelled.
                 linked.CancelAfter(timeout);
-                if (firestore != null) await FirebaseLeaderboardWriter.ReconcileAsync(firestore, uid, reconciliation, linked.Token);
+                if (firestore != null)
+                {
+                    await RegisterCodeAsync(uid, authRevision, linked.Token);
+                    await FirebaseLeaderboardWriter.ReconcileAsync(firestore, uid, reconciliation, linked.Token);
+                }
                 linked.Token.ThrowIfCancellationRequested();
-                return scope == LeaderboardScope.Friends
+                var board = scope == LeaderboardScope.Friends
                     ? await FetchFriendsBoardAsync(uid, metric, linked.Token) : await read(uid, metric);
+                return firestore == null ? board : await WithPhotosAsync(board, linked.Token);
             }
         }
 
