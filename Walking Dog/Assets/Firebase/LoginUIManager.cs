@@ -21,6 +21,13 @@ public class LoginUIManager : MonoBehaviour
     public GameObject sceneTransistionAnimator; // Animator for scene transition
     private void Start()
     {
+        // Reflect the stored preference before any sign-in attempt. In particular,
+        // explicit logout clears this value so the title screen is never misleading.
+        if (rememberMeToggle != null)
+        {
+            rememberMeToggle.isOn = PlayerPrefs.GetInt("RememberMe", 1) == 1;
+        }
+
         // Hook up button listeners
         if (loginButton != null) loginButton.onClick.AddListener(OnLoginClicked);
         if (registerButton != null) registerButton.onClick.AddListener(OnRegisterClicked);

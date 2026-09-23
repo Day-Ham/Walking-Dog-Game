@@ -194,10 +194,12 @@ public class FirebaseLoginManager : MonoBehaviour
         }
     }
 
-    public void SignOutUser()
+    public void SignOutUser() // logout sign out for google 
     {
-        // Do not race a pending Firebase credential exchange with sign-out.
-        if (IsGoogleLoginInProgress) return;
+        // An explicit sign-out must win over an in-progress Google sign-in. Cancelling
+        // the request prevents its continuation from completing a Firebase login after
+        // the user has already been returned to the title screen.
+        googleLogin?.Cancel();
         AndroidGoogleSignIn.SignOut();
         if (auth != null && auth.CurrentUser != null)
         {
