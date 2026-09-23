@@ -705,6 +705,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4d266b3fb4bdfc447bbc166a062aa667, type: 3}
   m_Name: 
   m_EditorClassIdentifier: WalkingDog.Runtime::WalkingDog.Leaderboards.FriendsPanelUI
+  owner: {fileID: 1897177375}
+  message: {fileID: 1004369919}
+  code: {fileID: 576208839}
+  input: {fileID: 1311032225}
+  list: {fileID: 824820640}
+  scroll: {fileID: 640720703}
   send: {fileID: 327232028}
   refresh: {fileID: 1336980822}
   copy: {fileID: 151757942}

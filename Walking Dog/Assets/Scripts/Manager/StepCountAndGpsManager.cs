@@ -28,7 +28,10 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
 
     public int territtoryFlag = 0; // for UI Color change with gps text will do this later
 
-    private int stepPoints = 0; // points added from steps
+    // A preview derived from recorded steps, not a saved/spendable currency balance.
+    private const int StepsPerPoint = 10;
+    public int StepPoints => Steps / StepsPerPoint;
+    public int WalkingSessionPoints => WalkingSessionSteps / StepsPerPoint;
 
     //territory functions
     
@@ -775,12 +778,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     //      GETTERS AND SETTERS 
     //
 
-    public void setPoint(int point)
-    {
-        stepPoints = point;
-    }
-
-    public int getPoint(){ return stepPoints; }
+    public int getPoint() { return StepPoints; }
 
     public void setStep(int steps)
     {

@@ -185,6 +185,59 @@ public sealed class WalkTrackingTests
         Assert.That(manager.RecoverableWalk.nativeSequence, Is.EqualTo(2));
     }
 
+    [Test] public void PointsTrackStepsWithoutUiAndKeepSessionTotalsSeparate()
+    {
+        CreateManager();
+        manager.SetStep(19);
+        Assert.That(manager.StepPoints, Is.EqualTo(1));
+        manager.BeginWalkingSession();
+        manager.SetStep(40);
+        Assert.That(manager.StepPoints, Is.EqualTo(4));
+        Assert.That(manager.WalkingSessionPoints, Is.EqualTo(2));
+        manager.SaveCheckpoint();
+        UnityEngine.Object.DestroyImmediate(gameObject);
+        CreateManager();
+        Assert.That(manager.RecoverWalk(true), Is.True);
+        Assert.That(manager.WalkingSessionPoints, Is.EqualTo(2));
+        manager.SetStep(9);
+        Assert.That(manager.WalkingSessionPoints, Is.EqualTo(3));
+        Assert.That(manager.StepPoints, Is.Zero);
+    }
+
+    [Test] public void PointsDisplaysHandleMissingManagerAndCannotOverwriteEachOther()
+    {
+        var instance = typeof(StepCountAndGpsManager).GetProperty("Instance");
+        var previous = instance.GetValue(null);
+        var labelObject = new GameObject("Points label", typeof(RectTransform), typeof(TMPro.TextMeshProUGUI));
+        try
+        {
+            var label = labelObject.GetComponent<TMPro.TextMeshProUGUI>();
+            var display = labelObject.AddComponent<UIStepController>();
+            var flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            typeof(UIStepController).GetField("stepText", flags).SetValue(display, label);
+            var render = typeof(UIStepController).GetMethod("LateUpdate", flags);
+            instance.SetValue(null, null);
+            Assert.DoesNotThrow(() => render.Invoke(display, null));
+            Assert.That(label.text, Is.EqualTo("0"));
+            CreateManager();
+            instance.SetValue(null, manager);
+            manager.SetStep(100);
+            manager.BeginWalkingSession();
+            manager.SetStep(129);
+            render.Invoke(display, null);
+            Assert.That(label.text, Is.EqualTo("12"));
+            typeof(UIStepController).GetField("showWalkingSessionSteps", flags).SetValue(display, true);
+            render.Invoke(display, null);
+            Assert.That(label.text, Is.EqualTo("2"));
+            Assert.That(manager.getPoint(), Is.EqualTo(12));
+        }
+        finally
+        {
+            instance.SetValue(null, previous);
+            UnityEngine.Object.DestroyImmediate(labelObject);
+        }
+    }
+
     private void CreateManager()
     {
         gameObject = new GameObject("Walk tracking test");

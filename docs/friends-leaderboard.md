@@ -80,6 +80,16 @@ disables that root after its last frame; the friends animation still closes only
 
 ## Verification and rollout
 
+September 23, 2026: repaired the scene-backed friend manager's serialized
+references and restored the Send, Refresh and Copy handlers. Opening the panel
+initializes its controls without duplicating Inspector callbacks. The displayed
+and copied code comes from `GetFriendCodeAsync`, and friend rows again use
+`ProfilePhotoUI`. These are client/scene fixes; they do not change Firestore rules.
+All 78 Unity EditMode tests passed in an isolated project copy, including points
+recovery, missing-manager display, short-code copying and duplicate-listener
+regressions. The map route/territory script also passed. No physical-device check
+or Firestore emulator rerun was performed for these client fixes.
+
 **Deployment verified September 22, 2026, 05:09 UTC:** the live `walky-aa25c`
 Firestore rules now exactly match this repository, including `photoUrl`,
 `friendCodeOwners` and `friendCodeLookup`. The previously active September 21 rules
