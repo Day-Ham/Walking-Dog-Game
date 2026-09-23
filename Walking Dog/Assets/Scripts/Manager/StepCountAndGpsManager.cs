@@ -475,6 +475,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
             // TerritoryService contains its own errors; territory failures never undo a saved walk.
             Territories.Refresh(cloudStore?.AuthenticatedUserId ?? "");
             RefreshLastWalkSaveState();
+            GetComponent<FirebaseWalkBootstrap>()?.WalkSaved();
             RequestWalkSync();
             return filePath;
         }

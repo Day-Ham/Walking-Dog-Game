@@ -218,14 +218,14 @@ public sealed class WalkTrackingTests
             var render = typeof(UIStepController).GetMethod("LateUpdate", flags);
             instance.SetValue(null, null);
             Assert.DoesNotThrow(() => render.Invoke(display, null));
-            Assert.That(label.text, Is.EqualTo("0"));
+            Assert.That(label.text, Is.EqualTo("Points unavailable"));
             CreateManager();
             instance.SetValue(null, manager);
             manager.SetStep(100);
             manager.BeginWalkingSession();
             manager.SetStep(129);
             render.Invoke(display, null);
-            Assert.That(label.text, Is.EqualTo("12"));
+            Assert.That(label.text, Is.EqualTo("Points unavailable"));
             typeof(UIStepController).GetField("showWalkingSessionSteps", flags).SetValue(display, true);
             render.Invoke(display, null);
             Assert.That(label.text, Is.EqualTo("2"));
