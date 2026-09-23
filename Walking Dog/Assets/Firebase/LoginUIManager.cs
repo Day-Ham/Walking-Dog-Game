@@ -13,6 +13,7 @@ public class LoginUIManager : MonoBehaviour
     public Button loginButton;
     public Button registerButton;
     public Button googleSignInButton;
+    public Toggle rememberMeToggle;
     public TextMeshProUGUI statusText;
 
     [Header("Scene Transition")]
@@ -30,6 +31,27 @@ public class LoginUIManager : MonoBehaviour
         FirebaseLoginManager.Instance.OnLoginFailed += HandleLoginFailed;
         FirebaseLoginManager.Instance.OnRegisterSuccess += HandleRegisterSuccess;
         FirebaseLoginManager.Instance.OnRegisterFailed += HandleRegisterFailed;
+
+        // Check if user is already signed in (Remember Me / Auto-login)
+        StartCoroutine(CheckAutoLogin());
+    }
+
+    private IEnumerator CheckAutoLogin()
+    {
+        // Wait until Firebase is initialized
+        yield return new WaitUntil(() => FirebaseLoginManager.Instance != null && FirebaseLoginManager.Instance.IsFirebaseReady);
+        
+        // If the user unchecked "Remember Me" last time, sign them out
+        if (PlayerPrefs.GetInt("RememberMe", 1) == 0)
+        {
+            FirebaseLoginManager.Instance.SignOutUser();
+        }
+        // If a user is already logged in, automatically transition to the game scene
+        else if (FirebaseLoginManager.Instance.GetCurrentUser() != null)
+        {
+            UpdateStatus("Logging in automatically...");
+            HandleLoginSuccess(FirebaseLoginManager.Instance.GetCurrentUser());
+        }
     }
 
     private void OnDestroy()
@@ -47,6 +69,15 @@ public class LoginUIManager : MonoBehaviour
         }
     }
 
+    private void SaveRememberMePreference()
+    {
+        if (rememberMeToggle != null)
+        {
+            PlayerPrefs.SetInt("RememberMe", rememberMeToggle.isOn ? 1 : 0);
+            PlayerPrefs.Save();
+        }
+    }
+
     private void OnLoginClicked()
     {
         string email = emailInputField.text;
@@ -58,6 +89,8 @@ public class LoginUIManager : MonoBehaviour
             return;
         }
 
+        SaveRememberMePreference();
+        
         UpdateStatus("Logging in...");
         loginButton.interactable = false;
         registerButton.interactable = false;
@@ -77,6 +110,8 @@ public class LoginUIManager : MonoBehaviour
             return;
         }
 
+        SaveRememberMePreference();
+
         UpdateStatus("Registering...");
         loginButton.interactable = false;
         registerButton.interactable = false;
@@ -87,6 +122,8 @@ public class LoginUIManager : MonoBehaviour
 
     private void OnGoogleSignInClicked()
     {
+        SaveRememberMePreference();
+        
         UpdateStatus("Opening Google sign-in…");
         loginButton.interactable = false;
         registerButton.interactable = false;
