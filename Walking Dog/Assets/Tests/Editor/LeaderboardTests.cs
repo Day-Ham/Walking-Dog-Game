@@ -89,10 +89,11 @@ public sealed class LeaderboardTests
     {
         var data = new Dictionary<string, object> {
             ["schemaVersion"] = 1L, ["displayName"] = "Walker-12345678", ["totalSteps"] = 3000000000L,
-            ["totalDistanceMeters"] = 1234.5, ["completedWalkCount"] = 10L
+            ["totalDistanceMeters"] = 1234.5, ["completedWalkCount"] = 10L, ["pointsBalance"] = 456L
         };
         Assert.That(LeaderboardEntry.TryParse("alice", data, out var entry), Is.True);
         Assert.That(entry.TotalSteps, Is.EqualTo(3000000000L));
+        Assert.That(entry.PointsBalance, Is.EqualTo(456L));
         data["totalDistanceMeters"] = double.NaN;
         Assert.That(LeaderboardEntry.TryParse("alice", data, out _), Is.False);
         data["totalDistanceMeters"] = 100L;

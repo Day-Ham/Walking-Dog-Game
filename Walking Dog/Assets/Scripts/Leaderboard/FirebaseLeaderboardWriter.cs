@@ -14,6 +14,9 @@ namespace WalkingDog.Leaderboards
     {
         internal const string Players = "leaderboards/allTime/players";
 
+        //points
+        internal const string PointsBalanceField = "pointsBalance";
+
         internal sealed class ReconciliationProgress
         {
             public DocumentSnapshot Cursor;
@@ -27,13 +30,30 @@ namespace WalkingDog.Leaderboards
             return db.RunTransactionAsync(async transaction =>
             {
                 var receipt = await transaction.GetSnapshotAsync(receiptRef);
-                if (receipt.Exists) return;
+                var player = await transaction.GetSnapshotAsync(playerRef);
+
+
+                // Firebase wallet balance is the source of truth. Copy it into the
+                // public leaderboard record; do not recalculate it from steps.
+
+                var wallet = await transaction.GetSnapshotAsync(db.Document($"users/{uid}/wallet/main"));
+                var pointsBalance = wallet.Exists ? wallet.GetValue<long>("balance") : 0;
+               
+                
+                // Reconciliation revisits already-counted walks. Use that pass to
+                // refresh this player's balance after a future currency purchase.
+                if (receipt.Exists)
+                {
+                    if (player.Exists) transaction.Update(playerRef, new Dictionary<string, object> {
+                        [PointsBalanceField] = pointsBalance, ["updatedAt"] = FieldValue.ServerTimestamp
+                    });
+                    return;
+                }
                 var walk = await transaction.GetSnapshotAsync(db.Document($"users/{uid}/walks/{walkId}"));
                 if (!walk.Exists) return;
                 var steps = walk.GetValue<long>("steps");
                 var distance = walk.GetValue<double>("distanceMeters");
                 if (steps == 0 && distance == 0) return;
-                var player = await transaction.GetSnapshotAsync(playerRef);
                 var profile = await transaction.GetSnapshotAsync(db.Document($"leaderboardProfiles/{uid}"));
                 var totalSteps = checked((player.Exists ? player.GetValue<long>("totalSteps") : 0) + steps);
                 var totalDistance = (player.Exists ? player.GetValue<double>("totalDistanceMeters") : 0) + distance;
@@ -43,10 +63,30 @@ namespace WalkingDog.Leaderboards
                 transaction.Set(playerRef, new Dictionary<string, object> {
                     ["schemaVersion"] = 1, ["displayName"] = name,
                     ["totalSteps"] = totalSteps, ["totalDistanceMeters"] = totalDistance,
-                    ["completedWalkCount"] = count, ["lastWalkId"] = walkId,
+                    ["completedWalkCount"] = count, [PointsBalanceField] = pointsBalance,
+                    ["lastWalkId"] = walkId,
                     ["updatedAt"] = FieldValue.ServerTimestamp
                 });
                 transaction.Set(receiptRef, new Dictionary<string, object> { ["countedAt"] = FieldValue.ServerTimestamp });
+            });
+        }
+
+        // Call this after any future wallet spending transaction succeeds. It keeps
+        // the leaderboard card bound to the Firebase currency balance
+        // important to use this for gacha implementation
+        internal static Task SynchronizePointsBalanceAsync(FirebaseFirestore db, string uid)
+        {
+            var playerRef = db.Document($"{Players}/{uid}");
+            var walletRef = db.Document($"users/{uid}/wallet/main");
+            return db.RunTransactionAsync(async transaction =>
+            {
+                var player = await transaction.GetSnapshotAsync(playerRef);
+                var wallet = await transaction.GetSnapshotAsync(walletRef);
+                if (!player.Exists) return;
+                var balance = wallet.Exists ? wallet.GetValue<long>("balance") : 0;
+                transaction.Update(playerRef, new Dictionary<string, object> {
+                    [PointsBalanceField] = balance, ["updatedAt"] = FieldValue.ServerTimestamp
+                });
             });
         }
 

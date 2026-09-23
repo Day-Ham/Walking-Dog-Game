@@ -84,6 +84,9 @@ public sealed class LeaderboardSceneTests
         Assert.That(content.Find("Player 2/Name").GetComponent<TMP_Text>().text, Is.EqualTo("My Walker"));
         Assert.That(content.Find("Player 2/Image/Profile initials").GetComponent<TMP_Text>().text, Is.EqualTo("MW"));
         var details = content.Find("Player 2/Score details").GetComponent<TMP_Text>();
+        Assert.That(details.text, Does.Contain("210 points"));
+        Assert.That(details.text.IndexOf("2,100 steps"), Is.LessThan(details.text.IndexOf("210 points")));
+        Assert.That(details.text.IndexOf("210 points"), Is.LessThan(details.text.IndexOf("2 walks")));
         Assert.That(details.text, Does.Contain("#2 · YOU"));
         Field<Button>("steps").onClick.Invoke();
         Assert.That(service.LastMetric, Is.EqualTo(LeaderboardMetric.Steps));
@@ -238,9 +241,9 @@ public sealed class LeaderboardSceneTests
         public void Dispose() { }
         public static LeaderboardSnapshot Data(LeaderboardMetric metric)
         {
-            var own = new LeaderboardEntry("me", "My Walker", 1230, 2100, 2);
+            var own = new LeaderboardEntry("me", "My Walker", 1230, 2100, 2, pointsBalance: 210);
             return new LeaderboardSnapshot(metric, "me", new List<LeaderboardEntry> {
-                new LeaderboardEntry("other", "Other Walker", 2340, 3300, 3), own
+                new LeaderboardEntry("other", "Other Walker", 2340, 3300, 3, pointsBalance: 330), own
             }, own);
         }
     }

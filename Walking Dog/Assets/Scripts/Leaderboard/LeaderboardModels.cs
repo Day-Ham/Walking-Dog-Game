@@ -16,15 +16,19 @@ namespace WalkingDog.Leaderboards
         public string PhotoUrl { get; }
         public double TotalDistanceMeters { get; }
         public long TotalSteps { get; }
+        // The spendable balance copied from Firebase, not a value derived from steps.
+        public long PointsBalance { get; }
         public long CompletedWalkCount { get; }
 
-        public LeaderboardEntry(string playerId, string displayName, double distanceMeters, long steps, long walkCount, string photoUrl = "")
+        public LeaderboardEntry(string playerId, string displayName, double distanceMeters, long steps, long walkCount,
+            string photoUrl = "", long pointsBalance = 0)
         {
             PlayerId = playerId;
             DisplayName = displayName;
             PhotoUrl = photoUrl;
             TotalDistanceMeters = distanceMeters;
             TotalSteps = steps;
+            PointsBalance = pointsBalance;
             CompletedWalkCount = walkCount;
         }
 
@@ -40,8 +44,14 @@ namespace WalkingDog.Leaderboards
             if (distance is double floating) d = floating;
             else if (distance is long integer) d = integer;
             else return false;
-            if (double.IsNaN(d) || double.IsInfinity(d) || d < 0) return false; // return a false if its an errorr value 
-            entry = new LeaderboardEntry(id, text, d, s, c);
+            if (double.IsNaN(d) || double.IsInfinity(d) || d < 0) return false; // return a false if its an errorr value
+            // Old documents have no balance until their owner next syncs. Never
+            // estimate it from steps because spending can lower the real balance.
+            long points = 0;
+            if (fields.TryGetValue("pointsBalance", out var savedPoints)
+                && (!(savedPoints is long value) || value < 0 || value > 9007199254740991L)) return false;
+            if (savedPoints is long parsedPoints) points = parsedPoints;
+            entry = new LeaderboardEntry(id, text, d, s, c, "", points);
             return true;
         }
     }

@@ -23,9 +23,32 @@ public class UIStepController : MonoBehaviour
         }
 
         var manager = StepCountAndGpsManager.Instance;
-        var value = showWalkingSessionSteps
-            ? (manager == null ? "0" : manager.WalkingSessionPoints.ToString())
-            : manager?.GetComponent<FirebaseWalkBootstrap>()?.Wallet?.DisplayText ?? "Points unavailable";
-        stepText.text = string.IsNullOrEmpty(prefix) ? value : $"{prefix}{value}";
+        string value;
+
+        if (showWalkingSessionSteps)
+        {
+            if (manager == null)
+            {
+                value = "0";
+            }
+            else
+            {
+                value = manager.WalkingSessionPoints.ToString();
+            }
+        }
+        else
+        {
+            var firebaseWalk = manager?.GetComponent<FirebaseWalkBootstrap>();
+            var wallet = firebaseWalk?.Wallet;
+
+            if (wallet != null)
+            {
+                value = wallet.DisplayText;
+            }
+            else
+            {
+                value = "Points unavailable";
+            }
+        }
     }
 }
