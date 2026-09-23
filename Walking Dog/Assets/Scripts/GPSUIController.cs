@@ -54,11 +54,12 @@ public class GPSUIController : MonoBehaviour
             return;
         }
 
+        // Update the UI with the current step count and GPS status from manager
         int steps = manager.Steps;
 
         if (manager.IsWalkingSessionActive)
         {
-            SetText(statsText, $"{manager.WalkingSessionSteps:N0} steps • {FormatDistance(manager.WalkingSessionDistanceMeters)} • {manager.WalkingSessionDurationSeconds / 60:0.0} min");
+            SetText(statsText, $"{manager.WalkingSessionSteps:N0} Steps • {FormatDistance(manager.WalkingSessionDistanceMeters)} • {manager.WalkingSessionDurationSeconds / 60:0.0} min");
             SetText(accuracyText, BuildTrackingStatus(manager) + " • " + manager.BackgroundTrackingStatus);
             UpdateWalkingSessionButton(manager);
             return;

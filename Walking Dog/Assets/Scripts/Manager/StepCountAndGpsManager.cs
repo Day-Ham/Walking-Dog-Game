@@ -7,6 +7,7 @@ using UnityEngine;
 
 public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackReceiver
 {
+    //variables
     public const float AccurateGpsThresholdMeters = 10f;
 
     private const float EarthRadiusMeters = 6371000f;
@@ -27,6 +28,9 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
 
     public int territtoryFlag = 0; // for UI Color change with gps text will do this later
 
+    private int stepPoints = 0; // points added from steps
+
+    //territory functions
     
     public TerritoryService Territories
     {
@@ -764,6 +768,19 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
 
         return EarthRadiusMeters * centralAngle;
     }
+
+
+
+    //
+    //      GETTERS AND SETTERS 
+    //
+
+    public void setPoint(int point)
+    {
+        stepPoints = point;
+    }
+
+    public int getPoint(){ return stepPoints; }
 
     public void setStep(int steps)
     {
