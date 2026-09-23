@@ -4,8 +4,7 @@ using UnityEngine.UI;
 
 public class GPSUIController : MonoBehaviour
 {
-    [SerializeField] private TextMeshProUGUI longText;
-    [SerializeField] private TextMeshProUGUI latText;
+    [SerializeField] private TextMeshProUGUI statsText;
     [SerializeField] private TextMeshProUGUI accuracyText;
     [SerializeField] private Button walkingSessionButton;
     [SerializeField] private TextMeshProUGUI walkingSessionButtonText;
@@ -49,33 +48,31 @@ public class GPSUIController : MonoBehaviour
 
         if (manager == null)
         {
-            SetText(longText, "Longitude: --");
-            SetText(latText, "Latitude: --");
+            SetText(statsText, "Steps: --");
             SetText(accuracyText, "GPS manager missing");
             UpdateWalkingSessionButton(null);
             return;
         }
 
+        int steps = manager.Steps;
+
         if (manager.IsWalkingSessionActive)
         {
-            SetText(longText, $"{manager.WalkingSessionSteps:N0} steps • {FormatDistance(manager.WalkingSessionDistanceMeters)} • {manager.WalkingSessionDurationSeconds / 60:0.0} min");
-            SetText(latText, manager.BackgroundTrackingStatus);
-            SetText(accuracyText, BuildTrackingStatus(manager));
+            SetText(statsText, $"{manager.WalkingSessionSteps:N0} steps • {FormatDistance(manager.WalkingSessionDistanceMeters)} • {manager.WalkingSessionDurationSeconds / 60:0.0} min");
+            SetText(accuracyText, BuildTrackingStatus(manager) + " • " + manager.BackgroundTrackingStatus);
             UpdateWalkingSessionButton(manager);
             return;
         }
 
         if (!manager.HasLocation)
         {
-            SetText(longText, "Longitude: --");
-            SetText(latText, "Latitude: --");
+            SetText(statsText, $"{steps:N0} steps");
             SetText(accuracyText, BuildTrackingStatus(manager));
             UpdateWalkingSessionButton(manager);
             return;
         }
 
-        SetText(longText, $"Longitude: {manager.Longitude:0.000000}");
-        SetText(latText, $"Latitude: {manager.Latitude:0.000000}");
+        SetText(statsText, $"{steps:N0} steps");
         SetText(accuracyText, BuildTrackingStatus(manager));
         switch (manager.getTFlag())
         {
@@ -117,14 +114,9 @@ public class GPSUIController : MonoBehaviour
 
     private void AssignMissingReferences()
     {
-        if (longText == null)
+        if (statsText == null)
         {
-            longText = FindText("Longitude");
-        }
-
-        if (latText == null)
-        {
-            latText = FindText("Latitude");
+            statsText = FindText("Points") ?? FindText("Longitude");
         }
 
         if (accuracyText == null)
@@ -145,8 +137,7 @@ public class GPSUIController : MonoBehaviour
 
     private bool HasMissingUiReference()
     {
-        return longText == null ||
-            latText == null ||
+        return statsText == null ||
             accuracyText == null ||
             walkingSessionButton == null ||
             walkingSessionButtonText == null;
