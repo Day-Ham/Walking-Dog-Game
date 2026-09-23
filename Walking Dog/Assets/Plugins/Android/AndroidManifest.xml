@@ -13,6 +13,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application android:hardwareAccelerated="true">
+        <activity android:name="com.walkingdog.profile.ProfilePhotoPicker"
+                  android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <service android:name="com.walkingdog.tracking.WalkLocationService"
                  android:exported="false" android:foregroundServiceType="location"
                  android:stopWithTask="true" />

@@ -14,7 +14,9 @@ namespace WalkingDog.Leaderboards
         private IFriendsService service;
         private TMP_Text message, code;
         private TMP_InputField input;
+        [SerializeField]
         private Button send, refresh, copy, buttonSource;
+        [SerializeField]
         private TMP_Text textSource;
         private RectTransform list;
         private ScrollRect scroll;

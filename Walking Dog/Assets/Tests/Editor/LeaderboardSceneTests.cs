@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Collections;
+using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
@@ -68,6 +70,7 @@ public sealed class LeaderboardSceneTests
         var back = panel.transform.Find("LeaderBG/LeaderSafeArea/Back").GetComponent<Button>();
         back.onClick.SetPersistentListenerState(0, UnityEventCallState.EditorAndRuntime);
         back.onClick.Invoke();
+        FinishExitAnimation(panel.transform.Find("LeaderBG"));
         Assert.That(panel.gameObject.activeSelf, Is.False);
     }
 
@@ -78,7 +81,8 @@ public sealed class LeaderboardSceneTests
         Assert.That(Field<LeaderboardCardUI>("cardTemplate").gameObject.activeSelf, Is.False);
         Assert.That(Field<TMP_Text>("personalTotals").text, Does.Contain("1.23 km"));
         var content = Field<RectTransform>("content");
-        Assert.That(content.Find("Player 2").GetComponentInChildren<TMP_Text>().text, Is.EqualTo("My Walker"));
+        Assert.That(content.Find("Player 2/Name").GetComponent<TMP_Text>().text, Is.EqualTo("My Walker"));
+        Assert.That(content.Find("Player 2/Image/Profile initials").GetComponent<TMP_Text>().text, Is.EqualTo("MW"));
         var details = content.Find("Player 2/Score details").GetComponent<TMP_Text>();
         Assert.That(details.text, Does.Contain("#2 · YOU"));
         Field<Button>("steps").onClick.Invoke();
@@ -137,16 +141,20 @@ public sealed class LeaderboardSceneTests
     {
         await panel.RefreshAsync();
         var safe = panel.transform.Find("LeaderBG/LeaderSafeArea");
-        safe.Find("Manage friends").GetComponent<Button>().onClick.Invoke();
+        ClickInEditor(safe.Find("Manage friends").GetComponent<Button>());
         var manager = safe.Find("Friends manager").GetComponent<FriendsPanelUI>();
         var run = typeof(FriendsPanelUI).GetMethod("RunAsync", BindingFlags.Instance | BindingFlags.NonPublic);
         await (Task)run.Invoke(manager, new object[] { null, FriendAction.Send });
-        Assert.That(manager.transform.Find("Friend code").GetComponent<TMP_Text>().text, Is.EqualTo("me"));
+        Assert.That(manager.transform.Find("Friend code").GetComponent<TMP_Text>().text, Is.EqualTo("ABCD-EFGH"));
+        Assert.That(manager.transform.Find("Code guide").GetComponent<TMP_Text>().text, Does.Contain("Your friend code"));
+        Assert.That(manager.transform.Find("Friends status").GetComponent<TMP_Text>().text, Does.Contain("Accept incoming"));
+        Assert.That(manager.transform.GetSiblingIndex(), Is.GreaterThan(safe.Find("Upload profile photo").GetSiblingIndex()));
         Assert.That(manager.transform.Find("Friends list/Friend rows").childCount, Is.EqualTo(3));
         manager.transform.Find("Friends list/Friend rows/Friend incoming/Accept").GetComponent<Button>().onClick.Invoke();
         Assert.That(service.LastFriendAction, Is.EqualTo(FriendAction.Accept));
         Assert.That(service.LastFriendCode, Is.EqualTo("incoming"));
-        manager.transform.Find("Close friends").GetComponent<Button>().onClick.Invoke();
+        ClickInEditor(manager.transform.Find("Close friends").GetComponent<Button>());
+        FinishExitAnimation(manager.transform);
         typeof(FriendsPanelUI).GetMethod("OnDisable", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(manager, null);
         Assert.That(manager.gameObject.activeSelf, Is.False);
         Assert.That(manager.transform.Find("Friend code").GetComponent<TMP_Text>().text, Is.Empty);
@@ -159,7 +167,7 @@ public sealed class LeaderboardSceneTests
         var completion = new TaskCompletionSource<IReadOnlyList<FriendEntry>>();
         service.FriendRead = completion.Task;
         var safe = panel.transform.Find("LeaderBG/LeaderSafeArea");
-        safe.Find("Manage friends").GetComponent<Button>().onClick.Invoke();
+        ClickInEditor(safe.Find("Manage friends").GetComponent<Button>());
         var manager = safe.Find("Friends manager").GetComponent<FriendsPanelUI>();
         var task = (Task)typeof(FriendsPanelUI).GetMethod("RunAsync", BindingFlags.Instance | BindingFlags.NonPublic)
             .Invoke(manager, new object[] { null, FriendAction.Send });
@@ -170,9 +178,27 @@ public sealed class LeaderboardSceneTests
         Assert.That(manager.transform.Find("Friends list/Friend rows").childCount, Is.Zero);
     }
 
+    private static void ClickInEditor(Button button)
+    {
+        for (int i = 0; i < button.onClick.GetPersistentEventCount(); i++)
+            button.onClick.SetPersistentListenerState(i, UnityEventCallState.EditorAndRuntime);
+        button.onClick.Invoke();
+    }
+
+    private static void FinishExitAnimation(Transform animated)
+    {
+        // EditMode does not advance Animator/coroutines. Exercise the same deferred
+        // completion that the exit clip invokes after its visual transition.
+        var handler = animated.GetComponents<MonoBehaviour>().Single(c => c.GetType().Name == "DisableanimatedObject");
+        var completion = (IEnumerator)handler.GetType().GetMethod("DisableNextFrame", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(handler, null);
+        Assert.That(completion.MoveNext(), Is.True);
+        Assert.That(completion.MoveNext(), Is.False);
+    }
+
     private sealed class FakeService : ILeaderboardService, IFriendsService
     {
         public string AuthenticatedUserId { get; set; } = "me";
+        public Task<string> GetFriendCodeAsync(CancellationToken token) => Task.FromResult("ABCD-EFGH");
         public int Reads;
         public LeaderboardMetric LastMetric;
         public Func<LeaderboardMetric, CancellationToken, Task<LeaderboardSnapshot>> Read = (metric, _) => Task.FromResult(Data(metric));

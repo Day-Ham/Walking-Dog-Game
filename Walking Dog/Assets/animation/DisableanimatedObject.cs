@@ -3,6 +3,7 @@ using UnityEngine;
 
 public class DisableanimatedObject : MonoBehaviour
 {
+    [SerializeField] private GameObject disableTarget;
     private bool disableScheduled;
 
     // Called by the LeaderboardExit animation event. Disabling during that
@@ -18,7 +19,7 @@ public class DisableanimatedObject : MonoBehaviour
     private IEnumerator DisableNextFrame()
     {
         yield return null;
-        gameObject.SetActive(false);
+        (disableTarget != null ? disableTarget : gameObject).SetActive(false);
         disableScheduled = false;
     }
 }
