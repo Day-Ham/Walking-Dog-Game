@@ -571,6 +571,8 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
 
     private OpenFreeMapState BuildMapState()
     {
+        string colorHex = PlayerPrefs.GetString("EquippedCollarColor", "#ee2b35");
+
         if (ShowHistoricalRoute && HistoricalRoutePoints != null)
         {
             var hasPoints = HistoricalRoutePoints.Count > 0;
@@ -585,7 +587,8 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
                 lng = center.y,
                 zoom = zoom,
                 style = GetStyleId(mapStyle),
-                routePoints = new List<OpenFreeMapRoutePoint>()
+                routePoints = new List<OpenFreeMapRoutePoint>(),
+                markerColor = colorHex
             };
 
             if (hasPoints)
@@ -616,7 +619,8 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
             lng = longitude,
             zoom = zoom,
             style = GetStyleId(mapStyle),
-            routePoints = new List<OpenFreeMapRoutePoint>()
+            routePoints = new List<OpenFreeMapRoutePoint>(),
+            markerColor = colorHex
         };
 
         if (manager != null && manager.RoutePointCount > 0)
@@ -802,6 +806,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         public List<TerritoryGeometry.Polygon> territoryPolygons;
         public string territoryRevision;
         public string territoryMessage;
+        public string markerColor;
     }
 
     [Serializable]

@@ -13,6 +13,7 @@ public sealed class PointsWalletTests
         public Func<string, CancellationToken, Task<PointsWalletSnapshot>> Read = (_, __) => Task.FromResult(new PointsWalletSnapshot(12, 12, 0));
         public void Reset() { Resets++; }
         public Task<PointsWalletSnapshot> LoadAsync(string owner, CancellationToken token) => Read(owner, token);
+        public Task SpendAsync(string owner, long amount, string receiptId, CancellationToken token) => Task.CompletedTask;
     }
 
     [TestCase(0, 0)] [TestCase(9, 0)] [TestCase(10, 1)] [TestCase(129, 12)] [TestCase(int.MaxValue, 214748364)]

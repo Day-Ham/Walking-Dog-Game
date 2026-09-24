@@ -98,7 +98,7 @@ namespace WalkingDog.Leaderboards
                 var player = await transaction.GetSnapshotAsync(playerRef);
                 transaction.Set(db.Document($"leaderboardProfiles/{uid}"), new Dictionary<string, object> {
                     ["displayName"] = name, ["updatedAt"] = FieldValue.ServerTimestamp
-                });
+                }, SetOptions.MergeAll);
                 transaction.Set(db.Document($"friendCodes/{uid}"), new Dictionary<string, object> {
                     ["displayName"] = name, ["updatedAt"] = FieldValue.ServerTimestamp
                 }, SetOptions.MergeAll);

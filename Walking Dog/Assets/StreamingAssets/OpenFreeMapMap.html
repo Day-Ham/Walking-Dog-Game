@@ -993,6 +993,15 @@
         // update territory
         updateTerritory(state.routePoints);
 
+        if (state.markerColor) {
+           if (typeof marker !== 'undefined' && marker && marker.getElement) {
+               var el = marker.getElement();
+               if (el) el.style.backgroundColor = state.markerColor;
+           }
+           var rasterMarker = document.querySelector('.raster-current-location-marker');
+           if (rasterMarker) rasterMarker.style.backgroundColor = state.markerColor;
+        }
+
         updateVectorRenderState();
         setReadyStatus();
       }

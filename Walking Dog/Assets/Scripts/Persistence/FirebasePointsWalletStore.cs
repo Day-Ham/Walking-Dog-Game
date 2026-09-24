@@ -102,6 +102,36 @@ internal sealed class FirebasePointsWalletStore : IPointsWalletStore
         return PointsWalletSnapshot.Parse(saved.ToDictionary(), !current.Complete);
     }
 
+    public Task SpendAsync(string owner, long amount, string receiptId, CancellationToken token)
+    {
+        Check(owner, token);
+        return RetryContentionAsync(() => db.RunTransactionAsync(async transaction =>
+        {
+            token.ThrowIfCancellationRequested();
+            var receiptRef = db.Document($"users/{owner}/spendReceipts/{receiptId}");
+            var receipt = await transaction.GetSnapshotAsync(receiptRef);
+            if (receipt.Exists) return;
+
+            var walletRef = db.Document(WalletPath(owner));
+            var wallet = await transaction.GetSnapshotAsync(walletRef);
+            if (!wallet.Exists) throw new InvalidOperationException("Wallet does not exist.");
+            var dict = wallet.ToDictionary();
+            var old = PointsWalletSnapshot.Parse(dict);
+            
+            if (old.Balance < amount) throw new InvalidOperationException("Not enough points.");
+            
+            var spent = checked(old.TotalSpent + amount);
+            
+            dict.TryGetValue("lastWalkId", out var walkIdObj);
+            string lastWalkId = walkIdObj as string ?? "";
+
+            transaction.Set(walletRef, Fields(old.TotalEarned, spent, lastWalkId));
+            transaction.Set(receiptRef, new Dictionary<string, object> {
+                ["points"] = amount, ["spentAt"] = FieldValue.ServerTimestamp
+            });
+        }), token);
+    }
+
     private void Check(string owner, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();

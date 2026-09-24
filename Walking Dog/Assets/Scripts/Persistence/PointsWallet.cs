@@ -40,6 +40,7 @@ internal interface IPointsWalletStore
     string AuthenticatedUserId { get; }
     void Reset();
     Task<PointsWalletSnapshot> LoadAsync(string owner, CancellationToken token);
+    Task SpendAsync(string owner, long amount, string receiptId, CancellationToken token);
 }
 
 // UI state is scoped to one account. Late/offline native calls cannot replace a
@@ -130,6 +131,20 @@ public sealed class PointsWalletSession : IDisposable
                 request.Cancel();
             }
         }
+    }
+
+    public async Task SpendPointsAsync(long amount, string receiptId)
+    {
+        SynchronizeAccount();
+        if (string.IsNullOrEmpty(Owner)) throw new InvalidOperationException("Not authenticated");
+        if (Snapshot == null || Snapshot.Balance < amount) throw new InvalidOperationException("Insufficient points");
+        
+        using (var tokenSource = new CancellationTokenSource(timeout))
+        {
+            await store.SpendAsync(Owner, amount, receiptId, tokenSource.Token);
+        }
+        // Force refresh after spend
+        await RefreshAsync();
     }
 
     private static async void Observe(Task task) { try { await task; } catch (Exception) { } }
