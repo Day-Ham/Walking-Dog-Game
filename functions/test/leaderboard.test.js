@@ -23,6 +23,99 @@ const walk = (id, steps = 100, distance = 75) => ({ schemaVersion: 1, id,
 const seed = (uid, id, steps, distance) => db.doc(`users/${uid}/walks/${id}`).set(walk(id, steps, distance));
 const player = uid => db.doc(`${PLAYERS}/${uid}`).get();
 
+const walletPath = uid => `users/${uid}/wallet/main`;
+const pointReceipt = (uid, id) => `users/${uid}/pointReceipts/${id}`;
+const walletFields = (earned = 0, spent = 0, id = "") => ({ schemaVersion: 1,
+  balance: earned - spent, totalEarned: earned, totalSpent: spent, lastWalkId: id, updatedAt: serverTimestamp() });
+async function awardPoints(client, uid, id) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await runTransaction(client, async tx => {
+    const receipt = doc(client, pointReceipt(uid, id));
+    if ((await tx.get(receipt)).exists()) return;
+    const saved = await tx.get(doc(client, `users/${uid}/walks/${id}`));
+    const wallet = doc(client, walletPath(uid));
+    const old = await tx.get(wallet);
+    const points = Math.floor(saved.data().steps / 10);
+    tx.set(wallet, walletFields((old.exists() ? old.data().totalEarned : 0) + points,
+      old.exists() ? old.data().totalSpent : 0, id));
+    tx.set(receipt, { points, awardedAt: serverTimestamp() });
+    }); } catch (error) {
+      if (error.code !== "permission-denied" || attempt >= 2) throw error;
+      await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+    }
+  }
+}
+
+test("points: fresh account creates a private zero wallet", async () => {
+  const client = environment.authenticatedContext("alice").firestore();
+  await assertSucceeds(setDoc(doc(client, walletPath("alice")), walletFields()));
+  assert.equal((await getDoc(doc(client, walletPath("alice")))).data().balance, 0);
+  const other = environment.authenticatedContext("bob").firestore();
+  await assertFails(getDoc(doc(other, walletPath("alice"))));
+  await assertFails(setDoc(doc(other, walletPath("alice")), walletFields()));
+  await assertFails(getDoc(doc(environment.unauthenticatedContext().firestore(), walletPath("alice"))));
+});
+
+test("points: historical walks, rounding, zero rewards, retries and another installation", async () => {
+  const client = environment.authenticatedContext("alice").firestore();
+  for (const [id, steps] of [["old", 129], ["short", 9], ["empty", 0]]) {
+    await seed("alice", id, steps, 0);
+    await assertSucceeds(awardPoints(client, "alice", id));
+  }
+  const second = environment.authenticatedContext("alice").firestore();
+  await assertSucceeds(awardPoints(second, "alice", "old"));
+  assert.equal((await getDoc(doc(second, walletPath("alice")))).data().balance, 12);
+  assert.equal((await getDoc(doc(client, pointReceipt("alice", "short")))).data().points, 0);
+});
+
+test("points: concurrent walks and repeated claims preserve exact integer totals", async () => {
+  const client = environment.authenticatedContext("alice").firestore();
+  await seed("alice", "one", 123, 10.1);
+  await seed("alice", "two", 239, 20.2);
+  await Promise.all([awardPoints(client, "alice", "one"), awardPoints(client, "alice", "two"), awardPoints(client, "alice", "one")]);
+  assert.equal((await getDoc(doc(client, walletPath("alice")))).data().balance, 35);
+});
+
+test("points: rejects forged balances, missing receipts, missing walks and spending", async () => {
+  const client = environment.authenticatedContext("alice").firestore();
+  await seed("alice", "one", 100, 0);
+  await assertFails(setDoc(doc(client, walletPath("alice")), walletFields(100)));
+  await assertFails(setDoc(doc(client, walletPath("alice")), walletFields(10, 0, "one")));
+  for (const [id, earned, points] of [["missing", 10, 10], ["one", 999, 999], ["one", 10, 999]]) {
+    const batch = writeBatch(client);
+    batch.set(doc(client, walletPath("alice")), walletFields(earned, 0, id));
+    batch.set(doc(client, pointReceipt("alice", id)), { points, awardedAt: serverTimestamp() });
+    await assertFails(batch.commit());
+  }
+  await awardPoints(client, "alice", "one");
+  await assertFails(setDoc(doc(client, walletPath("alice")), walletFields(10, 5, "one")));
+  await assertFails(setDoc(doc(client, walletPath("alice")), walletFields()));
+  await assertFails(deleteDoc(doc(client, walletPath("alice"))));
+});
+
+test("points: receipts are private, immutable, and cannot be created without wallet credit", async () => {
+  const client = environment.authenticatedContext("alice").firestore();
+  await seed("alice", "one");
+  const receipt = doc(client, pointReceipt("alice", "one"));
+  await assertFails(setDoc(receipt, { points: 10, awardedAt: serverTimestamp() }));
+  await awardPoints(client, "alice", "one");
+  await assertFails(setDoc(receipt, { points: 10, awardedAt: serverTimestamp() }));
+  await assertFails(deleteDoc(receipt));
+  await assertFails(getDoc(doc(environment.authenticatedContext("bob").firestore(), pointReceipt("alice", "one"))));
+});
+
+test("points: exact delta preserves backend spending and cannot overflow the wallet", async () => {
+  const client = environment.authenticatedContext("alice").firestore();
+  await seed("alice", "one", 100);
+  await db.doc(walletPath("alice")).set({ ...walletFields(100, 30), updatedAt: new Date() });
+  await awardPoints(client, "alice", "one");
+  assert.equal((await getDoc(doc(client, walletPath("alice")))).data().balance, 80);
+  await seed("alice", "two", 100);
+  await db.doc(walletPath("alice")).set({ ...walletFields(Number.MAX_SAFE_INTEGER), updatedAt: new Date() });
+  await assertFails(awardPoints(client, "alice", "two"));
+  assert.equal((await db.doc(pointReceipt("alice", "two")).get()).exists, false);
+});
+
 before(async () => {
   environment = await initializeTestEnvironment({ projectId,
     firestore: { rules: fs.readFileSync(path.join(__dirname, "../../firestore.rules"), "utf8") } });

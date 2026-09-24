@@ -163,7 +163,8 @@ namespace WalkingDog.Leaderboards
                 for (int i = 0; i < group.Count; i++) photos[group[i]] = ReadPhoto(profiles[i]);
             }
             LeaderboardEntry Decorate(LeaderboardEntry entry) => entry == null ? null : new LeaderboardEntry(
-                entry.PlayerId, entry.DisplayName, entry.TotalDistanceMeters, entry.TotalSteps, entry.CompletedWalkCount, photos[entry.PlayerId]);
+                entry.PlayerId, entry.DisplayName, entry.TotalDistanceMeters, entry.TotalSteps, entry.CompletedWalkCount,
+                photos[entry.PlayerId], entry.PointsBalance);
             return new LeaderboardSnapshot(board.Metric, board.CurrentPlayerId, board.Entries.Select(Decorate).ToList().AsReadOnly(), Decorate(board.CurrentPlayer), board.Scope, photos[board.CurrentPlayerId]);
         }
 

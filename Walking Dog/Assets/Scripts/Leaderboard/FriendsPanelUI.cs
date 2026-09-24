@@ -10,16 +10,16 @@ namespace WalkingDog.Leaderboards
 {
     public sealed class FriendsPanelUI : MonoBehaviour
     {
-        private LeaderboardPanelUI owner;
+        [SerializeField] private LeaderboardPanelUI owner;
         private IFriendsService service;
-        private TMP_Text message, code;
-        private TMP_InputField input;
+        [SerializeField] private TMP_Text message, code;
+        [SerializeField] private TMP_InputField input;
         [SerializeField]
         private Button send, refresh, copy, buttonSource;
         [SerializeField]
         private TMP_Text textSource;
-        private RectTransform list;
-        private ScrollRect scroll;
+        [SerializeField] private RectTransform list;
+        [SerializeField] private ScrollRect scroll;
         private readonly List<GameObject> rows = new List<GameObject>();
         private CancellationTokenSource pending;
         private string observedUser = "";
@@ -43,7 +43,6 @@ namespace WalkingDog.Leaderboards
             MakeText(root.transform, text, "Code hint", "Your friend code · share it with a friend", .06f, .86f, .94f, .91f, 28);
             panel.code = MakeText(root.transform, text, "Friend code", "", .06f, .80f, .73f, .86f, 28);
             panel.copy = MakeButton(root.transform, source, "Copy code", "Copy", .76f, .80f, .94f, .86f);
-            panel.copy.onClick.AddListener(() => { GUIUtility.systemCopyBuffer = panel.observedUser; panel.message.text = "Friend code copied."; });
             panel.input = Instantiate(inputSource, root.transform);
             panel.input.name = "Enter friend code";
             Place(panel.input.transform, .06f, .71f, .70f, .78f);
@@ -55,7 +54,6 @@ namespace WalkingDog.Leaderboards
             placeholder.color = new Color(.7f, .7f, .75f);
             panel.input.placeholder = placeholder;
             panel.send = MakeButton(root.transform, source, "Send request", "Send", .73f, .71f, .94f, .78f);
-            panel.send.onClick.AddListener(() => { _ = panel.RunAsync(panel.input.text.Trim(), FriendAction.Send); });
             panel.message = MakeText(root.transform, text, "Friends status", "", .06f, .595f, .94f, .695f, 28);
             var viewport = new GameObject("Friends list", typeof(RectTransform), typeof(Image), typeof(RectMask2D), typeof(ScrollRect));
             viewport.transform.SetParent(root.transform, false);
@@ -81,11 +79,47 @@ namespace WalkingDog.Leaderboards
             panel.scroll.content = panel.list;
             panel.scroll.viewport = viewport.GetComponent<RectTransform>();
             panel.refresh = MakeButton(root.transform, source, "Refresh friends", "Refresh friends", .20f, .02f, .80f, .08f);
-            panel.refresh.onClick.AddListener(() => { _ = panel.RunAsync(); });
+            panel.Initialize(owner);
             return panel;
         }
 
-        private void OnEnable() { if (owner != null) _ = RunAsync(); }
+        internal void Initialize(LeaderboardPanelUI controller)
+        {
+            owner = controller;
+            BindButton(send, SendFriendRequest);
+            BindButton(refresh, RefreshFriends);
+            BindButton(copy, CopyFriendCode);
+        }
+
+        // Keep Inspector events and dynamically created controls working without duplicate calls.
+        private void BindButton(Button button, UnityEngine.Events.UnityAction action)
+        {
+            if (button == null) return;
+            button.onClick.RemoveListener(action);
+            for (int i = 0; i < button.onClick.GetPersistentEventCount(); i++)
+                if (button.onClick.GetPersistentTarget(i) == this
+                    && button.onClick.GetPersistentMethodName(i) == action.Method.Name
+                    && button.onClick.GetPersistentListenerState(i) != UnityEngine.Events.UnityEventCallState.Off) return;
+            button.onClick.AddListener(action);
+        }
+
+        public void RefreshFriends() { _ = RunAsync(); }
+        public void SendFriendRequest()
+        {
+            if (input != null && !busy) _ = RunAsync(input.text.Trim(), FriendAction.Send);
+        }
+        public void CopyFriendCode()
+        {
+            if (busy || code == null || string.IsNullOrEmpty(code.text)) return;
+            GUIUtility.systemCopyBuffer = code.text;
+            message.text = "Friend code copied.";
+        }
+
+        private void OnEnable()
+        {
+            Initialize(owner);
+            if (Application.isPlaying) RefreshFriends();
+        }
         private void Update()
         {
             if (service != null && service.AuthenticatedUserId != observedUser)
@@ -98,6 +132,13 @@ namespace WalkingDog.Leaderboards
 
         private async Task RunAsync(string target = null, FriendAction action = FriendAction.Send)
         {
+            if (owner == null || message == null || code == null || input == null || list == null
+                || scroll == null || send == null || refresh == null || copy == null
+                || buttonSource == null || textSource == null)
+            {
+                Debug.LogWarning("Assign the FriendsPanelUI references in the Inspector.");
+                return;
+            }
             if (target != null && busy) return;
             Cancel();
             var request = generation;
@@ -118,9 +159,11 @@ namespace WalkingDog.Leaderboards
                 if (string.IsNullOrEmpty(observedUser)) { message.text = "Sign in to manage friends."; return; }
                 if (target != null) await service.ChangeFriendAsync(target, action, token);
                 if (!Current(request)) return;
+                var friendCode = await service.GetFriendCodeAsync(token);
+                if (!Current(request) || observedUser != service.AuthenticatedUserId) return;
                 var entries = await service.LoadFriendsAsync(token);
                 if (!Current(request) || observedUser != service.AuthenticatedUserId) return;
-                code.text = observedUser;
+                code.text = friendCode;
                 Render(entries);
                 if (target != null) input.SetTextWithoutNotify("");
                 message.text = target != null ? action == FriendAction.Send ? "Request sent. Your friend must accept to join your rankings."
@@ -149,7 +192,11 @@ namespace WalkingDog.Leaderboards
                 rows.Add(row);
                 bool incoming = !entry.Accepted && entry.RequestedBy != observedUser;
                 string state = entry.Accepted ? "Friends" : incoming ? "Incoming request" : "Request sent";
-                MakeText(row.transform, textSource, "Friend name", entry.DisplayName + " · " + state, .03f, .50f, .97f, .98f, 30);
+                var photo = new GameObject("Profile photo", typeof(RectTransform), typeof(Image), typeof(ProfilePhotoUI));
+                photo.transform.SetParent(row.transform, false);
+                Place(photo.transform, .03f, .51f, .15f, .97f);
+                photo.GetComponent<ProfilePhotoUI>().Bind(entry.PlayerId, entry.DisplayName, entry.PhotoUrl, textSource.font);
+                MakeText(row.transform, textSource, "Friend name", entry.DisplayName + " · " + state, .18f, .50f, .97f, .98f, 30);
                 if (incoming)
                 {
                     var accept = MakeButton(row.transform, buttonSource, "Accept", "Accept", .04f, .04f, .48f, .46f);

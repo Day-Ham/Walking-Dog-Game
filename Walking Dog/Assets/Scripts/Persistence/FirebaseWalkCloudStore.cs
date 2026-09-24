@@ -14,6 +14,7 @@ public sealed class FirebaseWalkCloudStore : IWalkCloudStore, IDisposable
     private readonly TimeSpan acknowledgementTimeout = TimeSpan.FromSeconds(30);
     private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
     private bool disposed;
+    public event Action PointsChanged;
 
     public FirebaseWalkCloudStore(FirebaseAuth auth, FirebaseFirestore firestore)
     {
@@ -26,6 +27,8 @@ public sealed class FirebaseWalkCloudStore : IWalkCloudStore, IDisposable
             // A failed/cancelled leaderboard transaction leaves this upload
             // retryable. Stable walk IDs and atomic receipts prevent double credit.
             var parts = path.Split('/');
+            await FirebasePointsWalletStore.AwardAsync(firestore, parts[1], parts[3]);
+            if (!disposed && AuthenticatedUserId == parts[1]) PointsChanged?.Invoke();
             await WalkingDog.Leaderboards.FirebaseLeaderboardWriter.CountWalkAsync(firestore, parts[1], parts[3]);
         };
         serverTimestamp = FieldValue.ServerTimestamp;

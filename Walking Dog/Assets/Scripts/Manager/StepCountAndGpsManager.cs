@@ -7,6 +7,7 @@ using UnityEngine;
 
 public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackReceiver
 {
+    //variables
     public const float AccurateGpsThresholdMeters = 10f;
 
     private const float EarthRadiusMeters = 6371000f;
@@ -27,6 +28,12 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
 
     public int territtoryFlag = 0; // for UI Color change with gps text will do this later
 
+    // A preview derived from recorded steps, not a saved/spendable currency balance.
+    private const int StepsPerPoint = 10;
+    public int StepPoints => Steps / StepsPerPoint;
+    public int WalkingSessionPoints => WalkingSessionSteps / StepsPerPoint;
+
+    //territory functions
     
     public TerritoryService Territories
     {
@@ -468,6 +475,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
             // TerritoryService contains its own errors; territory failures never undo a saved walk.
             Territories.Refresh(cloudStore?.AuthenticatedUserId ?? "");
             RefreshLastWalkSaveState();
+            GetComponent<FirebaseWalkBootstrap>()?.WalkSaved();
             RequestWalkSync();
             return filePath;
         }
@@ -764,6 +772,14 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
 
         return EarthRadiusMeters * centralAngle;
     }
+
+
+
+    //
+    //      GETTERS AND SETTERS 
+    //
+
+    public int getPoint() { return StepPoints; }
 
     public void setStep(int steps)
     {

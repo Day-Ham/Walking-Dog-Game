@@ -44,6 +44,58 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    function validWallet(data) {
+      let fields = ['schemaVersion', 'balance', 'totalEarned', 'totalSpent', 'lastWalkId', 'updatedAt'];
+      return data.keys().hasAll(fields) && data.keys().hasOnly(fields)
+        && data.schemaVersion is int && data.schemaVersion == 1
+        && data.balance is int && data.balance >= 0
+        && data.totalEarned is int && data.totalEarned >= 0 && data.totalEarned <= 9007199254740991
+        && data.totalSpent is int && data.totalSpent >= 0 && data.totalSpent <= data.totalEarned
+        && data.balance == data.totalEarned - data.totalSpent
+        && data.lastWalkId is string && data.updatedAt == request.time;
+    }
+
+    function awardsSavedWalk(userId, data, oldEarned, oldSpent) {
+      let walk = get(/databases/$(database)/documents/users/$(userId)/walks/$(data.lastWalkId)).data;
+      let receipt = /databases/$(database)/documents/users/$(userId)/pointReceipts/$(data.lastWalkId);
+      return data.lastWalkId.matches('[A-Za-z0-9_-]{1,128}')
+        && walk.schemaVersion == 1 && walk.id == data.lastWalkId
+        && walk.steps is int && walk.steps >= 0 && walk.steps <= 2147483647
+        && !exists(receipt) && getAfter(receipt).data.awardedAt == request.time
+        && getAfter(receipt).data.points == int(walk.steps / 10)
+        && data.totalEarned == oldEarned + int(walk.steps / 10)
+        && data.totalSpent == oldSpent;
+    }
+
+    match /users/{userId}/wallet/main {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && validWallet(request.resource.data)
+        && ((request.resource.data.balance == 0 && request.resource.data.totalEarned == 0
+            && request.resource.data.totalSpent == 0 && request.resource.data.lastWalkId == '')
+          || awardsSavedWalk(userId, request.resource.data, 0, 0));
+      allow update: if isOwner(userId) && validWallet(request.resource.data)
+        && awardsSavedWalk(userId, request.resource.data, resource.data.totalEarned, resource.data.totalSpent);
+      allow delete: if false;
+    }
+
+    match /users/{userId}/pointReceipts/{walkId} {
+      function pairedWalletUpdate() {
+        let wallet = /databases/$(database)/documents/users/$(userId)/wallet/main;
+        let oldEarned = exists(wallet) ? get(wallet).data.totalEarned : 0;
+        let after = getAfter(wallet).data;
+        return after.lastWalkId == walkId && after.updatedAt == request.time
+          && after.totalEarned == oldEarned + request.resource.data.points;
+      }
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && request.resource.data.keys().hasAll(['points', 'awardedAt'])
+        && request.resource.data.keys().hasOnly(['points', 'awardedAt'])
+        && request.resource.data.points is int && request.resource.data.points >= 0
+        && request.resource.data.points <= 214748364
+        && request.resource.data.awardedAt == request.time && pairedWalletUpdate();
+      allow update, delete: if false;
+    }
+
     function validName(name) {
       return name is string && name.matches('[A-Za-z0-9][A-Za-z0-9 _-]{2,23}');
     }

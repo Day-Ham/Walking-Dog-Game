@@ -84,6 +84,9 @@ public sealed class LeaderboardSceneTests
         Assert.That(content.Find("Player 2/Name").GetComponent<TMP_Text>().text, Is.EqualTo("My Walker"));
         Assert.That(content.Find("Player 2/Image/Profile initials").GetComponent<TMP_Text>().text, Is.EqualTo("MW"));
         var details = content.Find("Player 2/Score details").GetComponent<TMP_Text>();
+        Assert.That(details.text, Does.Contain("210 points"));
+        Assert.That(details.text.IndexOf("2,100 steps"), Is.LessThan(details.text.IndexOf("210 points")));
+        Assert.That(details.text.IndexOf("210 points"), Is.LessThan(details.text.IndexOf("2 walks")));
         Assert.That(details.text, Does.Contain("#2 · YOU"));
         Field<Button>("steps").onClick.Invoke();
         Assert.That(service.LastMetric, Is.EqualTo(LeaderboardMetric.Steps));
@@ -150,6 +153,22 @@ public sealed class LeaderboardSceneTests
         Assert.That(manager.transform.Find("Friends status").GetComponent<TMP_Text>().text, Does.Contain("Accept incoming"));
         Assert.That(manager.transform.GetSiblingIndex(), Is.GreaterThan(safe.Find("Upload profile photo").GetSiblingIndex()));
         Assert.That(manager.transform.Find("Friends list/Friend rows").childCount, Is.EqualTo(3));
+        Assert.That(manager.transform.Find("Friends list/Friend rows/Friend incoming/Profile photo/Profile initials")
+            .GetComponent<TMP_Text>().text, Is.EqualTo("IW"));
+        var previousClipboard = GUIUtility.systemCopyBuffer;
+        try
+        {
+            ClickInEditor(manager.transform.Find("Copy code").GetComponent<Button>());
+            Assert.That(GUIUtility.systemCopyBuffer, Is.EqualTo("ABCD-EFGH"));
+        }
+        finally { GUIUtility.systemCopyBuffer = previousClipboard; }
+        // Reopening must not accumulate listeners or send the same request twice.
+        panel.OpenFriendsPanel();
+        panel.OpenFriendsPanel();
+        manager.transform.Find("Enter friend code").GetComponent<TMP_InputField>().text = " WXYZ-ABCD ";
+        ClickInEditor(manager.transform.Find("Send request").GetComponent<Button>());
+        Assert.That(service.LastFriendCode, Is.EqualTo("WXYZ-ABCD"));
+        Assert.That(service.Changes, Is.EqualTo(1));
         manager.transform.Find("Friends list/Friend rows/Friend incoming/Accept").GetComponent<Button>().onClick.Invoke();
         Assert.That(service.LastFriendAction, Is.EqualTo(FriendAction.Accept));
         Assert.That(service.LastFriendCode, Is.EqualTo("incoming"));
@@ -209,6 +228,7 @@ public sealed class LeaderboardSceneTests
         public LeaderboardScope LastScope;
         public FriendAction LastFriendAction;
         public string LastFriendCode;
+        public int Changes;
         public Task<IReadOnlyList<FriendEntry>> FriendRead;
         public Task<IReadOnlyList<FriendEntry>> LoadFriendsAsync(CancellationToken token) => FriendRead ?? Task.FromResult<IReadOnlyList<FriendEntry>>(new[] {
             new FriendEntry("incoming", "Incoming Walker", "incoming", false),
@@ -216,14 +236,14 @@ public sealed class LeaderboardSceneTests
             new FriendEntry("accepted", "Accepted Walker", "accepted", true)
         });
         public Task ChangeFriendAsync(string code, FriendAction action, CancellationToken token)
-        { LastFriendCode = code; LastFriendAction = action; return Task.CompletedTask; }
+        { Changes++; LastFriendCode = code; LastFriendAction = action; return Task.CompletedTask; }
         public Task SaveDisplayNameAsync(string name, CancellationToken token) => Task.CompletedTask;
         public void Dispose() { }
         public static LeaderboardSnapshot Data(LeaderboardMetric metric)
         {
-            var own = new LeaderboardEntry("me", "My Walker", 1230, 2100, 2);
+            var own = new LeaderboardEntry("me", "My Walker", 1230, 2100, 2, pointsBalance: 210);
             return new LeaderboardSnapshot(metric, "me", new List<LeaderboardEntry> {
-                new LeaderboardEntry("other", "Other Walker", 2340, 3300, 3), own
+                new LeaderboardEntry("other", "Other Walker", 2340, 3300, 3, pointsBalance: 330), own
             }, own);
         }
     }

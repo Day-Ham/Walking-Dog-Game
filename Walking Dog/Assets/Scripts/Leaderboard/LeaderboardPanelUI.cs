@@ -105,6 +105,8 @@ namespace WalkingDog.Leaderboards
                 Debug.LogWarning("Assign Friends Panel on LeaderboardPanelUI in the Inspector.");
                 return;
             }
+            friendsPanel.Initialize(this);
+            friendsPanel.transform.SetAsLastSibling();
             friendsPanel.gameObject.SetActive(true);
         }
 
