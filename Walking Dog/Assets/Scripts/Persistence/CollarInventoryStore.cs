@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Firebase.Firestore;
 using UnityEngine;
-
+// persistence of gacha item to track which is unlocked or not
 public class CollarInventoryStore
 {
     public const string UnlockedItemIdsKey = "UnlockedGachaItemIds";
@@ -36,6 +36,9 @@ public class CollarInventoryStore
         var localIds = GetLocalUnlockedItemIds();
         localIds.Add(item.ItemId);
         SaveLocal(localIds, item.ItemId, item.CollarColorHex);
+       
+        //save marker appearance
+        EquippedGachaMarkerIcon.Save(item);
 
         var inventoryRef = db.Document($"users/{uid}/inventory/main");
         var profileRef = db.Document($"leaderboardProfiles/{uid}");
@@ -74,6 +77,8 @@ public class CollarInventoryStore
             throw new InvalidOperationException("Cannot equip a locked item.");
 
         SaveLocal(localIds, item.ItemId, item.CollarColorHex);
+        //save marker equip appearance
+        EquippedGachaMarkerIcon.Save(item);
         var inventoryRef = db.Document($"users/{uid}/inventory/main");
         var profileRef = db.Document($"leaderboardProfiles/{uid}");
 

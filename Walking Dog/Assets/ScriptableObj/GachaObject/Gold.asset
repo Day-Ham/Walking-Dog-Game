@@ -15,5 +15,5 @@ MonoBehaviour:
   CollarID: Collar_Gold
   displayName: Gold Collar
   tier: 2
-  Icon_img: {fileID: 21300000, guid: 0cd8cd0f5f60c4c4583ec1b0b5343772, type: 3}
+  Icon_img: {fileID: 21300000, guid: b9355c3434755bd41a12469f77b8b3d3, type: 3}
   CollarColorHex: '#FFD700'

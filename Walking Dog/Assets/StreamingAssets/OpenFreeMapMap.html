@@ -85,6 +85,9 @@
       border: 3px solid #fff;
       border-radius: 50%;
       background: #ee2b35;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
       box-shadow: 0 2px 8px rgba(15, 23, 42, 0.35);
     }
 
@@ -178,6 +181,7 @@
       var territoryCacheKey = null;
       var territoryCache = { type: "FeatureCollection", features: [] };
       var vectorTerritoryRevision = null;
+      var markerIconRequestId = 0;
 
       // Sets the text shown in the status element.
       function setStatus(message) {
@@ -936,19 +940,40 @@
 
 
 
-      // Updates the location marker without requiring the map renderer to reload.
-      function applyMarkerColor() {
-        if (!state.markerColor) {
-          return;
-        }
+      // Updates both map renderers. The icon is a local PNG data URL supplied by
+      // Unity, so it works without a network request in Android WebView. An image is
+      // preloaded before it is applied: invalid/corrupt data URLs keep the colour.
+      function applyMarkerAppearance() {
+        var iconUrl = state.markerIconDataUrl || "";
+        var color = state.markerColor || "#ee2b35";
+        var elements = [];
+        var requestId = ++markerIconRequestId;
 
-        if (marker && marker.getElement) {
-          var vectorMarker = marker.getElement();
-          if (vectorMarker) vectorMarker.style.backgroundColor = state.markerColor;
-        }
-
+        if (marker && marker.getElement) elements.push(marker.getElement());
         var rasterMarker = document.querySelector('.raster-current-location-marker');
-        if (rasterMarker) rasterMarker.style.backgroundColor = state.markerColor;
+        if (rasterMarker) elements.push(rasterMarker);
+
+        elements.forEach(function (element) {
+          element.style.backgroundColor = color;
+          // Clear any previous icon first. This is the fallback shown while an icon
+          // loads and permanently when the icon cannot be rendered.
+          element.style.backgroundImage = "none";
+        });
+
+        if (!iconUrl || elements.length === 0) return;
+
+        var icon = new Image();
+        icon.onload = function () {
+          // A newer state may have arrived while this image was loading.
+          if (requestId !== markerIconRequestId || state.markerIconDataUrl !== iconUrl) return;
+          elements.forEach(function (element) {
+            element.style.backgroundImage = 'url("' + iconUrl + '")';
+          });
+        };
+        // The colour-only marker is already in place, so no additional error work is
+        // required when decoding or rendering the icon fails.
+        icon.onerror = function () {};
+        icon.src = iconUrl;
       }
 
       // Applies the next map state, updates camera and route data, and refreshes readiness.
@@ -958,8 +983,8 @@
         if (territoryLabel) territoryLabel.textContent = state.territoryMessage || "Your territory · 0 m²";
 
         // The Android WebView often uses the raster fallback. Apply the collar
-        // color before its early return so both map renderers update immediately.
-        applyMarkerColor();
+        // appearance before its early return so both map renderers update immediately.
+        applyMarkerAppearance();
 
         if (isRasterFallbackActive) {
           renderRasterFallback();

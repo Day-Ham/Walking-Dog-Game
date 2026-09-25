@@ -22,6 +22,7 @@ public class CollarInventoryUI : MonoBehaviour
 
     private async void OnEnable()
     {
+        RestoreEquippedMarkerAppearance();
         RefreshInventory(); // Shows local cache immediately while Firebase is loading.
         await SyncWithCloudAsync();
     }
@@ -60,7 +61,11 @@ public class CollarInventoryUI : MonoBehaviour
         {
             await new CollarInventoryStore(FirebaseFirestore.DefaultInstance)
                 .SyncFromCloudToLocalAsync(bootstrap.Wallet.Owner);
+            RestoreEquippedMarkerAppearance(); // refresh appearance
             RefreshInventory();
+
+            var map = FindFirstObjectByType<OpenFreeMapWebViewMap>();
+            if (map != null) map.ForceSync();
         }
         catch (System.Exception ex)
         {
@@ -74,6 +79,7 @@ public class CollarInventoryUI : MonoBehaviour
         PlayerPrefs.SetString("EquippedCollarColor", item.CollarColorHex);
         PlayerPrefs.SetString(CollarInventoryStore.EquippedItemIdKey, item.ItemId);
         PlayerPrefs.Save();
+        EquippedGachaMarkerIcon.Save(item); // save gchaicon on map
 
         if (statusText != null) statusText.text = "Equipped " + item.DisplayName + "!";
         var map = FindFirstObjectByType<OpenFreeMapWebViewMap>();
@@ -85,12 +91,17 @@ public class CollarInventoryUI : MonoBehaviour
             _ = new CollarInventoryStore(FirebaseFirestore.DefaultInstance).EquipItemAsync(bootstrap.Wallet.Owner, item);
     }
 
-    public void EquipDefault()
+    public void EquipDefault() // function allows icon to switch to default color upon selection
     {
         PlayerPrefs.SetString("EquippedCollarColor", "#ee2b35");
         PlayerPrefs.SetString(CollarInventoryStore.EquippedItemIdKey, "");
         PlayerPrefs.Save();
-        if (statusText != null) statusText.text = "Equipped Default Red collar!";
+
+        EquippedGachaMarkerIcon.Clear();
+        if (statusText != null) statusText.text = "switched to default";
+
+        var map = FindFirstObjectByType<OpenFreeMapWebViewMap>();
+        if (map != null) map.ForceSync();
     }
 
     // Kept for the old scene buttons while the runtime card prefab replaces them.
@@ -109,6 +120,35 @@ public class CollarInventoryUI : MonoBehaviour
             }
         }
         Debug.LogWarning("No catalog item exists with ID '" + itemId + "'.", this);
+    }
+
+    // Firebase stores only the item ID. Resolve it through the local catalog whenever
+    // inventory is restored, so a fresh device can recreate the WebView-safe icon.
+
+    private void RestoreEquippedMarkerAppearance()
+    {
+        var equippedItemId = PlayerPrefs.GetString(CollarInventoryStore.EquippedItemIdKey, "");
+        if (string.IsNullOrWhiteSpace(equippedItemId))
+        {
+            EquippedGachaMarkerIcon.Clear();
+            return;
+        }
+
+        foreach (var item in itemCatalog ?? System.Array.Empty<GachaItem>())
+        {
+            if (item == null || item.ItemId != equippedItemId) continue;
+
+            // Keep icon and its fallback colour together, even when a cloud profile
+            // created by an older app version did not persist the colour.
+            PlayerPrefs.SetString("EquippedCollarColor", item.CollarColorHex);
+            PlayerPrefs.Save();
+            EquippedGachaMarkerIcon.Save(item);
+            return;
+        }
+
+        // An item that no longer exists in the catalog must not leave a stale icon
+        // on the map; the already-stored collar colour remains the visual fallback.
+        EquippedGachaMarkerIcon.Clear();
     }
 
     private void ClearGeneratedCards()

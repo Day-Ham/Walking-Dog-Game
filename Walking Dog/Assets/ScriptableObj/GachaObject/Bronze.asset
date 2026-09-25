@@ -15,5 +15,5 @@ MonoBehaviour:
   CollarID: Collar_Bronze
   displayName: Bronze Collar
   tier: 0
-  Icon_img: {fileID: 0}
+  Icon_img: {fileID: 21300000, guid: 0cd8cd0f5f60c4c4583ec1b0b5343772, type: 3}
   CollarColorHex: '#CD7F32'

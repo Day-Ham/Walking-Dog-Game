@@ -15,5 +15,5 @@ MonoBehaviour:
   CollarID: Collar_Silver
   displayName: Silver Collar
   tier: 1
-  Icon_img: {fileID: 0}
+  Icon_img: {fileID: 21300000, guid: ea297173e0122524580ec17f2ad033f6, type: 3}
   CollarColorHex: '#C0C0C0'

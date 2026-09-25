@@ -572,6 +572,9 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
     private OpenFreeMapState BuildMapState()
     {
         string colorHex = PlayerPrefs.GetString("EquippedCollarColor", "#ee2b35");
+        // The equipped gacha icon is cached as a data URL so GPS refreshes do not
+        // repeatedly read or encode a Unity texture.
+        string markerIconDataUrl = PlayerPrefs.GetString(EquippedGachaMarkerIcon.PlayerPrefsKey, "");
 
         if (ShowHistoricalRoute && HistoricalRoutePoints != null)
         {
@@ -588,7 +591,8 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
                 zoom = zoom,
                 style = GetStyleId(mapStyle),
                 routePoints = new List<OpenFreeMapRoutePoint>(),
-                markerColor = colorHex
+                markerColor = colorHex,
+                markerIconDataUrl = markerIconDataUrl
             };
 
             if (hasPoints)
@@ -620,7 +624,8 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
             zoom = zoom,
             style = GetStyleId(mapStyle),
             routePoints = new List<OpenFreeMapRoutePoint>(),
-            markerColor = colorHex
+            markerColor = colorHex,
+            markerIconDataUrl = markerIconDataUrl
         };
 
         if (manager != null && manager.RoutePointCount > 0)
@@ -806,7 +811,8 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         public List<TerritoryGeometry.Polygon> territoryPolygons;
         public string territoryRevision;
         public string territoryMessage;
-        public string markerColor;
+        public string markerColor; // color of marker
+        public string markerIconDataUrl; // marker image
     }
 
     [Serializable]
