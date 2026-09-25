@@ -1,102 +1,120 @@
 using System.Collections.Generic;
+using Firebase.Firestore;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
-using TMPro;
-using Firebase.Firestore;
 
 public class CollarInventoryUI : MonoBehaviour
 {
-    [Header("UI References")]
-    public Button bronzeButton;
-    public Button silverButton;
-    public Button goldButton;
-    public Button defaultButton; // To revert to the default red
-    
+    [Header("Runtime inventory")]
+    [Tooltip("The Scroll View Content object. Runtime item cards are created here.")]
+    public RectTransform content;
+    [Tooltip("Prefab with GachaInventoryCardUI attached.")]
+    public GachaInventoryCardUI itemCardPrefab;
+    [Tooltip("The same GachaItem assets used by GachaManager.")]
+    public GachaItem[] itemCatalog;
+
+    [Header("Optional UI")]
+    public Button defaultButton;
     public TMP_Text statusText;
+
+    private readonly List<GachaInventoryCardUI> spawnedCards = new List<GachaInventoryCardUI>();
 
     private async void OnEnable()
     {
-        RefreshInventory();
+        RefreshInventory(); // Shows local cache immediately while Firebase is loading.
         await SyncWithCloudAsync();
-    }
-    
-    private async System.Threading.Tasks.Task SyncWithCloudAsync()
-    {
-        var manager = StepCountAndGpsManager.Instance;
-        if (manager != null)
-        {
-            var bootstrap = manager.GetComponent<FirebaseWalkBootstrap>();
-            if (bootstrap != null && bootstrap.Wallet != null && !string.IsNullOrEmpty(bootstrap.Wallet.Owner))
-            {
-                try {
-                    var store = new CollarInventoryStore(FirebaseFirestore.DefaultInstance);
-                    await store.SyncFromCloudToLocalAsync(bootstrap.Wallet.Owner);
-                    RefreshInventory(); // Refresh buttons based on cloud data
-                } catch (System.Exception ex) {
-                    Debug.LogWarning("Failed to sync inventory: " + ex);
-                }
-            }
-        }
     }
 
     public void RefreshInventory()
     {
-        string unlocked = PlayerPrefs.GetString("UnlockedCollars", "");
+        var unlockedIds = CollarInventoryStore.GetLocalUnlockedItemIds();
+        ClearGeneratedCards();
 
-        // Only allow clicking the button if it has been unlocked (pulled in gacha)
-        if (bronzeButton != null) bronzeButton.interactable = unlocked.Contains("Bronze");
-        if (silverButton != null) silverButton.interactable = unlocked.Contains("Silver");
-        if (goldButton != null) goldButton.interactable = unlocked.Contains("Gold");
-        
-        // Default color is always available
-        if (defaultButton != null) defaultButton.interactable = true;
-
-        if (statusText != null)
+        if (content == null || itemCardPrefab == null)
         {
-            statusText.text = "Select a collar to equip it!";
+            Debug.LogWarning("Inventory needs Content and an item-card prefab assigned.", this);
+            return;
+        }
+
+        // Every catalog asset gets a card. Firebase only decides whether it is locked.
+        foreach (var item in itemCatalog ?? System.Array.Empty<GachaItem>())
+        {
+            if (item == null || string.IsNullOrWhiteSpace(item.ItemId)) continue;
+            var card = Instantiate(itemCardPrefab, content);
+            card.Bind(item, unlockedIds.Contains(item.ItemId), EquipItem);
+            spawnedCards.Add(card);
+        }
+
+        if (defaultButton != null) defaultButton.interactable = true;
+        if (statusText != null) statusText.text = "Select an unlocked collar to equip it.";
+    }
+
+    private async System.Threading.Tasks.Task SyncWithCloudAsync()
+    {
+        var manager = StepCountAndGpsManager.Instance;
+        var bootstrap = manager == null ? null : manager.GetComponent<FirebaseWalkBootstrap>();
+        if (bootstrap == null || bootstrap.Wallet == null || string.IsNullOrEmpty(bootstrap.Wallet.Owner)) return;
+
+        try
+        {
+            await new CollarInventoryStore(FirebaseFirestore.DefaultInstance)
+                .SyncFromCloudToLocalAsync(bootstrap.Wallet.Owner);
+            RefreshInventory();
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogWarning("Failed to sync inventory: " + ex);
         }
     }
 
-    // Call this from the Bronze button's OnClick event
-    public void EquipBronze() => EquipAsync("#CD7F32", "Bronze");
-
-    // Call this from the Silver button's OnClick event
-    public void EquipSilver() => EquipAsync("#C0C0C0", "Silver");
-
-    // Call this from the Gold button's OnClick event
-    public void EquipGold() => EquipAsync("#FFD700", "Gold");
-
-    // Call this from the Default button's OnClick event
-    public void EquipDefault() => EquipAsync("#ee2b35", "Default Red");
-
-    private void EquipAsync(string hexColor, string name)
+    private void EquipItem(GachaItem item)
     {
-        // 1. Immediately save locally for instant responsiveness
-        PlayerPrefs.SetString("EquippedCollarColor", hexColor);
+        // Update the cached colour immediately so the map reflects the equipment without waiting for Firebase.
+        PlayerPrefs.SetString("EquippedCollarColor", item.CollarColorHex);
+        PlayerPrefs.SetString(CollarInventoryStore.EquippedItemIdKey, item.ItemId);
         PlayerPrefs.Save();
-        
-        if (statusText != null)
-        {
-            statusText.text = "Equipped " + name + " collar!";
-        }
 
-        // 2. Force map update immediately on the main thread
-        var map = FindObjectOfType<OpenFreeMapWebViewMap>();
-        if (map != null)
-        {
-            map.ForceSync();
-        }
+        if (statusText != null) statusText.text = "Equipped " + item.DisplayName + "!";
+        var map = FindFirstObjectByType<OpenFreeMapWebViewMap>();
+        if (map != null) map.ForceSync();
 
-        // 3. Fire-and-forget the cloud save in the background
         var manager = StepCountAndGpsManager.Instance;
-        if (manager != null)
+        var bootstrap = manager == null ? null : manager.GetComponent<FirebaseWalkBootstrap>();
+        if (bootstrap != null && bootstrap.Wallet != null && !string.IsNullOrEmpty(bootstrap.Wallet.Owner))
+            _ = new CollarInventoryStore(FirebaseFirestore.DefaultInstance).EquipItemAsync(bootstrap.Wallet.Owner, item);
+    }
+
+    public void EquipDefault()
+    {
+        PlayerPrefs.SetString("EquippedCollarColor", "#ee2b35");
+        PlayerPrefs.SetString(CollarInventoryStore.EquippedItemIdKey, "");
+        PlayerPrefs.Save();
+        if (statusText != null) statusText.text = "Equipped Default Red collar!";
+    }
+
+    // Kept for the old scene buttons while the runtime card prefab replaces them.
+    public void EquipBronze() => EquipItemById("Collar_Bronze");
+    public void EquipSilver() => EquipItemById("Collar_Silver");
+    public void EquipGold() => EquipItemById("Collar_Gold");
+
+    public void EquipItemById(string itemId)
+    {
+        foreach (var item in itemCatalog ?? System.Array.Empty<GachaItem>())
         {
-            var bootstrap = manager.GetComponent<FirebaseWalkBootstrap>();
-            if (bootstrap != null && bootstrap.Wallet != null && !string.IsNullOrEmpty(bootstrap.Wallet.Owner))
+            if (item != null && item.ItemId == itemId)
             {
-                var store = new CollarInventoryStore(FirebaseFirestore.DefaultInstance);
-                _ = store.EquipCollarAsync(bootstrap.Wallet.Owner, hexColor);
+                EquipItem(item);
+                return;
             }
         }
+        Debug.LogWarning("No catalog item exists with ID '" + itemId + "'.", this);
+    }
+
+    private void ClearGeneratedCards()
+    {
+        foreach (var card in spawnedCards)
+            if (card != null) Destroy(card.gameObject);
+        spawnedCards.Clear();
     }
 }

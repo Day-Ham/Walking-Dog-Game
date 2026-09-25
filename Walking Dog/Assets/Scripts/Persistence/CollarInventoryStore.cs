@@ -6,6 +6,9 @@ using UnityEngine;
 
 public class CollarInventoryStore
 {
+    public const string UnlockedItemIdsKey = "UnlockedGachaItemIds";
+    public const string EquippedItemIdKey = "EquippedGachaItemId";
+
     private readonly FirebaseFirestore db;
 
     public CollarInventoryStore(FirebaseFirestore db)
@@ -13,98 +16,135 @@ public class CollarInventoryStore
         this.db = db;
     }
 
-    public async Task UnlockCollarAsync(string uid, string collarId, string colorHex)
+    public static HashSet<string> GetLocalUnlockedItemIds()
     {
-        // Save to Local as Backup
-        string unlocked = PlayerPrefs.GetString("UnlockedCollars", "");
-        if (!unlocked.Contains(collarId))
-        {
-            unlocked += (string.IsNullOrEmpty(unlocked) ? "" : ",") + collarId;
-            PlayerPrefs.SetString("UnlockedCollars", unlocked);
-        }
-        PlayerPrefs.SetString("EquippedCollarColor", colorHex);
-        PlayerPrefs.Save();
+        var ids = new HashSet<string>(StringComparer.Ordinal);
 
-        // Save to Firebase Cloud (Inventory)
+        // New cache: IDs are separated with | so an ID cannot be confused with another one.
+        AddIds(ids, PlayerPrefs.GetString(UnlockedItemIdsKey, ""), '|');
+
+        // Migration: existing installs used collar display names in this old key.
+        AddIds(ids, PlayerPrefs.GetString("UnlockedCollars", ""), ',');
+        return ids;
+    }
+
+    public async Task UnlockItemAsync(string uid, GachaItem item)
+    {
+        if (item == null || string.IsNullOrWhiteSpace(item.ItemId))
+            throw new ArgumentException("A gacha item needs a permanent Item ID.", nameof(item));
+
+        var localIds = GetLocalUnlockedItemIds();
+        localIds.Add(item.ItemId);
+        SaveLocal(localIds, item.ItemId, item.CollarColorHex);
+
         var inventoryRef = db.Document($"users/{uid}/inventory/main");
-        
-        // Save to Public Profile so others can see it (if we want to render it on leaderboards later)
         var profileRef = db.Document($"leaderboardProfiles/{uid}");
 
         await db.RunTransactionAsync(async transaction =>
         {
-            var invSnapshot = await transaction.GetSnapshotAsync(inventoryRef);
-            
-            List<string> unlockedCollars = new List<string>();
-            if (invSnapshot.Exists && invSnapshot.TryGetValue("unlockedCollars", out List<object> existingList))
-            {
-                foreach (var item in existingList) unlockedCollars.Add(item.ToString());
-            }
+            var snapshot = await transaction.GetSnapshotAsync(inventoryRef);
+            var unlockedIds = ReadItemIds(snapshot);
+            unlockedIds.Add(item.ItemId);
 
-            if (!unlockedCollars.Contains(collarId))
-            {
-                unlockedCollars.Add(collarId);
-            }
-
+            // Firebase stores state only. The client resolves this ID through its GachaItem catalog.
             transaction.Set(inventoryRef, new Dictionary<string, object>
             {
-                ["unlockedCollars"] = unlockedCollars,
-                ["equippedCollarColor"] = colorHex,
+                ["unlockedItemIds"] = new List<string>(unlockedIds),
+                ["equippedItemId"] = item.ItemId,
                 ["updatedAt"] = FieldValue.ServerTimestamp
             }, SetOptions.MergeAll);
 
+            // Colour remains on the public profile for the existing map/leaderboard appearance.
             transaction.Set(profileRef, new Dictionary<string, object>
             {
-                ["equippedCollarColor"] = colorHex,
+                ["equippedItemId"] = item.ItemId,
+                ["equippedCollarColor"] = item.CollarColorHex,
                 ["updatedAt"] = FieldValue.ServerTimestamp
             }, SetOptions.MergeAll);
         });
     }
 
-    public async Task EquipCollarAsync(string uid, string colorHex)
+    public Task EquipItemAsync(string uid, GachaItem item)
     {
-        // Local Backup
-        PlayerPrefs.SetString("EquippedCollarColor", colorHex);
-        PlayerPrefs.Save();
+        if (item == null || string.IsNullOrWhiteSpace(item.ItemId))
+            throw new ArgumentException("A gacha item needs a permanent Item ID.", nameof(item));
 
+        var localIds = GetLocalUnlockedItemIds();
+        if (!localIds.Contains(item.ItemId))
+            throw new InvalidOperationException("Cannot equip a locked item.");
+
+        SaveLocal(localIds, item.ItemId, item.CollarColorHex);
         var inventoryRef = db.Document($"users/{uid}/inventory/main");
         var profileRef = db.Document($"leaderboardProfiles/{uid}");
 
-        await db.RunTransactionAsync(async transaction =>
+        return db.RunTransactionAsync(transaction =>
         {
             transaction.Set(inventoryRef, new Dictionary<string, object>
             {
-                ["equippedCollarColor"] = colorHex,
+                ["equippedItemId"] = item.ItemId,
                 ["updatedAt"] = FieldValue.ServerTimestamp
             }, SetOptions.MergeAll);
-
             transaction.Set(profileRef, new Dictionary<string, object>
             {
-                ["equippedCollarColor"] = colorHex,
+                ["equippedItemId"] = item.ItemId,
+                ["equippedCollarColor"] = item.CollarColorHex,
                 ["updatedAt"] = FieldValue.ServerTimestamp
             }, SetOptions.MergeAll);
+            return Task.FromResult(0);
         });
     }
 
     public async Task SyncFromCloudToLocalAsync(string uid)
     {
-        var inventoryRef = db.Document($"users/{uid}/inventory/main");
-        var snapshot = await inventoryRef.GetSnapshotAsync();
+        var snapshot = await db.Document($"users/{uid}/inventory/main").GetSnapshotAsync();
+        if (!snapshot.Exists) return;
 
-        if (snapshot.Exists)
+        var unlockedIds = ReadItemIds(snapshot);
+        var equippedId = snapshot.TryGetValue("equippedItemId", out string savedId) ? savedId : "";
+
+        // Old documents have only the legacy fields. They remain readable during migration.
+        if (string.IsNullOrEmpty(equippedId) && snapshot.TryGetValue("equippedCollarColor", out string oldColor))
+            PlayerPrefs.SetString("EquippedCollarColor", oldColor);
+
+        SaveLocal(unlockedIds, equippedId, PlayerPrefs.GetString("EquippedCollarColor", "#ee2b35"));
+    }
+
+    private static HashSet<string> ReadItemIds(DocumentSnapshot snapshot)
+    {
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        if (snapshot.Exists && snapshot.TryGetValue("unlockedItemIds", out List<object> savedIds))
+            foreach (var id in savedIds) ids.Add(id.ToString());
+
+        // Read the former field as well, so existing players keep their unlocks.
+        if (snapshot.Exists && snapshot.TryGetValue("unlockedCollars", out List<object> oldIds))
+            foreach (var id in oldIds) ids.Add(MigrateLegacyItemId(id.ToString()));
+        return ids;
+    }
+
+    private static void AddIds(HashSet<string> ids, string stored, char separator)
+    {
+        foreach (var id in stored.Split(new[] { separator }, StringSplitOptions.RemoveEmptyEntries))
+            ids.Add(MigrateLegacyItemId(id.Trim()));
+    }
+
+    private static string MigrateLegacyItemId(string itemId)
+    {
+        // The original implementation saved display names. Convert its three
+        // known values so existing players keep their rewards after upgrading.
+        switch (itemId)
         {
-            if (snapshot.TryGetValue("unlockedCollars", out List<object> cloudUnlocked))
-            {
-                List<string> strList = new List<string>();
-                foreach (var item in cloudUnlocked) strList.Add(item.ToString());
-                PlayerPrefs.SetString("UnlockedCollars", string.Join(",", strList));
-            }
-
-            if (snapshot.TryGetValue("equippedCollarColor", out string cloudEquipped))
-            {
-                PlayerPrefs.SetString("EquippedCollarColor", cloudEquipped);
-            }
-            PlayerPrefs.Save();
+            case "Bronze": return "Collar_Bronze";
+            case "Silver": return "Collar_Silver";
+            case "Gold": return "Collar_Gold";
+            default: return itemId;
         }
+    }
+
+    private static void SaveLocal(HashSet<string> ids, string equippedId, string colourHex)
+    {
+        PlayerPrefs.SetString(UnlockedItemIdsKey, string.Join("|", ids));
+        PlayerPrefs.SetString(EquippedItemIdKey, equippedId ?? "");
+        PlayerPrefs.SetString("EquippedCollarColor", string.IsNullOrWhiteSpace(colourHex) ? "#ee2b35" : colourHex);
+        PlayerPrefs.Save();
     }
 }

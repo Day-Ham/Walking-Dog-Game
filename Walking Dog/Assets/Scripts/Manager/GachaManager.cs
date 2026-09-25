@@ -1,75 +1,56 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
+using Firebase.Firestore;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
-using Firebase.Firestore;
-using Firebase.Auth;
 using WalkingDog.Leaderboards;
-using TMPro;
 
 public class GachaManager : MonoBehaviour
 {
     public Button gachaButton;
     public TMP_Text resultText;
     public TMP_Text currentPointsText;
-    
-    [Header("Gacha Settings")]
-    public long pullCost = 100;
-    
-    // Casual rates:
-    // Bronze: 70%
-    // Silver: 25%
-    // Gold: 5%
-    public float bronzeRate = 0.70f;
-    public float silverRate = 0.25f;
-    public float goldRate = 0.05f;
 
-    private bool isPulling = false;
+    [Header("Gacha catalog")]
+    [Tooltip("Add every GachaItem asset here. Items are selected from this catalog.")]
+    public GachaItem[] itemCatalog;
+
+    [Header("Gacha settings")]
+    public long pullCost = 100;
+    [Range(0f, 1f)] public float bronzeRate = 0.70f;
+    [Range(0f, 1f)] public float silverRate = 0.25f;
+    [Range(0f, 1f)] public float goldRate = 0.05f;
+
+    private bool isPulling;
 
     private void Start()
     {
         if (gachaButton != null)
-        {
             gachaButton.onClick.AddListener(OnGachaButtonClicked);
-        }
     }
 
     private void OnDestroy()
     {
         if (gachaButton != null)
-        {
             gachaButton.onClick.RemoveListener(OnGachaButtonClicked);
-        }
     }
 
     private void Update()
     {
-        if (currentPointsText != null)
-        {
-            var manager = StepCountAndGpsManager.Instance;
-            if (manager != null)
-            {
-                var bootstrap = manager.GetComponent<FirebaseWalkBootstrap>();
-                if (bootstrap != null && bootstrap.Wallet != null)
-                {
-                    currentPointsText.text = "Points: " + bootstrap.Wallet.DisplayText;
-                }
-            }
-        }
+        var manager = StepCountAndGpsManager.Instance;
+        var bootstrap = manager == null ? null : manager.GetComponent<FirebaseWalkBootstrap>();
+        if (currentPointsText != null && bootstrap != null && bootstrap.Wallet != null)
+            currentPointsText.text = "Points: " + bootstrap.Wallet.DisplayText;
     }
 
     public async void OnGachaButtonClicked()
     {
         if (isPulling) return;
-        
-        var manager = StepCountAndGpsManager.Instance;
-        if (manager == null)
-        {
-            SetResultText("Error: Manager not found.");
-            return;
-        }
 
-        var bootstrap = manager.GetComponent<FirebaseWalkBootstrap>();
+        var manager = StepCountAndGpsManager.Instance;
+        var bootstrap = manager == null ? null : manager.GetComponent<FirebaseWalkBootstrap>();
         if (bootstrap == null || !bootstrap.IsReady || bootstrap.Wallet == null)
         {
             SetResultText("Error: Wallet not ready.");
@@ -78,10 +59,16 @@ public class GachaManager : MonoBehaviour
 
         var wallet = bootstrap.Wallet;
         wallet.SynchronizeAccount();
-        
         if (string.IsNullOrEmpty(wallet.Owner))
         {
             SetResultText("Please sign in first.");
+            return;
+        }
+
+        var item = RollItem();
+        if (item == null)
+        {
+            SetResultText("No valid gacha items are configured.");
             return;
         }
 
@@ -95,90 +82,63 @@ public class GachaManager : MonoBehaviour
         SetResultText("Pulling...");
         if (gachaButton != null) gachaButton.interactable = false;
 
-        string receiptId = Guid.NewGuid().ToString("N");
-        bool success = false;
-
         try
         {
-            await wallet.SpendPointsAsync(pullCost, receiptId);
-            
-            // Sync with leaderboard
-            try 
-            {
-                await FirebaseLeaderboardWriter.SynchronizePointsBalanceAsync(FirebaseFirestore.DefaultInstance, wallet.Owner);
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning("Failed to sync leaderboard balance: " + e.Message);
-            }
-
-            success = true;
+            // Points are spent before the item is written. Move both operations
+            // into a Cloud Function later if you need fully atomic server-side pulls.
+            await wallet.SpendPointsAsync(pullCost, Guid.NewGuid().ToString("N"));
+            await FirebaseLeaderboardWriter.SynchronizePointsBalanceAsync(FirebaseFirestore.DefaultInstance, wallet.Owner);
+            await GrantRolledItemAsync(wallet.Owner, item);
         }
         catch (Exception ex)
         {
-            SetResultText("Error: " + ex.Message);
+            SetResultText("Pull failed: " + ex.Message);
             Debug.LogError("Gacha Pull Error: " + ex);
         }
-
-        if (success)
+        finally
         {
-            await PerformPullAsync(wallet.Owner);
+            isPulling = false;
+            if (gachaButton != null) gachaButton.interactable = true;
         }
-
-        isPulling = false;
-        if (gachaButton != null) gachaButton.interactable = true;
     }
 
-    private async Task PerformPullAsync(string uid)
+    private GachaItem RollItem()
     {
-        float roll = UnityEngine.Random.value; // Returns 0.0 to 1.0
+        // First choose the rarity tier. Multiple items in a tier share that tier's rate equally.
+        var roll = UnityEngine.Random.value;
+        var rolledTier = roll < goldRate ? GachaTier.Gold :
+            roll < goldRate + silverRate ? GachaTier.Silver : GachaTier.Bronze;
 
-        string pulledCollar = "";
-        string pulledColor = "";
+        var candidates = new List<GachaItem>();
+        foreach (var item in itemCatalog ?? Array.Empty<GachaItem>())
+        {
+            if (item != null && item.tier == rolledTier && !string.IsNullOrWhiteSpace(item.ItemId))
+                candidates.Add(item);
+        }
 
-        if (roll <= goldRate)
+        if (candidates.Count == 0)
         {
-            SetResultText("Gold Collar! (Super Rare)");
-            pulledCollar = "Gold";
-            pulledColor = "#FFD700";
+            Debug.LogError("Gacha catalog has no " + rolledTier + " items.");
+            return null;
         }
-        else if (roll <= goldRate + silverRate)
-        {
-            SetResultText("Silver Collar! (Rare)");
-            pulledCollar = "Silver";
-            pulledColor = "#C0C0C0";
-        }
-        else
-        {
-            SetResultText("Bronze Collar! (Common)");
-            pulledCollar = "Bronze";
-            pulledColor = "#CD7F32";
-        }
-        
-        try 
-        {
-            var store = new CollarInventoryStore(FirebaseFirestore.DefaultInstance);
-            await store.UnlockCollarAsync(uid, pulledCollar, pulledColor);
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError("Failed to save collar to cloud: " + ex);
-        }
-        
-        // Let the map manager know to force an update if the map is open
-        var map = FindObjectOfType<OpenFreeMapWebViewMap>();
-        if (map != null)
-        {
-            map.ForceSync();
-        }
+
+        return candidates[UnityEngine.Random.Range(0, candidates.Count)];
+    }
+
+    private async Task GrantRolledItemAsync(string uid, GachaItem item)
+    {
+        // Firebase receives only item.ItemId. Icon, name, tier, and colour stay in the local asset.
+        var store = new CollarInventoryStore(FirebaseFirestore.DefaultInstance);
+        await store.UnlockItemAsync(uid, item);
+        SetResultText(item.DisplayName + " unlocked! (" + item.tier + ")");
+
+        var map = FindFirstObjectByType<OpenFreeMapWebViewMap>();
+        if (map != null) map.ForceSync();
     }
 
     private void SetResultText(string message)
     {
-        if (resultText != null)
-        {
-            resultText.text = message;
-        }
+        if (resultText != null) resultText.text = message;
         Debug.Log("Gacha: " + message);
     }
 }
