@@ -936,11 +936,30 @@
 
 
 
+      // Updates the location marker without requiring the map renderer to reload.
+      function applyMarkerColor() {
+        if (!state.markerColor) {
+          return;
+        }
+
+        if (marker && marker.getElement) {
+          var vectorMarker = marker.getElement();
+          if (vectorMarker) vectorMarker.style.backgroundColor = state.markerColor;
+        }
+
+        var rasterMarker = document.querySelector('.raster-current-location-marker');
+        if (rasterMarker) rasterMarker.style.backgroundColor = state.markerColor;
+      }
+
       // Applies the next map state, updates camera and route data, and refreshes readiness.
       function applyState(nextState, animate) {
         state = nextState || state;
         var territoryLabel = document.getElementById("territory-count");
         if (territoryLabel) territoryLabel.textContent = state.territoryMessage || "Your territory · 0 m²";
+
+        // The Android WebView often uses the raster fallback. Apply the collar
+        // color before its early return so both map renderers update immediately.
+        applyMarkerColor();
 
         if (isRasterFallbackActive) {
           renderRasterFallback();
@@ -992,15 +1011,6 @@
         }
         // update territory
         updateTerritory(state.routePoints);
-
-        if (state.markerColor) {
-           if (typeof marker !== 'undefined' && marker && marker.getElement) {
-               var el = marker.getElement();
-               if (el) el.style.backgroundColor = state.markerColor;
-           }
-           var rasterMarker = document.querySelector('.raster-current-location-marker');
-           if (rasterMarker) rasterMarker.style.backgroundColor = state.markerColor;
-        }
 
         updateVectorRenderState();
         setReadyStatus();
