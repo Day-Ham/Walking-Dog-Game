@@ -11,6 +11,7 @@ public class GPSUIController : MonoBehaviour
     [SerializeField] private bool clearRouteOnSessionStart = true;
 
     private bool buttonListenerRegistered;
+    private Color? defaultAccuracyColor;
     private WalkRecoveryUI recoveryUI;
 
     private void Awake()
@@ -61,6 +62,7 @@ public class GPSUIController : MonoBehaviour
         {
             SetText(statsText, $"{steps:N0} steps • {FormatDistance(manager.WalkingSessionDistanceMeters)} • {manager.WalkingSessionDurationSeconds / 60:0.0} min");
             SetText(accuracyText, BuildTrackingStatus(manager) + " • " + manager.BackgroundTrackingStatus);
+            UpdateTerritoryColor(manager);
             UpdateWalkingSessionButton(manager);
             return;
         }
@@ -69,23 +71,14 @@ public class GPSUIController : MonoBehaviour
         {
             SetText(statsText, $"{steps:N0} steps");
             SetText(accuracyText, BuildTrackingStatus(manager));
+            UpdateTerritoryColor(manager);
             UpdateWalkingSessionButton(manager);
             return;
         }
 
         SetText(statsText, $"{steps:N0} steps");
         SetText(accuracyText, BuildTrackingStatus(manager));
-        switch (manager.getTFlag())
-        {
-            case 1:
-                accuracyText.color = Color.yellow;
-                break;
-            case 2:
-                accuracyText.color = Color.green;
-                break;
-        default:
-                break;  
-        }
+        UpdateTerritoryColor(manager);
 
         UpdateWalkingSessionButton(manager);
     }
@@ -111,6 +104,15 @@ public class GPSUIController : MonoBehaviour
         }
 
         UpdateWalkingSessionButton(manager);
+    }
+
+    private void UpdateTerritoryColor(StepCountAndGpsManager manager)
+    {
+        if (accuracyText == null) return;
+        if (!defaultAccuracyColor.HasValue) defaultAccuracyColor = accuracyText.color;
+        var flag = manager.IsWalkingSessionActive && string.IsNullOrEmpty(manager.StepTrackingStatus)
+            ? manager.getTFlag() : 0;
+        accuracyText.color = flag == 2 ? Color.green : flag == 1 ? Color.yellow : defaultAccuracyColor.Value;
     }
 
     private void AssignMissingReferences()

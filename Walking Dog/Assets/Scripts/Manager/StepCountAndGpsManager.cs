@@ -177,6 +177,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     {
         get
         {
+            territtoryFlag = 0;
             if (!walkingSessionActive || sessionTerritoryVersion != TerritoryCapture.Version || !HasRouteStart)
                 return "";
 

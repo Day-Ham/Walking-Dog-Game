@@ -76,7 +76,7 @@ test("points: concurrent walks and repeated claims preserve exact integer totals
   assert.equal((await getDoc(doc(client, walletPath("alice")))).data().balance, 35);
 });
 
-test("points: rejects forged balances, missing receipts, missing walks and spending", async () => {
+test("points: rejects forged balances, missing receipts, missing walks and overspending", async () => {
   const client = environment.authenticatedContext("alice").firestore();
   await seed("alice", "one", 100, 0);
   await assertFails(setDoc(doc(client, walletPath("alice")), walletFields(100)));
@@ -88,7 +88,9 @@ test("points: rejects forged balances, missing receipts, missing walks and spend
     await assertFails(batch.commit());
   }
   await awardPoints(client, "alice", "one");
-  await assertFails(setDoc(doc(client, walletPath("alice")), walletFields(10, 5, "one")));
+  await assertSucceeds(setDoc(doc(client, walletPath("alice")), walletFields(10, 5, "one")));
+  await assertFails(setDoc(doc(client, walletPath("alice")), walletFields(10, 11, "one")));
+  await assertFails(setDoc(doc(client, walletPath("alice")), walletFields(10, 0, "one")));
   await assertFails(setDoc(doc(client, walletPath("alice")), walletFields()));
   await assertFails(deleteDoc(doc(client, walletPath("alice"))));
 });
@@ -159,6 +161,37 @@ async function syncActivity(client, uid, streamId, total) {
   }
 }
 const streamA = 'a'.repeat(32), streamB = 'b'.repeat(32);
+
+test('rollout: existing gacha debit, receipt and inventory work alongside continuous rewards', async () => {
+  const client = environment.authenticatedContext('alice').firestore();
+  await syncActivity(client, 'alice', streamA, 400);
+  const purchase = writeBatch(client);
+  purchase.set(doc(client, walletPath('alice')), walletFields(40, 10, 'activity'));
+  purchase.set(doc(client, 'users/alice/spendReceipts/purchase-one'), { points: 10, spentAt: serverTimestamp() });
+  await assertSucceeds(purchase.commit());
+  const equip = writeBatch(client);
+  equip.set(doc(client, 'users/alice/inventory/main'), { unlockedItemIds: ['Collar_Bronze'], equippedItemId: 'Collar_Bronze', updatedAt: serverTimestamp() });
+  equip.set(doc(client, 'leaderboardProfiles/alice'), { displayName: 'Walker-test', equippedItemId: 'Collar_Bronze', equippedCollarColor: '#CD7F32', updatedAt: serverTimestamp() });
+  await assertSucceeds(equip.commit());
+  await assertSucceeds(syncActivity(client, 'alice', streamA, 500));
+  const wallet = (await getDoc(doc(client, walletPath('alice')))).data();
+  assert.equal(wallet.balance, 40);
+  assert.equal(wallet.totalSpent, 10);
+  assert.equal((await getDoc(doc(client, 'leaderboardProfiles/alice'))).data().equippedItemId, 'Collar_Bronze');
+  const other = environment.authenticatedContext('bob').firestore();
+  await assertSucceeds(getDoc(doc(other, 'leaderboardProfiles/alice')));
+  await assertFails(getDoc(doc(other, 'users/alice/inventory/main')));
+  await assertFails(setDoc(doc(other, 'users/alice/spendReceipts/purchase-one'), { points: 999 }));
+});
+
+test('rollout: public equipment updates cannot smuggle leaderboard score changes', async () => {
+  const client = environment.authenticatedContext('alice').firestore();
+  await syncActivity(client, 'alice', streamA, 100);
+  const ref = doc(client, `${PLAYERS}/alice`);
+  await assertSucceeds(setDoc(ref, { equippedCollarColor: '#CD7F32', updatedAt: serverTimestamp() }, { merge: true }));
+  await assertFails(setDoc(ref, { equippedCollarColor: '#FFFFFF', totalSteps: 9999, updatedAt: serverTimestamp() }, { merge: true }));
+  assert.equal((await getDoc(ref)).data().totalSteps, 100);
+});
 
 test('activity: steps before, during and after a territory walk earn exactly once', async () => {
   const client = environment.authenticatedContext('alice').firestore();
@@ -347,7 +380,9 @@ test("nickname writes are owner-only and reject extra score fields and markup", 
   for (const displayName of ["Hi", "a".repeat(25), "<b>Dog</b>", " Dog", "Dog\n"])
     await assertFails(setDoc(ref, { displayName, updatedAt: serverTimestamp() }));
   await assertFails(setDoc(doc(client, "leaderboardProfiles/bob"), { displayName: "Mochi", updatedAt: serverTimestamp() }));
-  await assertFails(getDoc(doc(client, "leaderboardProfiles/bob")));
+  // Live map avatars use public profile reads for signed-in players.
+  await assertSucceeds(getDoc(doc(client, "leaderboardProfiles/bob")));
+  await assertFails(getDoc(doc(environment.unauthenticatedContext().firestore(), "leaderboardProfiles/bob")));
 });
 
 test("existing private walk save/retry rules remain intact", async () => {

@@ -69,8 +69,36 @@ Deploy the updated `firestore.rules` before distributing the new client. The new
 activity paths are denied by old rules; local steps remain retryable until the
 rules are deployed. If the optional Node leaderboard functions are deployed,
 update `functions/leaderboard.js` with this release as well, since its legacy
-version would count territory steps a second time. No production deployment or
-backfill is part of this source edit.
+version would count territory steps a second time. The initial source edit did
+not deploy rules or backfill production data.
+
+### September 28 sync-pending fix
+
+The phone test exposed an undeployed rules update. Live rules were last published
+September 24 and denied both continuous-step paths and the new walk accounting
+marker. The app could read its existing wallet but could not credit new activity.
+
+The live rules also contained gacha changes absent from the repository. The rollout
+preserves owner-scoped spending, spend receipts and inventory, public avatar
+profile reads for signed-in players, and equipment metadata. Score updates still
+require exact accounting; cosmetic changes cannot also change leaderboard totals.
+The existing gacha flow remains client-controlled, as in the previous live rules.
+
+The merged rules passed **41/41 emulator tests**, were deployed to `walky-aa25c`
+at **2026-09-28 08:05:57 UTC**, and were read back to verify an exact match with
+`firestore.rules`. No balances or player documents were edited manually. Pending
+device records retry normally once online; a new APK is not required for this
+permissions fix. Function listing was unavailable, so no optional Cloud Functions
+deployment was performed or verified during this rollout.
+
+Separately, the territory status color now updates during an active walk and
+resets when the walk finishes or the closure cue is unavailable. The previous
+active-walk early return skipped color updates until the walk ended. This source
+fix requires the next client build; **96/96 Unity tests** passed.
+
+Audit files in ignored `Logs`: `continuous-rollout-before.rules`,
+`continuous-live-inspection.rules`, `continuous-rollout-deploy.log`,
+`continuous-rollout-emulator.log`, and `sync-status-tests.xml`.
 
 ## Validation
 
