@@ -7,6 +7,21 @@ using NUnit.Framework;
 public sealed class FirebaseWalkCloudStoreTests
 {
     [Test]
+    public async Task TerritorySummaryCarriesIndependentStepAccountingMarker()
+    {
+        IDictionary<string, object> payload = null;
+        using (var store = new FirebaseWalkCloudStore(() => "owner", (_, data) =>
+        { payload = data; return Task.CompletedTask; }, new object()))
+        {
+            var summary = Summary();
+            summary.stepAccountingVersion = 1;
+            await store.UploadSummaryAsync("owner", summary, CancellationToken.None);
+            Assert.That(payload["stepAccountingVersion"], Is.EqualTo(1));
+            Assert.That(payload["steps"], Is.EqualTo(120), "History retains session steps.");
+        }
+    }
+
+    [Test]
     public async Task UploadWaitsForAcknowledgementAndRetriesUseSamePath()
     {
         var acknowledgement = new TaskCompletionSource<bool>();

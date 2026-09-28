@@ -208,6 +208,8 @@ public sealed class LocalWalkRepository
         walk.EnsureCollections();
         if (walk.trackingVersion < 0 || walk.trackingVersion > 1 || walk.nativeSequence < 0)
             throw new ArgumentException("Unsupported tracking metadata.");
+        if (walk.stepAccountingVersion < 0 || walk.stepAccountingVersion > 1)
+            throw new ArgumentException("Unsupported step accounting version.");
         float previousSeconds = 0;
         foreach (var point in walk.routePoints)
         {

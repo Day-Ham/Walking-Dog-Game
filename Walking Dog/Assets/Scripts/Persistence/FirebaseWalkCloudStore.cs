@@ -72,6 +72,7 @@ public sealed class FirebaseWalkCloudStore : IWalkCloudStore, IDisposable
         };
 
         var destructionToken = lifetime.Token;
+        if (summary.stepAccountingVersion > 0) fields["stepAccountingVersion"] = summary.stepAccountingVersion;
         using (var waitLifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, destructionToken))
         {
             waitLifetime.Token.ThrowIfCancellationRequested();

@@ -27,7 +27,7 @@ namespace WalkingDog.Leaderboards
         {
             var receiptRef = db.Document($"leaderboardReceipts/{uid}/walks/{walkId}");
             var playerRef = db.Document($"{Players}/{uid}");
-            return db.RunTransactionAsync(async transaction =>
+            return FirebasePointsWalletStore.RetryContentionAsync(() => db.RunTransactionAsync(async transaction =>
             {
                 var receipt = await transaction.GetSnapshotAsync(receiptRef);
                 var player = await transaction.GetSnapshotAsync(playerRef);
@@ -51,7 +51,8 @@ namespace WalkingDog.Leaderboards
                 }
                 var walk = await transaction.GetSnapshotAsync(db.Document($"users/{uid}/walks/{walkId}"));
                 if (!walk.Exists) return;
-                var steps = walk.GetValue<long>("steps");
+                var steps = walk.ContainsField("stepAccountingVersion") && walk.GetValue<long>("stepAccountingVersion") == 1
+                    ? 0 : walk.GetValue<long>("steps");
                 var distance = walk.GetValue<double>("distanceMeters");
                 if (steps == 0 && distance == 0) return;
                 var profile = await transaction.GetSnapshotAsync(db.Document($"leaderboardProfiles/{uid}"));
@@ -68,7 +69,7 @@ namespace WalkingDog.Leaderboards
                     ["updatedAt"] = FieldValue.ServerTimestamp
                 });
                 transaction.Set(receiptRef, new Dictionary<string, object> { ["countedAt"] = FieldValue.ServerTimestamp });
-            });
+            }), CancellationToken.None);
         }
 
         // Call this after any future wallet spending transaction succeeds. It keeps

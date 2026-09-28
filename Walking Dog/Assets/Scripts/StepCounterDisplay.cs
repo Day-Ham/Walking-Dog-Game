@@ -83,6 +83,7 @@ public class StepCounterDisplay : MonoBehaviour
 
     private void Start()
     {
+        StepCountAndGpsManager.Instance?.BeginStepSensorSource();
         needsActivityRecognitionPermission = NeedsActivityRecognitionPermission();
         RequestPermissionIfNeeded();
         StartStepDetectorIfPossible();

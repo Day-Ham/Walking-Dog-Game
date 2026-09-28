@@ -11,6 +11,11 @@ using UnityEngine.UI;
 // Batch validation entry points; never included in the Android player.
 public static class WalkTrackingValidation
 {
+    public static void CaptureContinuousStepLayout()
+    {
+        CaptureWalkLayout();
+        CaptureDialogs();
+    }
     public static void ValidateHistoryNavigation()
     {
         CaptureWalkLayout();
@@ -54,11 +59,16 @@ public static class WalkTrackingValidation
         safeRect.anchorMin = Vector2.zero;
         safeRect.anchorMax = Vector2.one;
         safeRect.offsetMin = safeRect.offsetMax = Vector2.zero;
-        GameObject.Find("Counter").GetComponent<TMPro.TMP_Text>().text = "473";
-        GameObject.Find("Longitude").GetComponent<TMPro.TMP_Text>().text = "473 steps • 291 m • 4.1 min";
-        GameObject.Find("Latitude").GetComponent<TMPro.TMP_Text>().text = "Screen-off route recording on";
-        GameObject.Find("Display Accuracy").GetComponent<TMPro.TMP_Text>().text = "Recording";
-        GameObject.Find("Walking Session Button").GetComponentInChildren<TMPro.TMP_Text>().text = "Stop Walk";
+        // Use scene bindings: the HUD no longer uses the old coordinate names.
+        var controller = UnityEngine.Object.FindAnyObjectByType<GPSUIController>();
+        var stats = (TMPro.TMP_Text)Get(controller, "statsText");
+        var accuracy = (TMPro.TMP_Text)Get(controller, "accuracyText");
+        var buttonLabel = (TMPro.TMP_Text)Get(controller, "walkingSessionButtonText");
+        var wallet = (TMPro.TMP_Text)Get(UnityEngine.Object.FindAnyObjectByType<UIStepController>(), "stepText");
+        wallet.text = "473";
+        stats.text = "473 steps • 291 m • 4.1 min";
+        accuracy.text = "Recording • Screen-off route recording on";
+        buttonLabel.text = "Finish Territory Walk";
         Directory.CreateDirectory("Logs");
         foreach (var size in new[] { new Vector2Int(720, 1280), new Vector2Int(946, 2048), new Vector2Int(1536, 2048) })
         {
@@ -70,9 +80,8 @@ public static class WalkTrackingValidation
             }
         }
         // Exercise the longer error/status messages as well as the screenshot values.
-        GameObject.Find("Longitude").GetComponent<TMPro.TMP_Text>().text = "123,456 steps • 123.45 km • 999.9 min";
-        GameObject.Find("Latitude").GetComponent<TMPro.TMP_Text>().text = "Screen-off tracking unavailable. Keep the app open.";
-        GameObject.Find("Display Accuracy").GetComponent<TMPro.TMP_Text>().text = "Recovery save failed — keep the app open";
+        stats.text = "123,456 steps • 123.45 km • 999.9 min";
+        accuracy.text = "Recovery save failed — keep the app open • Screen-off tracking unavailable. Keep the app open.";
         Capture(canvas, "Logs/walk-layout-long-messages.png");
         foreach (var label in safe.GetComponentsInChildren<TMPro.TMP_Text>())
         {
@@ -132,10 +141,12 @@ public static class WalkTrackingValidation
         // Exercise the longer territory result without writing to a real player's storage.
         var text = canvas.transform.Find("Safe area/Walk details/Details").GetComponent<TMPro.TMP_Text>();
         text.text = "824 steps  •  612 m\n9.0 minutes\n\nSaved on device\n\nYour recorded route is ready to review on the map.\n\n<b>Your territory</b>\n+15,600 m² of new territory claimed!";
+        text.text += "\n\nStep counting continues.";
         Capture(canvas, "Logs/territory-summary-preview.png");
         text.ForceMeshUpdate();
         if (text.isTextOverflowing) throw new Exception("Territory summary overflows.");
         text.text = "824 steps  •  612 m\n9.0 minutes\n\nSummary synced to cloud\n\nParts of this route are missing. Gaps are shown as breaks on the map.\n\n<b>Your territory</b>\nTerritory save pending. Your walk is safe; we'll retry automatically.";
+        text.text += "\n\nStep counting continues.";
         Capture(canvas, "Logs/territory-pending-preview.png");
         text.ForceMeshUpdate();
         if (text.isTextOverflowing) throw new Exception("Territory pending summary overflows.");
@@ -150,6 +161,9 @@ public static class WalkTrackingValidation
 
     private static void Set(object target, string field, object value) => target.GetType()
         .GetField(field, BindingFlags.Instance | BindingFlags.NonPublic).SetValue(target, value);
+
+    private static object Get(object target, string field) => target.GetType()
+        .GetField(field, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(target);
 
     private static void Capture(Canvas canvas, string path, int width = 720, int height = 1280)
     {

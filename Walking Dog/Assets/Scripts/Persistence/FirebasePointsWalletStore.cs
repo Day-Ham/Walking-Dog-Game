@@ -37,6 +37,7 @@ internal sealed class FirebasePointsWalletStore : IPointsWalletStore
             if (receipt.Exists) return;
             var walk = await transaction.GetSnapshotAsync(db.Document($"users/{uid}/walks/{walkId}"));
             if (!walk.Exists) throw new InvalidOperationException("Save the walk before awarding points.");
+            if (walk.ContainsField("stepAccountingVersion") && walk.GetValue<long>("stepAccountingVersion") == 1) return;
             var points = PointsWalletSnapshot.RewardForSteps(walk.GetValue<long>("steps"));
             var walletRef = db.Document(WalletPath(uid));
             var wallet = await transaction.GetSnapshotAsync(walletRef);
@@ -54,7 +55,7 @@ internal sealed class FirebasePointsWalletStore : IPointsWalletStore
     // A concurrent client commit can make an exact-delta rules check fail before
     // the SDK reports a transaction conflict. Retry from fresh reads; persistent
     // denials still surface to the durable sync queue. Rules are never relaxed.
-    private static async Task RetryContentionAsync(Func<Task> operation, CancellationToken token)
+    internal static async Task RetryContentionAsync(Func<Task> operation, CancellationToken token)
     {
         for (int attempt = 0; ; attempt++)
         {

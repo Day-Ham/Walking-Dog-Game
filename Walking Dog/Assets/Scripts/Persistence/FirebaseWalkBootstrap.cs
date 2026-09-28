@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using System.Threading;
 using Firebase;
 using Firebase.Auth;
 using Firebase.Firestore;
@@ -22,6 +23,9 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
     private FirebaseWalkCloudStore store;
     private Task initialization;
     private bool destroyed;
+    private CancellationTokenSource activityLifetime = new CancellationTokenSource();
+    private bool activitySyncing;
+    private float nextActivitySync;
 
     private async void Start()
     {
@@ -87,17 +91,58 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
     {
         if (!IsReady || Wallet == null) return;
         if (Wallet.SynchronizeAccount()) nextWalletRefresh = 0;
+        if (!activitySyncing && Time.realtimeSinceStartup >= nextActivitySync) _ = SyncActivityAsync();
         if (Wallet.IsLoading || Time.realtimeSinceStartup < nextWalletRefresh) return;
         Wallet.HasPendingWalks = manager.LocalWalks.LoadAll().Exists(w => w.ownerUserId == Wallet.Owner
-            && w.steps >= 10 && w.sync.state != WalkUploadState.Synced);
+            && w.stepAccountingVersion == 0 && w.steps >= 10 && w.sync.state != WalkUploadState.Synced) || HasPendingActivity();
         nextWalletRefresh = Time.realtimeSinceStartup + (Wallet.Snapshot?.IsReconciling == true ? 2 : 30);
         _ = Wallet.RefreshAsync();
     }
 
-    private void OnApplicationPause(bool paused) { if (!paused) nextWalletRefresh = 0; }
+    private bool HasPendingActivity()
+    {
+        if (string.IsNullOrEmpty(Wallet?.Owner)) return false;
+        try { var record = manager.ActivitySteps.Get(Wallet.Owner); return record.total > record.acknowledged; }
+        catch { return true; }
+    }
+
+    private async Task SyncActivityAsync()
+    {
+        nextActivitySync = Time.realtimeSinceStartup + 15f;
+        var owner = store.AuthenticatedUserId;
+        if (string.IsNullOrEmpty(owner)) return;
+        activitySyncing = true;
+        var token = activityLifetime.Token;
+        try
+        {
+            var saved = manager.ActivitySteps.Snapshot(owner);
+            if (saved.total <= saved.acknowledged) return;
+            var upload = FirebaseContinuousStepsStore.UploadAsync(FirebaseFirestore.DefaultInstance, saved, token);
+            // Firebase transactions cannot be cancelled while offline. A timeout
+            // releases this UI; absolute cursors make a later completion safe.
+            if (await Task.WhenAny(upload, Task.Delay(TimeSpan.FromSeconds(30), token)) != upload)
+            { ObserveActivityUpload(upload); return; }
+            await upload;
+            if (destroyed || token.IsCancellationRequested || store.AuthenticatedUserId != owner) return;
+            manager.ActivitySteps.Acknowledge(saved);
+            nextWalletRefresh = 0;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception error) { Debug.LogWarning("Step sync pending: " + error.GetType().Name); }
+        finally { activitySyncing = false; }
+    }
+
+    private static async void ObserveActivityUpload(Task upload)
+    { try { await upload; } catch (Exception) { } }
+
+    private void OnApplicationPause(bool paused) { if (!paused) { nextWalletRefresh = 0; nextActivitySync = 0; } }
 
     private void OnWalletAccountChanged(object sender, EventArgs args)
     {
+        activityLifetime.Cancel();
+        activityLifetime.Dispose();
+        activityLifetime = new CancellationTokenSource();
+        nextActivitySync = 0;
         Wallet?.Reset();
         nextWalletRefresh = 0;
     }
@@ -111,6 +156,8 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
     private void OnDestroy()
     {
         destroyed = true;
+        activityLifetime.Cancel();
+        activityLifetime.Dispose();
         if (auth != null) auth.StateChanged -= OnWalletAccountChanged;
         auth = null;
         IsReady = false;

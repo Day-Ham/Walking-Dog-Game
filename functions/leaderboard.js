@@ -31,7 +31,7 @@ async function countWalk(db, uid, walkId) {
     // Empty editor/test walks do not place an inactive player on the board.
     if (data.steps === 0 && data.distanceMeters === 0) return "empty";
     const previous = player.data() || { totalSteps: 0, totalDistanceMeters: 0, completedWalkCount: 0 };
-    const totalSteps = previous.totalSteps + data.steps;
+    const totalSteps = previous.totalSteps + (data.stepAccountingVersion === 1 ? 0 : data.steps);
     const totalDistanceMeters = previous.totalDistanceMeters + data.distanceMeters;
     const completedWalkCount = previous.completedWalkCount + 1;
     if (!Number.isSafeInteger(totalSteps) || totalSteps < 0 ||
@@ -39,7 +39,7 @@ async function countWalk(db, uid, walkId) {
         !Number.isSafeInteger(completedWalkCount) || completedWalkCount < 1)
       throw new Error("Invalid or overflowing leaderboard totals");
     tx.set(playerRef, { schemaVersion: 1, displayName: displayName(uid, profile.data()),
-      totalSteps, totalDistanceMeters, completedWalkCount, lastWalkId: walkId, updatedAt: FieldValue.serverTimestamp() });
+      totalSteps, totalDistanceMeters, completedWalkCount, lastWalkId: walkId, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     tx.create(receiptRef, { countedAt: FieldValue.serverTimestamp() });
     return "counted";
   });

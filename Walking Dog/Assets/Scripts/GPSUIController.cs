@@ -55,11 +55,11 @@ public class GPSUIController : MonoBehaviour
         }
 
         // Update the UI with the current step count and GPS status from manager
-        int steps = manager.Steps;
+        long steps = manager.TotalTrackedSteps;
 
         if (manager.IsWalkingSessionActive)
         {
-            SetText(statsText, $"{manager.WalkingSessionSteps:N0} Steps • {FormatDistance(manager.WalkingSessionDistanceMeters)} • {manager.WalkingSessionDurationSeconds / 60:0.0} min");
+            SetText(statsText, $"{steps:N0} steps • {FormatDistance(manager.WalkingSessionDistanceMeters)} • {manager.WalkingSessionDurationSeconds / 60:0.0} min");
             SetText(accuracyText, BuildTrackingStatus(manager) + " • " + manager.BackgroundTrackingStatus);
             UpdateWalkingSessionButton(manager);
             return;
@@ -200,13 +200,14 @@ public class GPSUIController : MonoBehaviour
         if (walkingSessionButtonText != null)
         {
             walkingSessionButtonText.text = manager != null && manager.IsWalkingSessionActive
-                ? "Stop Walk"
-                : manager != null && !manager.HasFreshLocation ? "Waiting for GPS" : "Start Walk";
+                ? "Finish Territory Walk"
+                : manager != null && !manager.HasFreshLocation ? "Waiting for GPS" : "Start Territory Walk";
         }
     }
 
     private static string BuildTrackingStatus(StepCountAndGpsManager manager)
     {
+        if (!string.IsNullOrEmpty(manager.StepTrackingStatus)) return manager.StepTrackingStatus;
         var sessionState = manager.IsWalkingSessionActive
             ? "Walking"
             : GetSavedSessionState(manager);

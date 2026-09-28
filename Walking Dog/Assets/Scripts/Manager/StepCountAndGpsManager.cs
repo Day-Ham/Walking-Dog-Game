@@ -22,6 +22,14 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     private long nativeSequence;
     private string recoveryError = "";
     private int sessionTerritoryVersion;
+    private int sessionStepAccountingVersion;
+    private ContinuousSteps continuousSteps;
+    public ContinuousSteps ActivitySteps => continuousSteps ?? (continuousSteps =
+        new ContinuousSteps(Path.Combine(LocalWalks.DirectoryPath, "ContinuousSteps")));
+    private string StepOwner => cloudStore?.AuthenticatedUserId ?? "";
+    public long TotalTrackedSteps { get { try { return ActivitySteps.Get(StepOwner).total; } catch { return 0; } } }
+    public string StepTrackingStatus => ActivitySteps.Error;
+    public void BeginStepSensorSource() => ActivitySteps.BeginSensorSource();
     private TerritoryService territoryService;
     private float nextTerritoryRetry;
 
@@ -257,6 +265,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
 
     public void SetStep(int steps)
     {
+        ActivitySteps.Observe(StepOwner, steps, walkingSessionActive && sessionStepAccountingVersion == 0);
         stepsCounted = Mathf.Max(0, steps);
 
         if (walkingSessionActive)
@@ -366,6 +375,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         completedSessionRecord = null;
         sessionOwnerUserId = cloudStore?.AuthenticatedUserId ?? "";
         sessionTerritoryVersion = string.IsNullOrWhiteSpace(sessionOwnerUserId) ? 0 : TerritoryCapture.Version;
+        sessionStepAccountingVersion = 1;
         lastWalkSaveState = "Walking";
         sessionStatus = "Walking session active.";
 
@@ -549,6 +559,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
 
     private void OnApplicationPause(bool paused)
     {
+        if (paused) ActivitySteps.Flush(StepOwner);
         if (paused && walkingSessionActive)
         {
             if (!IsBackgroundTracking) InterruptTracking("Tracking interrupted — app paused");
@@ -560,6 +571,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
 
     private void OnApplicationQuit()
     {
+        ActivitySteps.Flush(StepOwner);
         backgroundTracking?.Stop();
         if (walkingSessionActive) SaveCheckpoint();
     }
@@ -593,6 +605,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         currentSessionId = saved.id;
         sessionOwnerUserId = saved.ownerUserId;
         sessionTerritoryVersion = saved.territoryVersion;
+        sessionStepAccountingVersion = saved.stepAccountingVersion;
         sessionStartUtc = saved.startedAtUtc;
         sessionEndUtc = "";
         sessionStartTime = Time.realtimeSinceStartup - saved.durationSeconds;
@@ -710,6 +723,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
             accuracyStatus = accuracyStatus,
             trackingVersion = 1,
             territoryVersion = sessionTerritoryVersion,
+            stepAccountingVersion = sessionStepAccountingVersion,
             hasTrackingGaps = gpsFilter.HasGaps,
             nativeSequence = nativeSequence
         };
@@ -846,6 +860,8 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         // Legacy records remain readable, but have no verified continuity information.
         public int trackingVersion;
         public int territoryVersion;
+        // Zero: legacy per-walk rewards. One: steps are credited independently.
+        public int stepAccountingVersion;
         public bool hasTrackingGaps;
         public long nativeSequence;
         public List<WalkRoutePoint> routePoints = new List<WalkRoutePoint>();

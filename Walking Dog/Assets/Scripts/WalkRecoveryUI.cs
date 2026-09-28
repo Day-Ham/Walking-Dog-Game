@@ -57,12 +57,12 @@ public sealed class WalkRecoveryUI : MonoBehaviour
         }
         canvasObject.SetActive(true);
         var manager = StepCountAndGpsManager.Instance;
-        title.text = summary ? "Walk finished" : "Unfinished walk found";
+        title.text = summary ? "Territory walk finished" : "Unfinished walk found";
         details.text = summary
             ? $"{manager.WalkingSessionSteps:N0} steps  •  {manager.WalkingSessionDistanceMeters:0} m\n{manager.WalkingSessionDurationSeconds / 60f:0.0} minutes\n\n{manager.LastWalkSaveState}\n\n" +
               (manager.HasTrackingGaps ? "Parts of this route are missing. Gaps are shown as breaks on the map." :
                manager.RoutePointCount < 2 ? "There are not enough GPS points to show a route." : "Your recorded route is ready to review on the map.") +
-              "\n\n<b>Your territory</b>\n" + manager.TerritorySummary
+              "\n\n<b>Your territory</b>\n" + manager.TerritorySummary + "\n\nStep counting continues."
             : $"{pending.steps:N0} steps  •  {pending.distanceMeters:0} m\nSaved {LocalWalkRepository.ParseUtc(pending.endedAtUtc).ToLocalTime():MMM d, h:mm tt}\n\nResume this walk, or save what was recorded and finish. Any missing tracking will remain a break in the route.";
         primary.GetComponentInChildren<TMP_Text>().text = summary ? (manager.RoutePointCount > 1 ? "View map" : "Done") : "Resume walk";
         primary.interactable = !summary || !manager.HasUnsavedCompletedWalk;

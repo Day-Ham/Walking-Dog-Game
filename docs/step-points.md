@@ -1,5 +1,10 @@
 # Firebase points wallet
 
+**September 28 update:** new steps use independent continuous accounting, with
+leftovers carried forward. See [continuous steps](continuous-steps.md) for the
+current behavior, migration and required rules rollout. The per-walk behavior
+below now applies only to legacy walks.
+
 Completed, account-owned walks earn one point per ten recorded steps, rounded
 down **per walk**. A 129-step walk earns 12 points; two 9-step walks earn zero.
 Existing saved cloud walks are included, as requested. Signed-out local walks

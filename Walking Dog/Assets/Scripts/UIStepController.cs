@@ -50,5 +50,6 @@ public class UIStepController : MonoBehaviour
                 value = "Points unavailable";
             }
         }
+        stepText.text = prefix + value;
     }
 }

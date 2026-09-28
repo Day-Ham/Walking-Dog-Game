@@ -29,6 +29,7 @@ public sealed class WalkSummary
     public string startedAtUtc;
     public string endedAtUtc;
     public int steps;
+    public int stepAccountingVersion;
     public float distanceMeters;
     public float durationSeconds;
 
@@ -41,6 +42,7 @@ public sealed class WalkSummary
             startedAtUtc = walk.startedAtUtc,
             endedAtUtc = walk.endedAtUtc,
             steps = walk.steps,
+            stepAccountingVersion = walk.stepAccountingVersion,
             distanceMeters = walk.distanceMeters,
             durationSeconds = walk.durationSeconds
         };

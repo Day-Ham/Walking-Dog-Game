@@ -24,7 +24,8 @@ service cloud.firestore {
       let data = request.resource.data;
       let fields = ['schemaVersion', 'id', 'startedAtUtc', 'endedAtUtc',
                     'steps', 'distanceMeters', 'durationSeconds', 'uploadedAt'];
-      return data.keys().hasAll(fields) && data.keys().hasOnly(fields)
+      return data.keys().hasAll(fields) && data.keys().hasOnly(fields.concat(['stepAccountingVersion']))
+        && (!('stepAccountingVersion' in data) || (data.stepAccountingVersion is int && data.stepAccountingVersion == 1))
         && data.schemaVersion is int && data.schemaVersion == 1
         && data.id is string && data.id == walkId
         && walkId.matches('[A-Za-z0-9_-]{1,128}')
@@ -59,6 +60,7 @@ service cloud.firestore {
       let walk = get(/databases/$(database)/documents/users/$(userId)/walks/$(data.lastWalkId)).data;
       let receipt = /databases/$(database)/documents/users/$(userId)/pointReceipts/$(data.lastWalkId);
       return data.lastWalkId.matches('[A-Za-z0-9_-]{1,128}')
+        && !('stepAccountingVersion' in walk)
         && walk.schemaVersion == 1 && walk.id == data.lastWalkId
         && walk.steps is int && walk.steps >= 0 && walk.steps <= 2147483647
         && !exists(receipt) && getAfter(receipt).data.awardedAt == request.time
@@ -67,14 +69,69 @@ service cloud.firestore {
         && data.totalSpent == oldSpent;
     }
 
+    // Continuous activity is separate from saved territory routes. Cursors only
+    // advance; all four documents must change in the same atomic transaction.
+    function activityDelta(userId) {
+      let path = /databases/$(database)/documents/users/$(userId)/activity/main;
+      return getAfter(path).data.totalSteps - (exists(path) ? get(path).data.totalSteps : 0);
+    }
+    function awardsActivity(userId, data, oldEarned, oldSpent) {
+      let path = /databases/$(database)/documents/users/$(userId)/activity/main;
+      let before = exists(path) ? get(path).data.totalSteps : 0;
+      let after = getAfter(path).data;
+      return data.lastWalkId == 'activity' && after.updatedAt == request.time
+        && after.totalSteps > before
+        && data.totalEarned == oldEarned + int(after.totalSteps / 10) - int(before / 10)
+        && data.totalSpent == oldSpent;
+    }
+    match /users/{userId}/stepStreams/{streamId} {
+      function validStream() {
+        let data = request.resource.data;
+        let aggregate = getAfter(/databases/$(database)/documents/users/$(userId)/activity/main).data;
+        return streamId.matches('[a-f0-9]{32}')
+          && data.keys().hasAll(['totalSteps', 'updatedAt'])
+          && data.keys().hasOnly(['totalSteps', 'updatedAt'])
+          && data.totalSteps is int && data.totalSteps > 0 && data.totalSteps <= 9007199254740991
+          && data.updatedAt == request.time
+          && aggregate.lastStreamId == streamId && aggregate.updatedAt == request.time
+          && activityDelta(userId) > 0;
+      }
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && validStream();
+      allow update: if isOwner(userId) && validStream() && request.resource.data.totalSteps > resource.data.totalSteps;
+      allow delete: if false;
+    }
+    match /users/{userId}/activity/main {
+      function validActivity() {
+        let data = request.resource.data;
+        let stream = /databases/$(database)/documents/users/$(userId)/stepStreams/$(data.lastStreamId);
+        let delta = getAfter(stream).data.totalSteps - (exists(stream) ? get(stream).data.totalSteps : 0);
+        let wallet = getAfter(/databases/$(database)/documents/users/$(userId)/wallet/main).data;
+        let player = getAfter(/databases/$(database)/documents/leaderboards/allTime/players/$(userId)).data;
+        return data.keys().hasAll(['totalSteps', 'lastStreamId', 'updatedAt'])
+          && data.keys().hasOnly(['totalSteps', 'lastStreamId', 'updatedAt'])
+          && data.totalSteps is int && data.totalSteps > 0 && data.totalSteps <= 9007199254740991
+          && data.lastStreamId.matches('[a-f0-9]{32}') && data.updatedAt == request.time
+          && getAfter(stream).data.updatedAt == request.time
+          && delta > 0 && activityDelta(userId) == delta
+          && wallet.updatedAt == request.time && wallet.lastWalkId == 'activity'
+          && player.updatedAt == request.time && player.lastWalkId == 'activity';
+      }
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId) && validActivity();
+      allow delete: if false;
+    }
+
     match /users/{userId}/wallet/main {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && validWallet(request.resource.data)
         && ((request.resource.data.balance == 0 && request.resource.data.totalEarned == 0
             && request.resource.data.totalSpent == 0 && request.resource.data.lastWalkId == '')
+          || awardsActivity(userId, request.resource.data, 0, 0)
           || awardsSavedWalk(userId, request.resource.data, 0, 0));
       allow update: if isOwner(userId) && validWallet(request.resource.data)
-        && awardsSavedWalk(userId, request.resource.data, resource.data.totalEarned, resource.data.totalSpent);
+        && (awardsActivity(userId, request.resource.data, resource.data.totalEarned, resource.data.totalSpent)
+          || awardsSavedWalk(userId, request.resource.data, resource.data.totalEarned, resource.data.totalSpent));
       allow delete: if false;
     }
 
@@ -103,11 +160,12 @@ service cloud.firestore {
     function validPlayer(data) {
       let fields = ['schemaVersion', 'displayName', 'totalSteps', 'totalDistanceMeters',
                     'completedWalkCount', 'lastWalkId', 'updatedAt'];
-      return data.keys().hasAll(fields) && data.keys().hasOnly(fields)
+      return data.keys().hasAll(fields) && data.keys().hasOnly(fields.concat(['pointsBalance']))
+        && (!('pointsBalance' in data) || (data.pointsBalance is int && data.pointsBalance >= 0 && data.pointsBalance <= 9007199254740991))
         && data.schemaVersion == 1 && validName(data.displayName)
         && data.totalSteps is int && data.totalSteps >= 0 && data.totalSteps <= 9007199254740991
         && isMeasurement(data.totalDistanceMeters)
-        && data.completedWalkCount is int && data.completedWalkCount > 0
+        && data.completedWalkCount is int && data.completedWalkCount >= 0
         && data.completedWalkCount <= 9007199254740991
         && data.lastWalkId is string && data.lastWalkId.matches('[A-Za-z0-9_-]{1,128}')
         && data.updatedAt == request.time;
@@ -128,19 +186,35 @@ service cloud.firestore {
         && isMeasurement(walk.distanceMeters)
         && (walk.steps > 0 || walk.distanceMeters > 0)
         && !exists(receipt) && getAfter(receipt).data.countedAt == request.time
-        && data.totalSteps == oldSteps + walk.steps
+        && data.totalSteps == oldSteps + (('stepAccountingVersion' in walk) ? 0 : walk.steps)
         && data.totalDistanceMeters == oldDistance + walk.distanceMeters
         && data.completedWalkCount == oldCount + 1;
+    }
+
+    function countsActivity(userId, data, oldSteps, oldDistance, oldCount) {
+      let activity = getAfter(/databases/$(database)/documents/users/$(userId)/activity/main).data;
+      return data.lastWalkId == 'activity' && activity.updatedAt == request.time
+        && activityDelta(userId) > 0 && data.totalSteps == oldSteps + activityDelta(userId)
+        && data.totalDistanceMeters == oldDistance && data.completedWalkCount == oldCount;
+    }
+    function matchesWallet(userId, data) {
+      let wallet = /databases/$(database)/documents/users/$(userId)/wallet/main;
+      return !('pointsBalance' in data) || data.pointsBalance == (existsAfter(wallet) ? getAfter(wallet).data.balance : 0);
     }
 
     match /leaderboards/allTime/players/{userId} {
       allow read: if request.auth != null;
       allow create: if isOwner(userId) && validPlayer(request.resource.data)
+        && matchesWallet(userId, request.resource.data)
         && profileMatches(userId, request.resource.data.displayName)
-        && countsSavedWalk(userId, request.resource.data, 0, 0, 0);
+        && (countsActivity(userId, request.resource.data, 0, 0, 0)
+          || countsSavedWalk(userId, request.resource.data, 0, 0, 0));
       allow update: if isOwner(userId) && validPlayer(request.resource.data)
+        && matchesWallet(userId, request.resource.data)
         && profileMatches(userId, request.resource.data.displayName)
-        && (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'updatedAt'])
+        && (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'pointsBalance', 'updatedAt'])
+          || countsActivity(userId, request.resource.data, resource.data.totalSteps,
+              resource.data.totalDistanceMeters, resource.data.completedWalkCount)
           || countsSavedWalk(userId, request.resource.data, resource.data.totalSteps,
               resource.data.totalDistanceMeters, resource.data.completedWalkCount));
       allow delete: if false;

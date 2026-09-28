@@ -194,7 +194,7 @@ namespace WalkingDog.Leaderboards
             scroll.horizontalNormalizedPosition = 0;
             status.text = data.Entries.Count == 0
                 ? data.Scope == LeaderboardScope.Friends ? "No ranked walks yet. Add friends and sync a completed walk."
-                    : "No ranked walks yet. Finish a walk and connect to the internet to join."
+                    : "No activity synced yet. Take some steps and connect to the internet to join."
                 : (data.Scope == LeaderboardScope.Friends ? "Friends" : "Global") + " · All time · "
                     + (data.Metric == LeaderboardMetric.Distance ? "Distance" : "Steps") + " · Swipe to see more";
             var own = data.CurrentPlayer;

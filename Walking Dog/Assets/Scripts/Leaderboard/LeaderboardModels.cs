@@ -38,7 +38,7 @@ namespace WalkingDog.Leaderboards
             if (fields == null || !fields.TryGetValue("schemaVersion", out var version) || !(version is long v) || v != 1
                 || !fields.TryGetValue("displayName", out var name) || !(name is string text) || !LeaderboardNames.IsValid(text)
                 || !fields.TryGetValue("totalSteps", out var steps) || !(steps is long s) || s < 0 || s > 9007199254740991L
-                || !fields.TryGetValue("completedWalkCount", out var count) || !(count is long c) || c < 1 || c > 9007199254740991L
+                || !fields.TryGetValue("completedWalkCount", out var count) || !(count is long c) || c < 0 || c > 9007199254740991L
                 || !fields.TryGetValue("totalDistanceMeters", out var distance)) return false;
             double d;
             if (distance is double floating) d = floating;

@@ -125,6 +125,141 @@ before(async () => {
 beforeEach(async () => environment.clearFirestore());
 after(async () => { await environment?.cleanup(); if (app) await deleteApp(app); });
 
+// Mirrors the Unity transaction; these tests exercise the actual Firestore rules.
+async function syncActivity(client, uid, streamId, total) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await runTransaction(client, async tx => {
+      const streamRef = doc(client, `users/${uid}/stepStreams/${streamId}`);
+      const activityRef = doc(client, `users/${uid}/activity/main`);
+      const walletRef = doc(client, walletPath(uid));
+      const playerRef = doc(client, `${PLAYERS}/${uid}`);
+      const stream = await tx.get(streamRef);
+      const activity = await tx.get(activityRef);
+      const wallet = await tx.get(walletRef);
+      const player = await tx.get(playerRef);
+      const profile = await tx.get(doc(client, `leaderboardProfiles/${uid}`));
+      const previous = stream.exists() ? stream.data().totalSteps : 0;
+      if (total <= previous) return;
+      const delta = total - previous;
+      const oldTotal = activity.exists() ? activity.data().totalSteps : 0;
+      const next = oldTotal + delta;
+      const earned = (wallet.exists() ? wallet.data().totalEarned : 0) + Math.floor(next / 10) - Math.floor(oldTotal / 10);
+      const spent = wallet.exists() ? wallet.data().totalSpent : 0;
+      const old = player.exists() ? player.data() : { totalSteps: 0, totalDistanceMeters: 0, completedWalkCount: 0, displayName: 'Walker-test' };
+      tx.set(streamRef, { totalSteps: total, updatedAt: serverTimestamp() });
+      tx.set(activityRef, { totalSteps: next, lastStreamId: streamId, updatedAt: serverTimestamp() });
+      tx.set(walletRef, walletFields(earned, spent, 'activity'));
+      tx.set(playerRef, { schemaVersion: 1, displayName: profile.exists() ? profile.data().displayName : old.displayName,
+        totalSteps: old.totalSteps + delta, totalDistanceMeters: old.totalDistanceMeters, completedWalkCount: old.completedWalkCount,
+        pointsBalance: earned - spent, lastWalkId: 'activity', updatedAt: serverTimestamp() });
+    }); } catch (error) {
+      if (error.code !== 'permission-denied' || attempt >= 2) throw error;
+      await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+    }
+  }
+}
+const streamA = 'a'.repeat(32), streamB = 'b'.repeat(32);
+
+test('activity: steps before, during and after a territory walk earn exactly once', async () => {
+  const client = environment.authenticatedContext('alice').firestore();
+  await assertSucceeds(syncActivity(client, 'alice', streamA, 105));
+  await assertSucceeds(syncActivity(client, 'alice', streamA, 313));
+  const summary = { ...walk('territory', 208, 250), stepAccountingVersion: 1, uploadedAt: serverTimestamp() };
+  await assertSucceeds(setDoc(doc(client, 'users/alice/walks/territory'), summary));
+  await assertSucceeds(countClient(client, 'alice', 'territory'));
+  assert.equal(await countWalk(db, 'alice', 'territory'), 'already-counted');
+  await assertFails(awardPoints(client, 'alice', 'territory'));
+  await assertSucceeds(syncActivity(client, 'alice', streamA, 360));
+  const score = (await player('alice')).data();
+  assert.equal(score.totalSteps, 360);
+  assert.equal(score.completedWalkCount, 1);
+  assert.equal(score.totalDistanceMeters, 250);
+  assert.equal((await getDoc(doc(client, walletPath('alice')))).data().balance, 36);
+});
+
+test('activity: leftovers combine across syncs and devices, with no walk required', async () => {
+  const first = environment.authenticatedContext('alice').firestore();
+  const second = environment.authenticatedContext('alice').firestore();
+  await assertSucceeds(syncActivity(first, 'alice', streamA, 9));
+  await assertSucceeds(syncActivity(second, 'alice', streamB, 9));
+  await assertSucceeds(syncActivity(first, 'alice', streamA, 12));
+  const score = (await player('alice')).data();
+  assert.equal(score.totalSteps, 21);
+  assert.equal(score.completedWalkCount, 0);
+  assert.equal(score.pointsBalance, 2);
+});
+
+test('activity: concurrent territory and activity updates preserve route totals and steps', async () => {
+  const client = environment.authenticatedContext('alice').firestore();
+  await db.doc('users/alice/walks/loop').set({ ...walk('loop', 80, 230.25), stepAccountingVersion: 1 });
+  await Promise.all([syncActivity(client, 'alice', streamA, 120), countClient(client, 'alice', 'loop')]);
+  const score = (await player('alice')).data();
+  assert.equal(score.totalSteps, 120);
+  assert.equal(score.totalDistanceMeters, 230.25);
+  assert.equal(score.completedWalkCount, 1);
+  assert.equal((await getDoc(doc(client, walletPath('alice')))).data().balance, 12);
+});
+
+test('activity: optional backend also skips territory steps on first delivery', async () => {
+  await db.doc('users/alice/walks/loop').set({ ...walk('loop', 80, 230), stepAccountingVersion: 1 });
+  assert.equal(await countWalk(db, 'alice', 'loop'), 'counted');
+  const score = (await player('alice')).data();
+  assert.equal(score.totalSteps, 0);
+  assert.equal(score.totalDistanceMeters, 230);
+});
+
+test('activity: duplicate, stale and concurrent uploads are idempotent', async () => {
+  const client = environment.authenticatedContext('alice').firestore();
+  await Promise.all([syncActivity(client, 'alice', streamA, 110), syncActivity(client, 'alice', streamA, 100),
+    syncActivity(client, 'alice', streamB, 90)]);
+  await assertSucceeds(syncActivity(client, 'alice', streamA, 110));
+  await assertSucceeds(syncActivity(client, 'alice', streamA, 80));
+  assert.equal((await player('alice')).data().totalSteps, 200);
+  assert.equal((await getDoc(doc(client, walletPath('alice')))).data().balance, 20);
+});
+
+test('activity: preserves legacy rewards, leaderboard totals and spent points', async () => {
+  const client = environment.authenticatedContext('alice').firestore();
+  await seed('alice', 'old', 129, 100);
+  await awardPoints(client, 'alice', 'old');
+  await countWalk(db, 'alice', 'old');
+  await db.doc(walletPath('alice')).update({ totalSpent: 5, balance: 7 });
+  await assertSucceeds(syncActivity(client, 'alice', streamA, 19));
+  assert.equal((await player('alice')).data().totalSteps, 148);
+  assert.equal((await getDoc(doc(client, walletPath('alice')))).data().balance, 8);
+  await awardPoints(client, 'alice', 'old');
+  assert.equal((await getDoc(doc(client, walletPath('alice')))).data().balance, 8);
+});
+
+test('activity: private cursors, no isolated writes, rollback or deletion', async () => {
+  const client = environment.authenticatedContext('alice').firestore();
+  const stream = doc(client, `users/alice/stepStreams/${streamA}`);
+  await assertFails(setDoc(stream, { totalSteps: 100, updatedAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(client, 'users/alice/activity/main'), { totalSteps: 100, lastStreamId: streamA, updatedAt: serverTimestamp() }));
+  await assertSucceeds(syncActivity(client, 'alice', streamA, 100));
+  await assertFails(setDoc(stream, { totalSteps: 50, updatedAt: serverTimestamp() }));
+  await assertFails(deleteDoc(stream));
+  const other = environment.authenticatedContext('bob').firestore();
+  await assertFails(getDoc(doc(other, `users/alice/stepStreams/${streamA}`)));
+  await assertFails(syncActivity(other, 'alice', streamB, 100));
+  await assertFails(setDoc(doc(client, walletPath('alice')), walletFields(999, 0, 'activity')));
+});
+
+test('activity: incorrect wallet delta or leaderboard score rejects the entire batch', async () => {
+  const client = environment.authenticatedContext('alice').firestore();
+  await syncActivity(client, 'alice', streamA, 100);
+  for (const [earned, score] of [[999, 200], [20, 999]]) {
+    const batch = writeBatch(client);
+    batch.set(doc(client, `users/alice/stepStreams/${streamA}`), { totalSteps: 200, updatedAt: serverTimestamp() });
+    batch.set(doc(client, 'users/alice/activity/main'), { totalSteps: 200, lastStreamId: streamA, updatedAt: serverTimestamp() });
+    batch.set(doc(client, walletPath('alice')), walletFields(earned, 0, 'activity'));
+    batch.set(doc(client, `${PLAYERS}/alice`), { schemaVersion: 1, displayName: 'Walker-test', totalSteps: score,
+      totalDistanceMeters: 0, completedWalkCount: 0, pointsBalance: earned, lastWalkId: 'activity', updatedAt: serverTimestamp() });
+    await assertFails(batch.commit());
+  }
+  assert.equal((await getDoc(doc(client, `users/alice/stepStreams/${streamA}`))).data().totalSteps, 100);
+});
+
 test("duplicate delivery and backfill count one walk only once", async () => {
   await seed("alice", "one");
   await Promise.all(Array.from({ length: 4 }, () => countWalk(db, "alice", "one")));
@@ -230,7 +365,8 @@ test("existing private walk save/retry rules remain intact", async () => {
 // Same transaction protocol as the Unity writer, executed under actual client
 // rules instead of Admin privileges. These tests are the Spark security boundary.
 async function countClient(client, uid, id) {
-  return runTransaction(client, async tx => {
+  for (let attempt = 0; ; attempt++) {
+    try { return await runTransaction(client, async tx => {
     const receiptRef = doc(client, `leaderboardReceipts/${uid}/walks/${id}`);
     if ((await tx.get(receiptRef)).exists()) return "already-counted";
     const walkData = (await tx.get(doc(client, `users/${uid}/walks/${id}`))).data();
@@ -238,11 +374,15 @@ async function countClient(client, uid, id) {
     const old = (await tx.get(playerRef)).data() || { totalSteps: 0, totalDistanceMeters: 0, completedWalkCount: 0 };
     const profile = (await tx.get(doc(client, `leaderboardProfiles/${uid}`))).data();
     tx.set(playerRef, { schemaVersion: 1, displayName: profile?.displayName || old.displayName || "Walker-Test",
-      totalSteps: old.totalSteps + walkData.steps, totalDistanceMeters: old.totalDistanceMeters + walkData.distanceMeters,
+      totalSteps: old.totalSteps + (walkData.stepAccountingVersion === 1 ? 0 : walkData.steps), totalDistanceMeters: old.totalDistanceMeters + walkData.distanceMeters,
       completedWalkCount: old.completedWalkCount + 1, lastWalkId: id, updatedAt: serverTimestamp() });
     tx.set(receiptRef, { countedAt: serverTimestamp() });
     return "counted";
-  });
+    }); } catch (error) {
+      if (error.code !== 'permission-denied' || attempt >= 2) throw error;
+      await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+    }
+  }
 }
 
 test("Spark client can count a saved walk once and retry without duplication", async () => {
