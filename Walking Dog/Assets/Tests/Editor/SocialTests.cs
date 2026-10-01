@@ -29,6 +29,96 @@ public sealed class SocialTests
     }
 }
 
+public sealed class SocialRouteTests
+{
+    private static List<StepCountAndGpsManager.WalkRoutePoint> Points() => new List<StepCountAndGpsManager.WalkRoutePoint> {
+        new StepCountAndGpsManager.WalkRoutePoint { latitude = 14.5f, longitude = 121, startsNewSegment = true },
+        new StepCountAndGpsManager.WalkRoutePoint { latitude = 14.501f, longitude = 121.001f }
+    };
+    private static FirebaseLeaderboardService Service(Func<string> user) => new FirebaseLeaderboardService(user,
+        (_, __) => Task.FromResult<LeaderboardSnapshot>(null), (_, __) => Task.CompletedTask);
+
+    [Test]
+    public async Task OwnerCanSeeSavedLocalRouteWhenCloudFailsWithoutGuessingSharingState()
+    {
+        using (var service = Service(() => "alice"))
+        {
+            service.LocalRouteReader = (_, __) => Points();
+            service.SharedRouteReader = (_, __, ___) => Task.FromException<SocialRoute>(new TimeoutException());
+            var result = await service.LoadRouteAsync("alice", "walk", CancellationToken.None);
+            Assert.That(result.Points.Count, Is.EqualTo(2));
+            Assert.That(result.IsOwner, Is.True);
+            Assert.That(result.IsShared || result.CanShare, Is.False);
+            Assert.That(result.Message, Does.Contain("saved on this device"));
+        }
+    }
+
+    [Test]
+    public async Task FreshInstallCanReadSharedCloudRouteWithoutLocalRecording()
+    {
+        using (var service = Service(() => "alice"))
+        {
+            service.LocalRouteReader = (_, __) => new List<StepCountAndGpsManager.WalkRoutePoint>();
+            service.SharedRouteReader = (_, __, ___) => Task.FromResult(new SocialRoute { IsOwner = true, IsShared = true, CanShare = true, Points = Points() });
+            var result = await service.LoadRouteAsync("alice", "walk", CancellationToken.None);
+            Assert.That(result.Points.Count, Is.EqualTo(2));
+            Assert.That(result.IsShared, Is.True);
+        }
+    }
+
+    [Test]
+    public void OtherUsersNeverUseLocalRouteFallback()
+    {
+        using (var service = Service(() => "alice"))
+        {
+            service.LocalRouteReader = (_, __) => throw new Exception("Must not read another owner's local GPS");
+            service.SharedRouteReader = (_, __, ___) => Task.FromException<SocialRoute>(new TimeoutException());
+            Assert.ThrowsAsync<TimeoutException>(async () => await service.LoadRouteAsync("bob", "walk", CancellationToken.None));
+        }
+    }
+
+    [Test]
+    public void AccountSwitchDuringFailedCloudReadCannotExposePreviousLocalRoute()
+    {
+        string user = "alice";
+        using (var service = Service(() => user))
+        {
+            service.LocalRouteReader = (_, __) => Points();
+            var pending = new TaskCompletionSource<SocialRoute>();
+            service.SharedRouteReader = (_, __, ___) => pending.Task;
+            var read = service.LoadRouteAsync("alice", "walk", CancellationToken.None);
+            user = "bob";
+            pending.SetException(new TimeoutException());
+            Assert.CatchAsync<OperationCanceledException>(async () => await read);
+        }
+    }
+
+    [Test]
+    public async Task UnsharedSessionShowsAnExplanationInsteadOfACloudError()
+    {
+        using (var service = Service(() => "alice"))
+        {
+            service.SharedRouteReader = (_, __, ___) => Task.FromResult(new SocialRoute());
+            var result = await service.LoadRouteAsync("bob", "walk", CancellationToken.None);
+            Assert.That(result.Points, Is.Empty);
+            Assert.That(result.Message, Does.Contain("hasn't shared"));
+        }
+    }
+
+    [Test]
+    public void RouteUploadRoundTripPreservesBreaksAndRejectsInvalidCoordinates()
+    {
+        var points = Points();
+        points.Add(new StepCountAndGpsManager.WalkRoutePoint { latitude = 15, longitude = 122, startsNewSegment = true });
+        var decoded = SocialRouteCodec.Decode(SocialRouteCodec.Encode(points));
+        Assert.That(decoded.Count, Is.EqualTo(3));
+        Assert.That(decoded[1].startsNewSegment, Is.False);
+        Assert.That(decoded[2].startsNewSegment, Is.True);
+        points[1].latitude = float.NaN;
+        Assert.Throws<FormatException>(() => SocialRouteCodec.Encode(points));
+    }
+}
+
 public sealed class SocialSceneTests
 {
     private SocialPanelUI panel;
@@ -46,6 +136,45 @@ public sealed class SocialSceneTests
     public void TearDown() => EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
     private T Field<T>(string name) => (T)typeof(SocialPanelUI).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(panel);
     private void Invoke(string name) => typeof(SocialPanelUI).GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance).Invoke(panel, null);
+
+    [Test]
+    public async Task WalkPopupPassesSelectedCloudRouteToMapAndClearsItOnClose()
+    {
+        service.RouteRead = () => Task.FromResult(new SocialRoute { IsShared = true, Points = new List<StepCountAndGpsManager.WalkRoutePoint> {
+            new StepCountAndGpsManager.WalkRoutePoint { latitude = 14.5f, longitude = 121, startsNewSegment = true },
+            new StepCountAndGpsManager.WalkRoutePoint { latitude = 14.501f, longitude = 121.001f }
+        } });
+        await panel.RefreshAsync();
+        Field<RectTransform>("content").Find("Activity other walk/View profile").GetComponent<Button>().onClick.Invoke();
+        var popup = Field<SocialWalkDetailsUI>("walkDetails");
+        var map = popup.GetComponentInChildren<OpenFreeMapWebViewMap>(true);
+        Assert.That(map.enabled && map.gameObject.activeInHierarchy, Is.True);
+        Assert.That(map.HistoricalRouteKey, Is.EqualTo("other:walk"));
+        var state = typeof(OpenFreeMapWebViewMap).GetMethod("BuildMapState", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(map, null);
+        var json = JsonUtility.ToJson(state);
+        Assert.That(json, Does.Contain("\"historicalRouteKey\":\"other:walk\""));
+        Assert.That(json, Does.Contain("\"lat\":14.501"));
+        Assert.That(json, Does.Contain("\"follow\":false"));
+        Assert.That(map.ShowHistoricalTerritories, Is.False);
+        panel.Back();
+        Assert.That(map.enabled, Is.False);
+        Assert.That(map.HistoricalRoutePoints, Is.Null);
+    }
+
+    [Test]
+    public async Task RouteFinishingAfterPopupClosesCannotReopenMap()
+    {
+        var late = new TaskCompletionSource<SocialRoute>();
+        service.RouteRead = () => late.Task;
+        await panel.RefreshAsync();
+        Field<RectTransform>("content").Find("Activity other walk/View profile").GetComponent<Button>().onClick.Invoke();
+        var popup = Field<SocialWalkDetailsUI>("walkDetails");
+        panel.Back();
+        late.SetResult(new SocialRoute { IsShared = true });
+        await Task.Yield();
+        Assert.That(popup.gameObject.activeSelf, Is.False);
+        Assert.That(popup.GetComponentInChildren<OpenFreeMapWebViewMap>(true).enabled, Is.False);
+    }
 
     [Test]
     public async Task ExistingScreenShowsActivityAndDirectionalFollowButtons()
@@ -207,8 +336,12 @@ public sealed class SocialSceneTests
     }
     private static void LogAssertWarning() => UnityEngine.TestTools.LogAssert.Expect(LogType.Warning, "Social request failed: TimeoutException");
 
-    private sealed class FakeSocial : ISocialService
+    private sealed class FakeSocial : ISocialService, ISocialRouteService
     {
+        public Func<Task<SocialRoute>> RouteRead;
+        public Task<SocialRoute> LoadRouteAsync(string owner, string walkId, CancellationToken token)
+            => RouteRead != null ? RouteRead() : Task.FromResult(new SocialRoute());
+        public Task SetRouteSharedAsync(string owner, string walkId, bool shared, CancellationToken token) => Task.CompletedTask;
         public string AuthenticatedUserId { get; set; } = "me";
         public SocialTab LastTab; public string LastTarget;
         public bool Following, Sharing; public int SharingWrites, Reads;

@@ -239,10 +239,18 @@ namespace WalkingDog.Leaderboards
                 walkDetails.ShowRoute(item.Player.Id + ":" + item.Id, route);
             }
             catch (OperationCanceledException) { }
-            catch (Exception)
+            catch (Exception error)
             {
                 if (RouteCurrent(request, viewer))
-                    walkDetails.SetRouteError("Couldn't load the route. Close and reopen this walk to retry. Sharing may have changed.");
+                {
+                    var firebase = error as Firebase.FirebaseException;
+                    Debug.LogWarning("Social route request failed: " + error.GetType().Name
+                        + (firebase == null ? "" : " (code " + firebase.ErrorCode + ")"));
+                    bool denied = firebase != null && firebase.ErrorCode == (int)Firebase.Firestore.FirestoreError.PermissionDenied;
+                    walkDetails.SetRouteError(denied
+                        ? "Route access was denied. The walker must share this route and keep Walk sharing ON."
+                        : "Couldn't load the route. Check your connection, then close and reopen this walk to retry.");
+                }
             }
         }
 

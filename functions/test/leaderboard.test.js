@@ -36,6 +36,60 @@ async function followPlayer(client, from, to, following = true) {
 const shareWalks = (client, uid, shareActivity) => setDoc(doc(client, `socialProfiles/${uid}`),
   { shareActivity, updatedAt: serverTimestamp() });
 
+const sharedRoute = () => ({ schemaVersion: 1, walkId: "route-walk",
+  routeJson: JSON.stringify({ points: [{ lat: 14.5, lng: 121, gap: true }, { lat: 14.501, lng: 121.001, gap: false }] }),
+  updatedAt: serverTimestamp() });
+
+test("routes: missing route reads succeed for owner and eligible follower on fresh installs", async () => {
+  const { alice, bob } = await friendAccounts();
+  assert.equal((await assertSucceeds(getDoc(doc(bob, "users/bob/sharedRoutes/route-walk")))).exists(), false);
+  await seed("bob", "route-walk");
+  await followPlayer(alice, "alice", "bob");
+  await shareWalks(bob, "bob", true);
+  assert.equal((await assertSucceeds(getDoc(doc(alice, "users/bob/sharedRoutes/route-walk")))).exists(), false);
+});
+
+test("routes: explicitly shared GPS loads across devices and follows sharing revocation", async () => {
+  const { alice, bob, mallory } = await friendAccounts();
+  await seed("bob", "route-walk");
+  const own = doc(bob, "users/bob/sharedRoutes/route-walk");
+  const followed = doc(alice, "users/bob/sharedRoutes/route-walk");
+  await assertFails(setDoc(own, sharedRoute()));
+  await shareWalks(bob, "bob", true);
+  await assertSucceeds(setDoc(own, sharedRoute()));
+  await assertFails(getDoc(followed));
+  await followPlayer(alice, "alice", "bob");
+  assert.equal(JSON.parse((await assertSucceeds(getDoc(followed))).data().routeJson).points.length, 2);
+  const newDevice = environment.authenticatedContext("bob").firestore();
+  await assertSucceeds(getDoc(doc(newDevice, "users/bob/sharedRoutes/route-walk")));
+  await assertFails(getDoc(doc(mallory, "users/bob/sharedRoutes/route-walk")));
+  await assertFails(getDoc(doc(environment.unauthenticatedContext().firestore(), "users/bob/sharedRoutes/route-walk")));
+  await assertFails(getDocs(collection(alice, "users/bob/sharedRoutes")));
+  await followPlayer(alice, "alice", "bob", false);
+  await assertFails(getDoc(followed));
+  await followPlayer(alice, "alice", "bob");
+  await shareWalks(bob, "bob", false);
+  await assertFails(getDoc(followed));
+  await assertSucceeds(getDoc(own));
+  await assertSucceeds(deleteDoc(own));
+  await shareWalks(bob, "bob", true);
+  assert.equal((await assertSucceeds(getDoc(followed))).exists(), false);
+});
+
+test("routes: reject forged ownership, unsynced walks and invalid payload envelopes", async () => {
+  const { alice, bob } = await friendAccounts();
+  await shareWalks(bob, "bob", true);
+  const own = doc(bob, "users/bob/sharedRoutes/route-walk");
+  await assertFails(setDoc(own, sharedRoute()));
+  await seed("bob", "route-walk");
+  await assertFails(setDoc(doc(alice, "users/bob/sharedRoutes/route-walk"), sharedRoute()));
+  for (const patch of [{ walkId: "wrong" }, { schemaVersion: 2 }, { extra: true },
+    { routeJson: "" }, { routeJson: "x".repeat(200001) }, { routeJson: 4 }, { updatedAt: new Date(0) }])
+    await assertFails(setDoc(own, { ...sharedRoute(), ...patch }));
+  await assertSucceeds(setDoc(own, sharedRoute()));
+  await assertFails(deleteDoc(doc(alice, "users/bob/sharedRoutes/route-walk")));
+});
+
 test("social: one-way follows, follow back, counts and unfollow remain independent", async () => {
   const { alice, bob } = await friendAccounts();
   await assertSucceeds(followPlayer(alice, "alice", "bob"));

@@ -5,6 +5,15 @@ EditMode tests and all 45 Firebase emulator tests passed. Activity and Followers
 were rendered and inspected at 720 × 1280, with Activity also checked at
 946 × 2048. This change does not build an APK; two-device validation is pending.
 
+October 2 route repair: the live rules were missing the `sharedRoutes` section,
+which denied route reads on both existing and fresh installations. Deployed the
+tested rules and verified the live release matches the repository. Owners now
+fall back to their own saved GPS if the cloud read fails; account changes cancel
+that fallback. Vector and raster maps fit the selected route. Validation: 21 Unity
+EditMode tests, 48 Firebase emulator tests, and the JavaScript map checks passed.
+The updated app still needs rebuilding and validation on physical devices; no
+APK was built during this repair.
+
 The existing `Profile Screen` in `StepCounterTestAmar.unity` now connects to real
 Firebase accounts. Open **Profile** from the walking screen. Its original profile
 header, follower/following controls, list, profile-card artwork and Follow button
@@ -35,6 +44,15 @@ individual walk has **View details**, which opens a popup with the walker, finis
 date/time, distance, steps and duration (including seconds). **Back to walks** or
 Back/Escape closes the popup without refreshing or resetting the list position.
 Refreshing, closing Profile, or changing accounts clears the popup.
+The popup also displays the session's saved GPS route. The owner can view the
+recording saved on that phone, including when the cloud request fails. To make
+the map available to followers and other installations, open the walk on the
+recording phone, keep **Walk sharing: ON**, and tap **Share this route with
+followers**. Summary sharing alone does not upload GPS. **Stop sharing this
+route** removes the cloud route. If a route was never uploaded and the original
+local recording was deleted, its coordinates cannot be recovered from a summary.
+Missing routes show an explanation. Saved maps fit the session's entire route;
+manual panning remains available on the vector map.
 Back from a viewed profile returns to Activity; Back
 from a main tab closes the screen and restores the live map.
 
@@ -50,7 +68,12 @@ from a main tab closes the screen and restores the live map.
 - Activity queries read the existing immutable `users/{uid}/walks` summaries.
   Rules require ownership, or a follow plus the author's sharing opt-in. Wallets,
   inventory, recovery data and continuous-step streams retain their existing
-  access controls. No route coordinates are uploaded or included in the feed.
+  access controls. No route coordinates are included in summary documents.
+- `users/{uid}/sharedRoutes/{walkId}` stores a separately opted-in GPS route,
+  bounded to 2,000 samples / 200,000 JSON characters. The owner can read it; a
+  follower can read it while the author's summary sharing is enabled. Collection
+  listing is denied. Only the owner can upload a route for an existing summary
+  or delete it. Coordinates and segment gaps are shared; sensor metadata is not.
 - Names, photos and player codes reuse `friendCodes`, `friendCodeLookup`, and
   `friendCodeOwners`. Profile entry registers the signed-in user's name/photo.
 - Queries use `Source.Server`; failures show a retry message, not invented empty
@@ -84,8 +107,9 @@ Each author's activity is queried separately because
 - Refresh/reopen updates the feed; there are no live listeners or push alerts.
   Continuous steps by themselves are not a feed post. A saved, synced walk is.
 - A user who enables sharing lets any signed-in user follow them and read these
-  summaries. There are no approval requests, blocking, likes, comments or route
-  maps. Turning sharing off stops new reads; it cannot retract data already read.
+  summaries and individually shared routes. There are no approval requests,
+  blocking, likes or comments. Turning sharing off stops new reads; it cannot
+  retract data already read.
 
 ## Validation
 

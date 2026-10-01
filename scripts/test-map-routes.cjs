@@ -93,3 +93,65 @@ previewContext.state = {};
 vm.runInContext('updateTerritory([]);', previewContext);
 assert.equal(legacyPreviewCalls, 1, 'Legacy callers retain their existing loop preview');
 console.log('Merged map checks passed: saved ownership takes precedence and the legacy preview remains compatible.');
+
+const cameraCalls = [];
+const viewport = { clientWidth: 360, clientHeight: 220 };
+const cameraContext = vm.createContext({ rasterTileSize: 256, window: {},
+  state: { historicalRouteKey: 'bob:walk-1', routePoints: route, follow: false },
+  map: { getContainer: () => viewport, fitBounds: (...args) => cameraCalls.push(args) }
+});
+vm.runInContext(html.slice(html.indexOf('function clamp('), html.indexOf('// Builds the URL for a specific raster tile'))
+  + html.slice(html.indexOf('function lonLatToWorldPixels('), html.indexOf('// Computes the raster map layout')), cameraContext);
+assert.equal(vm.runInContext('historicalRouteCamera({routePoints: state.routePoints}, 360, 220)', cameraContext), null,
+  'Live map camera must remain unchanged');
+for (const [width, height] of [[360, 220], [720, 420], [280, 180]]) {
+  cameraContext.width = width; cameraContext.height = height;
+  const camera = vm.runInContext('historicalRouteCamera(state, width, height)', cameraContext);
+  cameraContext.camera = camera;
+  const centerPixels = vm.runInContext('lonLatToWorldPixels(camera.center[0], camera.center[1], camera.zoom)', cameraContext);
+  for (const point of route) {
+    cameraContext.point = point;
+    const pixels = vm.runInContext('lonLatToWorldPixels(point.lng, point.lat, camera.zoom)', cameraContext);
+    assert.ok(Math.abs(pixels.x - centerPixels.x) <= width / 2 - camera.padding);
+    assert.ok(Math.abs(pixels.y - centerPixels.y) <= height / 2 - camera.padding);
+  }
+}
+vm.runInContext('fitHistoricalRoute(); fitHistoricalRoute();', cameraContext);
+assert.equal(cameraCalls.length, 1, 'Periodic state updates must preserve manual pan/zoom');
+cameraContext.state.historicalRouteKey = 'bob:walk-2';
+vm.runInContext('fitHistoricalRoute();', cameraContext);
+assert.equal(cameraCalls.length, 2, 'Opening another walk must refit the camera');
+viewport.clientWidth = 600;
+vm.runInContext('fitHistoricalRoute();', cameraContext);
+assert.equal(cameraCalls.length, 3, 'Viewport resizing must refit the saved route');
+assert.deepEqual(plain(cameraCalls[0][0]), [[121, 14.5], [122, 15.001]]);
+assert.equal(cameraCalls[0][1].duration, 0);
+console.log('Saved route camera checks passed: full route bounds, raster viewport fit, per-session fitting and live camera isolation.');
+
+const rasterMarker = { style: {} };
+const rasterTiles = { textContent: '', appendChild() {} };
+Object.assign(cameraContext, {
+  lastRasterKey: '', rasterTileTemplate: 'https://example.invalid/{z}/{x}/{y}',
+  document: {
+    getElementById: id => id === 'raster-map' ? viewport : rasterTiles,
+    querySelector: () => rasterMarker,
+    createElement: () => ({ style: {}, addEventListener() {} })
+  },
+  toCenter: state => [state.lng, state.lat],
+  renderRasterTerritory() {}, setReadyStatus() {},
+  renderRasterRoute: (layout, zoom) => { cameraContext.rendered = { layout, zoom }; }
+});
+Object.assign(cameraContext.state, { lng: route[0].lng, lat: route[0].lat, zoom: 17 });
+vm.runInContext(html.slice(html.indexOf('function getRasterTileUrl('), html.indexOf('// Converts longitude and latitude'))
+  + html.slice(html.indexOf('function getRasterLayout('), html.indexOf('function renderRasterRoute('))
+  + html.slice(html.indexOf('function renderRasterFallback('), html.indexOf('// Checks whether the vector map canvas')), cameraContext);
+vm.runInContext('renderRasterFallback()', cameraContext);
+assert.ok(cameraContext.rendered.zoom < 17, 'Raster renderer must use the fitted zoom, not the live zoom');
+const markerX = parseFloat(rasterMarker.style.left), markerY = parseFloat(rasterMarker.style.top);
+assert.ok(markerX >= 0 && markerX <= viewport.clientWidth && markerY >= 0 && markerY <= viewport.clientHeight,
+  'Recorded start marker must remain on the fitted map');
+cameraContext.state.routePoints = [route[0]];
+vm.runInContext('renderRasterFallback()', cameraContext);
+assert.equal(parseFloat(rasterMarker.style.left), viewport.clientWidth / 2);
+assert.equal(parseFloat(rasterMarker.style.top), viewport.clientHeight / 2);
+console.log('Raster integration checks passed: saved-route framing and single-point start marker.');
