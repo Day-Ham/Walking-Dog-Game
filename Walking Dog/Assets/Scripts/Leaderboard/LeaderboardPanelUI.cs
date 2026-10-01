@@ -35,7 +35,7 @@ namespace WalkingDog.Leaderboards
         private string observedUser = "";
         private LeaderboardMetric metric = LeaderboardMetric.Distance; //display the leaderboard distance
         private LeaderboardScope scope = LeaderboardScope.Global;
-        // KEEP: assign these once the runtime-created controls are added to the scene.
+        // Assign the existing scene controls in the Inspector. These are never created at runtime.
         [SerializeField] private Button globalTab, friendsTab, manageFriends;
         [SerializeField] private FriendsPanelUI friendsPanel;
         [SerializeField] private Button uploadPhoto, googlePhoto;
@@ -49,7 +49,6 @@ namespace WalkingDog.Leaderboards
             // DELETE this call after Global, Friends, and Manage Friends are scene objects.
            // EnsureFriendControls();
             cardTemplate.gameObject.SetActive(false);
-            EnsureProfileControls();
 
             // DELETE these listeners after assigning the same public methods in each Button's
             // Inspector On Click() event. Keep the public methods themselves.
@@ -57,6 +56,11 @@ namespace WalkingDog.Leaderboards
             distance.onClick.AddListener(ShowDistance);
             steps.onClick.AddListener(ShowSteps);
             saveNickname.onClick.AddListener(OnSaveNickname);
+            if (uploadPhoto != null) uploadPhoto.onClick.AddListener(UploadProfilePhoto);
+            else Debug.LogWarning("Assign Upload Photo on LeaderboardPanelUI in the Inspector.");
+            if (googlePhoto != null) googlePhoto.onClick.AddListener(UseGooglePhoto);
+            else Debug.LogWarning("Assign Google Photo on LeaderboardPanelUI in the Inspector.");
+            if (ownPhoto == null) Debug.LogWarning("Assign Own Photo on LeaderboardPanelUI in the Inspector.");
         }
 
         private void OnEnable()
@@ -179,7 +183,6 @@ namespace WalkingDog.Leaderboards
     
         internal void Render(LeaderboardSnapshot data)
         {
-            EnsureProfileControls();
             ClearCards(); //clear previous garbage card before rendering new data
             for (int i = 0; i < data.Entries.Count; i++) // check all entries
             {
@@ -198,30 +201,14 @@ namespace WalkingDog.Leaderboards
                 : (data.Scope == LeaderboardScope.Friends ? "Friends" : "Global") + " · All time · "
                     + (data.Metric == LeaderboardMetric.Distance ? "Distance" : "Steps") + " · Swipe to see more";
             var own = data.CurrentPlayer;
-            ownPhoto.gameObject.SetActive(true);
-            ownPhoto.Bind(data.CurrentPlayerId, own?.DisplayName ?? "You", data.CurrentPlayerPhotoUrl, status.font);
+            if (ownPhoto != null)
+            {
+                ownPhoto.gameObject.SetActive(true);
+                ownPhoto.Bind(data.CurrentPlayerId, own?.DisplayName ?? "You", data.CurrentPlayerPhotoUrl, status.font);
+            }
             personalTotals.text = own == null ? "You · No synced walks counted yet"
                 : $"You · {own.TotalDistanceMeters / 1000d:N2} km · {own.TotalSteps:N0} steps\n{own.CompletedWalkCount:N0} completed walks";
             if (own != null && !nickname.isFocused) nickname.SetTextWithoutNotify(own.DisplayName);
-        }
-
-        private void EnsureProfileControls()
-        {
-            var parent = refresh.transform.parent;
-            if (uploadPhoto == null) uploadPhoto = FriendsPanelUI.MakeButton(parent, refresh, "Upload profile photo", "Phone photo", .10f, .154f, .48f, .197f);
-            if (googlePhoto == null) googlePhoto = FriendsPanelUI.MakeButton(parent, refresh, "Use Google photo", "Use Google photo", .52f, .154f, .90f, .197f);
-            uploadPhoto.onClick.RemoveListener(UploadProfilePhoto);
-            googlePhoto.onClick.RemoveListener(UseGooglePhoto);
-            uploadPhoto.onClick.AddListener(UploadProfilePhoto);
-            googlePhoto.onClick.AddListener(UseGooglePhoto);
-            if (ownPhoto != null) return;
-            FriendsPanelUI.Place(personalTotals.transform, .21f, .20f, .90f, .24f);
-            var photo = new GameObject("Your profile photo", typeof(RectTransform), typeof(Image), typeof(ProfilePhotoUI));
-            photo.transform.SetParent(parent, false);
-            FriendsPanelUI.Place(photo.transform, .10f, .20f, .19f, .24f);
-            ownPhoto = photo.GetComponent<ProfilePhotoUI>();
-            ownPhoto.gameObject.SetActive(false);
-            if (friendsPanel != null) friendsPanel.transform.SetAsLastSibling();
         }
 
         private async Task ChangePhotoAsync(bool upload)
@@ -286,7 +273,8 @@ namespace WalkingDog.Leaderboards
             steps.interactable = metric != LeaderboardMetric.Steps;
             saveNickname.interactable = !busy && service != null && !string.IsNullOrEmpty(service.AuthenticatedUserId);
             nickname.interactable = saveNickname.interactable;
-            if (uploadPhoto != null) uploadPhoto.interactable = googlePhoto.interactable = saveNickname.interactable;
+            if (uploadPhoto != null) uploadPhoto.interactable = saveNickname.interactable;
+            if (googlePhoto != null) googlePhoto.interactable = saveNickname.interactable;
             if (globalTab != null) globalTab.interactable = scope != LeaderboardScope.Global;
             if (friendsTab != null) friendsTab.interactable = scope != LeaderboardScope.Friends;
         }
@@ -354,6 +342,8 @@ namespace WalkingDog.Leaderboards
             if (distance != null) distance.onClick.RemoveListener(ShowDistance);
             if (steps != null) steps.onClick.RemoveListener(ShowSteps);
             if (saveNickname != null) saveNickname.onClick.RemoveListener(OnSaveNickname);
+            if (uploadPhoto != null) uploadPhoto.onClick.RemoveListener(UploadProfilePhoto);
+            if (googlePhoto != null) googlePhoto.onClick.RemoveListener(UseGooglePhoto);
         }
     }
 }
