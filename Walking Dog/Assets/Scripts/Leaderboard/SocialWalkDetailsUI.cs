@@ -111,7 +111,9 @@ namespace WalkingDog.Leaderboards
             map.HistoricalRouteKey = key;
             mapArea.SetActive(true);
             map.enabled = true;
-            map.ForceSync();
+            // Opening the details popup can race a queued hide from the prior
+            // walk. Request an immediate layout/state update once it is visible.
+            map.ForceSync(); // Immediately redraw the selected shared route.
         }
 
         private void HideMap()
