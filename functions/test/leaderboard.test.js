@@ -23,6 +23,78 @@ const walk = (id, steps = 100, distance = 75) => ({ schemaVersion: 1, id,
 const seed = (uid, id, steps, distance) => db.doc(`users/${uid}/walks/${id}`).set(walk(id, steps, distance));
 const player = uid => db.doc(`${PLAYERS}/${uid}`).get();
 
+async function followPlayer(client, from, to, following = true) {
+  const batch = writeBatch(client);
+  const outgoing = doc(client, `social/${from}/following/${to}`);
+  const incoming = doc(client, `social/${to}/followers/${from}`);
+  if (following) {
+    const data = { createdAt: serverTimestamp() };
+    batch.set(outgoing, data); batch.set(incoming, data);
+  } else { batch.delete(outgoing); batch.delete(incoming); }
+  return batch.commit();
+}
+const shareWalks = (client, uid, shareActivity) => setDoc(doc(client, `socialProfiles/${uid}`),
+  { shareActivity, updatedAt: serverTimestamp() });
+
+test("social: one-way follows, follow back, counts and unfollow remain independent", async () => {
+  const { alice, bob } = await friendAccounts();
+  await assertSucceeds(followPlayer(alice, "alice", "bob"));
+  assert.equal((await getDocs(collection(bob, "social/bob/followers"))).size, 1);
+  assert.equal((await getDocs(collection(bob, "social/bob/following"))).size, 0);
+  await assertSucceeds(followPlayer(bob, "bob", "alice"));
+  await assertSucceeds(followPlayer(alice, "alice", "bob", false));
+  assert.equal((await getDoc(doc(bob, "social/bob/following/alice"))).exists(), true);
+  assert.equal((await getDoc(doc(bob, "social/bob/followers/alice"))).exists(), false);
+  await assertSucceeds(followPlayer(alice, "alice", "bob", false));
+});
+
+test("social: rejects forged, unpaired, self and unknown-player follows", async () => {
+  const { alice, bob } = await friendAccounts();
+  await assertFails(setDoc(doc(alice, "social/alice/following/bob"), { createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(alice, "social/bob/followers/alice"), { createdAt: serverTimestamp() }));
+  await assertFails(followPlayer(bob, "alice", "bob"));
+  await assertFails(followPlayer(alice, "alice", "alice"));
+  await assertFails(followPlayer(alice, "alice", "missing"));
+  await assertSucceeds(followPlayer(alice, "alice", "bob"));
+  await assertFails(deleteDoc(doc(alice, "social/alice/following/bob")));
+  await assertFails(followPlayer(bob, "alice", "bob", false));
+  await assertFails(setDoc(doc(alice, "social/alice/following/bob"), { createdAt: serverTimestamp(), forged: true }));
+  const guest = environment.unauthenticatedContext().firestore();
+  await assertFails(getDocs(collection(guest, "social/bob/followers")));
+  await assertFails(followPlayer(guest, "alice", "bob"));
+});
+
+test("social: summaries require both a follow and sharing opt-in; revocation applies to queries", async () => {
+  const { alice, bob } = await friendAccounts();
+  await seed("bob", "shared-walk", 1234, 950);
+  const walks = () => getDocs(query(collection(alice, "users/bob/walks"), orderBy("endedAtUtc", "desc"), limit(10)));
+  await assertFails(walks());
+  await assertSucceeds(followPlayer(alice, "alice", "bob"));
+  await assertFails(walks());
+  await assertSucceeds(shareWalks(bob, "bob", true));
+  assert.equal((await assertSucceeds(walks())).size, 1);
+  await assertFails(getDoc(doc(environment.authenticatedContext("charlie").firestore(), "users/bob/walks/shared-walk")));
+  await assertFails(setDoc(doc(alice, "users/bob/walks/shared-walk"), walk("shared-walk")));
+  await assertFails(getDoc(doc(alice, "users/bob/wallet/main")));
+  await assertSucceeds(shareWalks(bob, "bob", false));
+  await assertFails(walks());
+  await assertSucceeds(shareWalks(bob, "bob", true));
+  await assertSucceeds(followPlayer(alice, "alice", "bob", false));
+  await assertFails(walks());
+  await assertSucceeds(getDocs(collection(bob, "users/bob/walks")));
+});
+
+test("social: sharing settings are owner-only and cannot expose GPS fields", async () => {
+  const { alice, bob } = await friendAccounts();
+  await assertFails(shareWalks(alice, "bob", true));
+  await assertFails(shareWalks(bob, "bob", "yes"));
+  await assertFails(setDoc(doc(bob, "socialProfiles/bob"), { shareActivity: true, updatedAt: serverTimestamp(), route: [] }));
+  await assertFails(setDoc(doc(bob, "users/bob/walks/gps"), { ...walk("gps"), uploadedAt: serverTimestamp(), route: [{lat:14,lon:121}] }));
+  await assertSucceeds(shareWalks(bob, "bob", true));
+  await assertFails(deleteDoc(doc(alice, "socialProfiles/bob")));
+  await assertSucceeds(deleteDoc(doc(bob, "socialProfiles/bob")));
+});
+
 const walletPath = uid => `users/${uid}/wallet/main`;
 const pointReceipt = (uid, id) => `users/${uid}/pointReceipts/${id}`;
 const walletFields = (earned = 0, spent = 0, id = "") => ({ schemaVersion: 1,

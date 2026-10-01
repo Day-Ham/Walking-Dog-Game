@@ -37,7 +37,11 @@ service cloud.firestore {
     }
 
     match /users/{userId}/walks/{walkId} {
-      allow read: if isOwner(userId);
+      // Only the allowlisted summary above is stored here; GPS routes stay local.
+      // Sharing is opt-in and revocable, including for existing followers.
+      allow read: if isOwner(userId) || (request.auth != null
+        && exists(/databases/$(database)/documents/social/$(request.auth.uid)/following/$(userId))
+        && get(/databases/$(database)/documents/socialProfiles/$(userId)).data.shareActivity == true);
       allow create: if isOwner(userId) && validSummary(walkId);
       // Completed summaries are immutable. A retry may refresh the server timestamp.
       allow update: if isOwner(userId) && validSummary(walkId)
@@ -308,6 +312,46 @@ service cloud.firestore {
             || request.resource.data.photoUrl.matches('data:image/jpeg;base64,/9j/[A-Za-z0-9+/]*={0,2}'))))
         && request.resource.data.updatedAt == request.time;
       allow delete: if false;
+    }
+
+    match /socialProfiles/{userId} {
+      allow read: if request.auth != null;
+      allow create, update: if isOwner(userId)
+        && request.resource.data.keys().hasAll(['shareActivity', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['shareActivity', 'updatedAt'])
+        && request.resource.data.shareActivity is bool
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isOwner(userId);
+    }
+
+    function socialTargetExists(userId) {
+      return exists(/databases/$(database)/documents/friendCodes/$(userId))
+        || exists(/databases/$(database)/documents/leaderboards/allTime/players/$(userId));
+    }
+    function validFollow() {
+      return request.resource.data.keys().hasAll(['createdAt'])
+        && request.resource.data.keys().hasOnly(['createdAt'])
+        && request.resource.data.createdAt == request.time;
+    }
+    // A one-way follow has mirrored indexes. Only the follower can create or
+    // remove it; following back is a separate operation by the other account.
+    match /social/{userId}/following/{otherId} {
+      allow read: if request.auth != null;
+      allow create: if isOwner(userId) && userId != otherId
+        && socialTargetExists(otherId) && validFollow()
+        && getAfter(/databases/$(database)/documents/social/$(otherId)/followers/$(userId)).data == request.resource.data;
+      allow update: if false;
+      allow delete: if isOwner(userId)
+        && !existsAfter(/databases/$(database)/documents/social/$(otherId)/followers/$(userId));
+    }
+    match /social/{userId}/followers/{otherId} {
+      allow read: if request.auth != null;
+      allow create: if isOwner(otherId) && userId != otherId
+        && socialTargetExists(userId) && validFollow()
+        && getAfter(/databases/$(database)/documents/social/$(otherId)/following/$(userId)).data == request.resource.data;
+      allow update: if false;
+      allow delete: if isOwner(otherId)
+        && !existsAfter(/databases/$(database)/documents/social/$(otherId)/following/$(userId));
     }
 
     // Each relationship has two identical records, committed atomically. Only
