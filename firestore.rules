@@ -49,6 +49,26 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Routes are a separate, explicitly shared payload, never part of ordinary
+    // walk sync. A known walk route is readable only by its owner or followers
+    // while summary sharing is enabled. Deleting the document revokes sharing.
+    match /users/{userId}/sharedRoutes/{walkId} {
+      allow get: if isOwner(userId) || (request.auth != null
+        && exists(/databases/$(database)/documents/social/$(request.auth.uid)/following/$(userId))
+        && get(/databases/$(database)/documents/socialProfiles/$(userId)).data.shareActivity == true);
+      allow list: if false;
+      allow create, update: if isOwner(userId)
+        && get(/databases/$(database)/documents/socialProfiles/$(userId)).data.shareActivity == true
+        && exists(/databases/$(database)/documents/users/$(userId)/walks/$(walkId))
+        && request.resource.data.keys().hasAll(['schemaVersion', 'walkId', 'routeJson', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['schemaVersion', 'walkId', 'routeJson', 'updatedAt'])
+        && request.resource.data.schemaVersion == 1 && request.resource.data.walkId == walkId
+        && request.resource.data.routeJson is string
+        && request.resource.data.routeJson.size() > 0 && request.resource.data.routeJson.size() <= 200000
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isOwner(userId);
+    }
+
     function validWallet(data) {
       let fields = ['schemaVersion', 'balance', 'totalEarned', 'totalSpent', 'lastWalkId', 'updatedAt'];
       return data.keys().hasAll(fields) && data.keys().hasOnly(fields)
@@ -385,7 +405,7 @@ service cloud.firestore {
       allow delete: if participant() && !existsAfter(mirror());
     }
 
-    // Rewards, GPS routes, and all other paths remain private.
+    // All paths without an explicit permission above remain private.
     match /{document=**} {
       allow read, write: if false;
     }

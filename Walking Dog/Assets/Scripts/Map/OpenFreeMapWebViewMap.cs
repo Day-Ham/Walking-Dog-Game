@@ -568,6 +568,8 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
     public IReadOnlyList<Vector2> HistoricalRoutePoints { get; set; }
     public IReadOnlyList<StepCountAndGpsManager.WalkRoutePoint> HistoricalRouteSamples { get; set; }
     public bool ShowHistoricalRoute { get; set; }
+    public bool ShowHistoricalTerritories { get; set; } = true;
+    public string HistoricalRouteKey { get; set; } = "";
 
     private OpenFreeMapState BuildMapState()
     {
@@ -594,13 +596,21 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
                 markerColor = colorHex,
                 markerIconDataUrl = markerIconDataUrl
             };
+            historyState.historicalRouteKey = HistoricalRouteKey;
 
             if (hasPoints)
             {
                 if (HistoricalRouteSamples != null) AddRouteSamples(HistoricalRouteSamples, historyState.routePoints);
                 else AddRoutePoints(HistoricalRoutePoints, historyState.routePoints);
             }
-            AddTerritoryState(historyState);
+            if (ShowHistoricalTerritories) AddTerritoryState(historyState);
+            else
+            {
+                historyState.territoryPolygons = new List<TerritoryGeometry.Polygon>();
+                historyState.territoryRevision = "social-route";
+                historyState.territoryMessage = "Shared walk route";
+                historyState.markerIconDataUrl = "";
+            }
             return historyState;
         }
 
@@ -813,6 +823,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         public string territoryMessage;
         public string markerColor; // color of marker
         public string markerIconDataUrl; // marker image
+        public string historicalRouteKey;
     }
 
     [Serializable]

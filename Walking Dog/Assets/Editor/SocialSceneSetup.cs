@@ -130,6 +130,11 @@ public static class SocialSceneSetup
         Directory.CreateDirectory("Logs");
         foreach (var size in new[] { new Vector2Int(720,1280), new Vector2Int(946,2048) })
             Capture(canvas, $"Logs/social-activity-{size.x}x{size.y}.png", size.x, size.y);
+        root.Find("Safe Area/Profile or Post List View/Viewport/post or profile Content/Activity preview-other preview-walk/View profile")
+            .GetComponent<Button>().onClick.Invoke();
+        foreach (var size in new[] { new Vector2Int(720,1280), new Vector2Int(946,2048) })
+            Capture(canvas, $"Logs/social-walk-details-{size.x}x{size.y}.png", size.x, size.y);
+        panel.Back();
         Set(panel, "tab", SocialTab.Followers); snapshot.Activities.Clear();
         typeof(SocialPanelUI).GetMethod("Render", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(panel, new object[] { snapshot });
         Capture(canvas, "Logs/social-followers-720x1280.png", 720, 1280);

@@ -27,6 +27,13 @@ namespace WalkingDog.Leaderboards
         private bool busy, sharesActivity, hasSnapshot;
         private string observedUser = "", target;
         private SocialTab tab = SocialTab.Activity;
+        private SocialWalkDetailsUI walkDetails;
+        private CanvasGroup backgroundControls;
+        private bool backgroundWasInteractable;
+        private CancellationTokenSource routePending;
+        private int routeGeneration;
+        private SocialActivity selectedWalk;
+        private SocialRoute selectedRoute;
         internal Func<Task<ISocialService>> ServiceFactory;
         internal string StatusText => status.text;
         internal int VisibleCardCount => rows.Count;
@@ -72,6 +79,7 @@ namespace WalkingDog.Leaderboards
         public void Refresh() { _ = RefreshAsync(); }
         public void Back()
         {
+            if (walkDetails != null && walkDetails.gameObject.activeSelf) { CloseWalkDetails(); return; }
             if (tab == SocialTab.Profile) ShowActivity();
             else gameObject.SetActive(false);
         }
@@ -179,8 +187,76 @@ namespace WalkingDog.Leaderboards
             var card = Instantiate(template, content);
             card.name = item == null ? "Social player " + player.Id : "Activity " + player.Id + " " + item.Id;
             card.gameObject.SetActive(true);
-            card.Bind(player, viewer, item, ChangeFollow, p => Navigate(SocialTab.Profile, p.Id));
+            card.Bind(player, viewer, item, ChangeFollow, p => Navigate(SocialTab.Profile, p.Id),
+                ShowWalkDetails, tab == SocialTab.Profile && target == player.Id);
             rows.Add(card.gameObject);
+        }
+
+        private void ShowWalkDetails(SocialActivity item)
+        {
+            if (busy || item == null || (service != null && service.AuthenticatedUserId != observedUser)) return;
+            if (walkDetails == null)
+                walkDetails = SocialWalkDetailsUI.Create(transform, refresh, profileName.font, CloseWalkDetails, ToggleRouteSharing);
+            if (!walkDetails.gameObject.activeSelf)
+            {
+                // The popup is a sibling of the safe-area controls, so keyboard
+                // navigation cannot activate the list or tabs underneath it.
+                backgroundControls = back.transform.parent.GetComponent<CanvasGroup>();
+                if (backgroundControls == null) backgroundControls = back.transform.parent.gameObject.AddComponent<CanvasGroup>();
+                backgroundWasInteractable = backgroundControls.interactable;
+                backgroundControls.interactable = false;
+            }
+            walkDetails.Show(item);
+            selectedWalk = item;
+            selectedRoute = null;
+            _ = LoadWalkRouteAsync(item);
+        }
+
+        private void ToggleRouteSharing()
+        {
+            if (selectedWalk != null && selectedRoute != null && selectedRoute.IsOwner)
+                _ = LoadWalkRouteAsync(selectedWalk, !selectedRoute.IsShared);
+        }
+
+        private async Task LoadWalkRouteAsync(SocialActivity item, bool? share = null)
+        {
+            routePending?.Cancel(); routePending?.Dispose();
+            routePending = new CancellationTokenSource();
+            var token = routePending.Token;
+            int request = ++routeGeneration;
+            string viewer = observedUser;
+            walkDetails.SetRouteLoading(share == null ? "Loading this walk's route…" : "Updating route sharing…");
+            try
+            {
+                if (!(service is ISocialRouteService routes))
+                { walkDetails.SetRouteError("Route loading is unavailable."); return; }
+                if (service.AuthenticatedUserId != viewer) return;
+                if (share != null) await routes.SetRouteSharedAsync(item.Player.Id, item.Id, share.Value, token);
+                if (!RouteCurrent(request, viewer)) return;
+                var route = await routes.LoadRouteAsync(item.Player.Id, item.Id, token);
+                if (!RouteCurrent(request, viewer)) return;
+                selectedRoute = route;
+                walkDetails.ShowRoute(item.Player.Id + ":" + item.Id, route);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception)
+            {
+                if (RouteCurrent(request, viewer))
+                    walkDetails.SetRouteError("Couldn't load the route. Close and reopen this walk to retry. Sharing may have changed.");
+            }
+        }
+
+        private bool RouteCurrent(int request, string viewer) => this != null && isActiveAndEnabled
+            && request == routeGeneration && walkDetails != null && walkDetails.gameObject.activeSelf
+            && service != null && service.AuthenticatedUserId == viewer;
+
+        private void CloseWalkDetails()
+        {
+            routeGeneration++; routePending?.Cancel(); routePending?.Dispose(); routePending = null;
+            selectedWalk = null; selectedRoute = null;
+            if (walkDetails == null || !walkDetails.gameObject.activeSelf) return;
+            if (backgroundControls != null) backgroundControls.interactable = backgroundWasInteractable;
+            walkDetails.Close();
         }
         private void SetButtons()
         {
@@ -204,6 +280,7 @@ namespace WalkingDog.Leaderboards
         }
         private void ClearRows()
         {
+            CloseWalkDetails();
             foreach (var row in rows) if (row != null)
             { row.SetActive(false); if (Application.isPlaying) Destroy(row); else DestroyImmediate(row); }
             rows.Clear();

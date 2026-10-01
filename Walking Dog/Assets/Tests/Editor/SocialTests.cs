@@ -84,6 +84,64 @@ public sealed class SocialSceneTests
     }
 
     [Test]
+    public async Task WalkDetailsOpensSelectedSummaryWithoutRefreshingAndBackKeepsTheList()
+    {
+        await panel.RefreshAsync();
+        panel.ShowFollowers();
+        var content = Field<RectTransform>("content");
+        content.Find("Social player other/View profile").GetComponent<Button>().onClick.Invoke();
+        var profileButton = content.Find("Social player other/View profile").GetComponent<Button>();
+        Assert.That(profileButton.interactable, Is.False);
+        Assert.That(profileButton.GetComponentInChildren<TMP_Text>().text, Is.EqualTo("Viewing walks"));
+        var walkButton = content.Find("Activity other walk/View profile").GetComponent<Button>();
+        Assert.That(walkButton.GetComponentInChildren<TMP_Text>().text, Is.EqualTo("View details"));
+        int reads = service.Reads;
+        var scrollPosition = Field<ScrollRect>("scroll").verticalNormalizedPosition;
+        walkButton.onClick.Invoke();
+        var popup = Field<SocialWalkDetailsUI>("walkDetails");
+        Assert.That(popup.gameObject.activeSelf, Is.True);
+        Assert.That(popup.transform.Find("Walk details/Walker").GetComponent<TMP_Text>().text, Is.EqualTo("Other Walker"));
+        Assert.That(popup.transform.Find("Walk details/Distance").GetComponent<TMP_Text>().text, Does.Contain("800 m"));
+        Assert.That(popup.transform.Find("Walk details/Steps").GetComponent<TMP_Text>().text, Does.Contain("1,000"));
+        Assert.That(popup.transform.Find("Walk details/Duration").GetComponent<TMP_Text>().text, Does.Contain("10 min 0 sec"));
+        Assert.That(Field<CanvasGroup>("backgroundControls").interactable, Is.False);
+        panel.Back();
+        Assert.That(popup.gameObject.activeSelf, Is.False);
+        Assert.That(panel.gameObject.activeSelf, Is.True);
+        Assert.That(service.Reads, Is.EqualTo(reads));
+        Assert.That(Field<CanvasGroup>("backgroundControls").interactable, Is.True);
+        Assert.That(Field<ScrollRect>("scroll").verticalNormalizedPosition, Is.EqualTo(scrollPosition));
+        Assert.That(content.Find("Activity other walk/View profile").GetComponent<Button>(), Is.SameAs(walkButton));
+        walkButton.onClick.Invoke();
+        popup.transform.Find("Walk details/Close walk details").GetComponent<Button>().onClick.Invoke();
+        Assert.That(popup.gameObject.activeSelf, Is.False);
+    }
+
+    [Test]
+    public async Task PopupUsesClickedWalkAndClearsOnSignOutOrPanelClose()
+    {
+        service.Read = () => {
+            var data = service.Data();
+            data.Activities.Add(new SocialActivity { Id = "zero", Player = data.Players[0],
+                EndedUtc = new DateTime(2026, 9, 26, 11, 46, 0, DateTimeKind.Utc), DurationSeconds = 25 });
+            return Task.FromResult(data);
+        };
+        await panel.RefreshAsync();
+        Field<RectTransform>("content").Find("Activity other zero/View profile").GetComponent<Button>().onClick.Invoke();
+        var popup = Field<SocialWalkDetailsUI>("walkDetails");
+        Assert.That(popup.transform.Find("Walk details/Steps").GetComponent<TMP_Text>().text, Does.Contain("0"));
+        Assert.That(popup.transform.Find("Walk details/Duration").GetComponent<TMP_Text>().text, Does.Contain("0 min 25 sec"));
+        service.AuthenticatedUserId = ""; Invoke("Update");
+        Assert.That(popup.gameObject.activeSelf, Is.False);
+        Assert.That(popup.transform.Find("Walk details/Walker").GetComponent<TMP_Text>().text, Is.Empty);
+        service.AuthenticatedUserId = "me"; await panel.RefreshAsync();
+        Field<RectTransform>("content").Find("Activity other zero/View profile").GetComponent<Button>().onClick.Invoke();
+        panel.gameObject.SetActive(false); Invoke("OnDisable");
+        Assert.That(popup.gameObject.activeSelf, Is.False);
+        Assert.That(Field<CanvasGroup>("backgroundControls").interactable, Is.True);
+    }
+
+    [Test]
     public async Task AccountChangeDuringServiceInitializationCannotApplyOldUsersMutation()
     {
         await panel.RefreshAsync();
@@ -153,10 +211,10 @@ public sealed class SocialSceneTests
     {
         public string AuthenticatedUserId { get; set; } = "me";
         public SocialTab LastTab; public string LastTarget;
-        public bool Following, Sharing; public int SharingWrites;
+        public bool Following, Sharing; public int SharingWrites, Reads;
         public Func<Task<SocialSnapshot>> Read;
         public Task<SocialSnapshot> LoadSocialAsync(SocialTab tab, string target, CancellationToken token)
-        { LastTab = tab; LastTarget = target; return Read != null ? Read() : Task.FromResult(Data()); }
+        { Reads++; LastTab = tab; LastTarget = target; return Read != null ? Read() : Task.FromResult(Data()); }
         public Task SetFollowingAsync(string target, bool following, CancellationToken token)
         { Following = following; return Task.CompletedTask; }
         public Task SetActivitySharingAsync(bool sharing, CancellationToken token)

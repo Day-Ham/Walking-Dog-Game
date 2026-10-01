@@ -30,7 +30,12 @@ for reconnecting this layout; it is not an import-time migration.
 
 Activity includes your own walks even when your sharing is off. Your header and
 counts always refer to your account; View walks adds the selected person's card
-and recent walks below it. Back from a viewed profile returns to Activity; Back
+and recent walks below it. That profile card then reads **Viewing walks**. Each
+individual walk has **View details**, which opens a popup with the walker, finish
+date/time, distance, steps and duration (including seconds). **Back to walks** or
+Back/Escape closes the popup without refreshing or resetting the list position.
+Refreshing, closing Profile, or changing accounts clears the popup.
+Back from a viewed profile returns to Activity; Back
 from a main tab closes the screen and restores the live map.
 
 ## Firebase data and rollout
