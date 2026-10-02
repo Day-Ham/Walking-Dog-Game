@@ -30,7 +30,7 @@ internal static class FirebaseContinuousStepsStore
             var oldTotal = aggregate.Exists ? aggregate.GetValue<long>("totalSteps") : 0;
             var total = checked(oldTotal + delta);
             var points = total / 10 - oldTotal / 10;
-            var oldWallet = wallet.Exists ? PointsWalletSnapshot.Parse(wallet.ToDictionary()) : new PointsWalletSnapshot(0, 0, 0);
+            var oldWallet = wallet.Exists ? PointsWalletSnapshot.Parse(wallet.ToDictionary()) : new PointsWalletSnapshot(0, 0, 0, 0);
             var earned = checked(oldWallet.TotalEarned + points);
             var steps = checked((player.Exists ? player.GetValue<long>("totalSteps") : 0) + delta);
             if (total > PointsWalletSnapshot.Maximum || earned > PointsWalletSnapshot.Maximum || steps > PointsWalletSnapshot.Maximum)
@@ -39,7 +39,7 @@ internal static class FirebaseContinuousStepsStore
             tx.Set(streamRef, new Dictionary<string, object> { ["totalSteps"] = record.total, ["updatedAt"] = FieldValue.ServerTimestamp });
             tx.Set(aggregateRef, new Dictionary<string, object> { ["totalSteps"] = total,
                 ["lastStreamId"] = record.streamId, ["updatedAt"] = FieldValue.ServerTimestamp });
-            tx.Set(walletRef, FirebasePointsWalletStore.Fields(earned, oldWallet.TotalSpent, "activity"));
+            tx.Set(walletRef, FirebasePointsWalletStore.Fields(earned, oldWallet.TotalSpent, "activity", oldWallet.MilestoneRollsClaimed));
             tx.Set(playerRef, new Dictionary<string, object> {
                 ["schemaVersion"] = 1,
                 ["displayName"] = profile.Exists ? profile.GetValue<string>("displayName")

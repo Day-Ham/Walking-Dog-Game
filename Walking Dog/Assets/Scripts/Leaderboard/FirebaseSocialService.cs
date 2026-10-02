@@ -135,7 +135,7 @@ namespace WalkingDog.Leaderboards
             token.ThrowIfCancellationRequested();
             return new SocialPlayer { Id = id, Name = name, Photo = ReadPhoto(profile),
                 Following = following.Contains(id), FollowsYou = followers.Contains(id),
-                SharesActivity = settings.Exists && settings.GetValue<bool>("shareActivity") };
+                SharesActivity = settings.Exists && settings.TryGetValue("shareActivity", out bool shareActivity) && shareActivity };
         }
 
         private async Task<List<SocialActivity>> SocialWalksAsync(SocialPlayer player, CancellationToken token)
@@ -147,11 +147,22 @@ namespace WalkingDog.Leaderboards
             var activities = new List<SocialActivity>();
             foreach (var doc in page.Documents)
             {
-                if (!DateTime.TryParse(doc.GetValue<string>("endedAtUtc"), CultureInfo.InvariantCulture,
+                if (!doc.TryGetValue("endedAtUtc", out string endedStr) || !DateTime.TryParse(endedStr, CultureInfo.InvariantCulture,
                     DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var ended)) continue;
+                
+                double distance = 0, duration = 0;
+                if (doc.TryGetValue("distanceMeters", out double dDouble)) distance = dDouble;
+                else if (doc.TryGetValue("distanceMeters", out long dLong)) distance = dLong;
+                
+                if (doc.TryGetValue("durationSeconds", out double durDouble)) duration = durDouble;
+                else if (doc.TryGetValue("durationSeconds", out long durLong)) duration = durLong;
+
+                long steps = 0;
+                if (doc.TryGetValue("steps", out long sLong)) steps = sLong;
+                
                 activities.Add(new SocialActivity { Id = doc.Id, Player = player, EndedUtc = ended,
-                    Steps = doc.GetValue<long>("steps"), DistanceMeters = doc.GetValue<double>("distanceMeters"),
-                    DurationSeconds = doc.GetValue<double>("durationSeconds") });
+                    Steps = steps, DistanceMeters = distance,
+                    DurationSeconds = duration });
             }
             return activities;
         }

@@ -18,10 +18,10 @@ internal sealed class FirebasePointsWalletStore : IPointsWalletStore
     internal static string WalletPath(string uid) => $"users/{uid}/wallet/main";
     internal static string ReceiptPath(string uid, string id) => $"users/{uid}/pointReceipts/{id}";
 
-    internal static Dictionary<string, object> Fields(long earned, long spent, string walkId) => new Dictionary<string, object>
+    internal static Dictionary<string, object> Fields(long earned, long spent, string walkId, long milestoneRollsClaimed) => new Dictionary<string, object>
     {
         ["schemaVersion"] = 1, ["balance"] = earned - spent, ["totalEarned"] = earned,
-        ["totalSpent"] = spent, ["lastWalkId"] = walkId, ["updatedAt"] = FieldValue.ServerTimestamp
+        ["totalSpent"] = spent, ["lastWalkId"] = walkId, ["milestoneRollsClaimed"] = milestoneRollsClaimed, ["updatedAt"] = FieldValue.ServerTimestamp
     };
 
     // Rules require this exact saved-walk delta and its immutable receipt together.
@@ -41,11 +41,11 @@ internal sealed class FirebasePointsWalletStore : IPointsWalletStore
             var points = PointsWalletSnapshot.RewardForSteps(walk.GetValue<long>("steps"));
             var walletRef = db.Document(WalletPath(uid));
             var wallet = await transaction.GetSnapshotAsync(walletRef);
-            var old = wallet.Exists ? PointsWalletSnapshot.Parse(wallet.ToDictionary()) : new PointsWalletSnapshot(0, 0, 0);
+            var old = wallet.Exists ? PointsWalletSnapshot.Parse(wallet.ToDictionary()) : new PointsWalletSnapshot(0, 0, 0, 0);
             var earned = checked(old.TotalEarned + points);
             if (earned > PointsWalletSnapshot.Maximum) throw new InvalidOperationException("Wallet limit reached.");
             token.ThrowIfCancellationRequested();
-            transaction.Set(walletRef, Fields(earned, old.TotalSpent, walkId));
+            transaction.Set(walletRef, Fields(earned, old.TotalSpent, walkId, old.MilestoneRollsClaimed));
             transaction.Set(receiptRef, new Dictionary<string, object> {
                 ["points"] = points, ["awardedAt"] = FieldValue.ServerTimestamp
             });
@@ -78,7 +78,7 @@ internal sealed class FirebasePointsWalletStore : IPointsWalletStore
             Check(owner, token);
             var wallet = await transaction.GetSnapshotAsync(walletRef);
             Check(owner, token);
-            if (!wallet.Exists) transaction.Set(walletRef, Fields(0, 0, ""));
+            if (!wallet.Exists) transaction.Set(walletRef, Fields(0, 0, "", 0));
         }), token);
         Check(owner, token);
         if (!current.Complete)
@@ -126,9 +126,41 @@ internal sealed class FirebasePointsWalletStore : IPointsWalletStore
             dict.TryGetValue("lastWalkId", out var walkIdObj);
             string lastWalkId = walkIdObj as string ?? "";
 
-            transaction.Set(walletRef, Fields(old.TotalEarned, spent, lastWalkId));
+            transaction.Set(walletRef, Fields(old.TotalEarned, spent, lastWalkId, old.MilestoneRollsClaimed));
             transaction.Set(receiptRef, new Dictionary<string, object> {
                 ["points"] = amount, ["spentAt"] = FieldValue.ServerTimestamp
+            });
+        }), token);
+    }
+
+    public Task ClaimMilestoneRollAsync(string owner, string receiptId, CancellationToken token)
+    {
+        Check(owner, token);
+        return RetryContentionAsync(() => db.RunTransactionAsync(async transaction =>
+        {
+            token.ThrowIfCancellationRequested();
+            var receiptRef = db.Document($"users/{owner}/milestoneReceipts/{receiptId}");
+            var receipt = await transaction.GetSnapshotAsync(receiptRef);
+            if (receipt.Exists) return;
+
+            var walletRef = db.Document(WalletPath(owner));
+            var wallet = await transaction.GetSnapshotAsync(walletRef);
+            if (!wallet.Exists) throw new InvalidOperationException("Wallet does not exist.");
+            var dict = wallet.ToDictionary();
+            var old = PointsWalletSnapshot.Parse(dict);
+            
+            long totalSteps = old.TotalEarned * 10;
+            long totalFreeRolls = totalSteps / 10000;
+            if (totalFreeRolls <= old.MilestoneRollsClaimed) throw new InvalidOperationException("No milestone rolls available.");
+            
+            var claimed = checked(old.MilestoneRollsClaimed + 1);
+            
+            dict.TryGetValue("lastWalkId", out var walkIdObj);
+            string lastWalkId = walkIdObj as string ?? "";
+
+            transaction.Set(walletRef, Fields(old.TotalEarned, old.TotalSpent, lastWalkId, claimed));
+            transaction.Set(receiptRef, new Dictionary<string, object> {
+                ["claimedAt"] = FieldValue.ServerTimestamp
             });
         }), token);
     }

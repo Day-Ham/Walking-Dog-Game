@@ -9,13 +9,14 @@ public sealed class PointsWalletSnapshot
     public long Balance { get; }
     public long TotalEarned { get; }
     public long TotalSpent { get; }
+    public long MilestoneRollsClaimed { get; }
     public bool IsReconciling { get; }
 
-    public PointsWalletSnapshot(long balance, long earned, long spent, bool reconciling = false)
+    public PointsWalletSnapshot(long balance, long earned, long spent, long milestoneRollsClaimed = 0, bool reconciling = false)
     {
         if (balance < 0 || earned < 0 || spent < 0 || earned > Maximum || spent > earned || balance != earned - spent)
             throw new ArgumentException("Invalid points wallet.");
-        Balance = balance; TotalEarned = earned; TotalSpent = spent; IsReconciling = reconciling;
+        Balance = balance; TotalEarned = earned; TotalSpent = spent; MilestoneRollsClaimed = milestoneRollsClaimed; IsReconciling = reconciling;
     }
 
     public static long RewardForSteps(long steps)
@@ -31,7 +32,11 @@ public sealed class PointsWalletSnapshot
             || !data.TryGetValue("totalEarned", out var e) || !(e is long earned)
             || !data.TryGetValue("totalSpent", out var s) || !(s is long spent))
             throw new InvalidOperationException("Invalid points wallet.");
-        return new PointsWalletSnapshot(balance, earned, spent, reconciling);
+            
+        data.TryGetValue("milestoneRollsClaimed", out var m);
+        long milestoneRollsClaimed = m is long mVal ? mVal : 0;
+            
+        return new PointsWalletSnapshot(balance, earned, spent, milestoneRollsClaimed, reconciling);
     }
 }
 
@@ -41,6 +46,7 @@ internal interface IPointsWalletStore
     void Reset();
     Task<PointsWalletSnapshot> LoadAsync(string owner, CancellationToken token);
     Task SpendAsync(string owner, long amount, string receiptId, CancellationToken token);
+    Task ClaimMilestoneRollAsync(string owner, string receiptId, CancellationToken token);
 }
 
 // UI state is scoped to one account. Late/offline native calls cannot replace a
@@ -144,6 +150,23 @@ public sealed class PointsWalletSession : IDisposable
             await store.SpendAsync(Owner, amount, receiptId, tokenSource.Token);
         }
         // Force refresh after spend
+        await RefreshAsync();
+    }
+
+    public async Task ClaimMilestoneRollAsync(string receiptId)
+    {
+        SynchronizeAccount();
+        if (string.IsNullOrEmpty(Owner)) throw new InvalidOperationException("Not authenticated");
+        if (Snapshot == null) throw new InvalidOperationException("Wallet not ready");
+        
+        long totalSteps = Snapshot.TotalEarned * 10;
+        long totalFreeRolls = totalSteps / 10000;
+        if (totalFreeRolls <= Snapshot.MilestoneRollsClaimed) throw new InvalidOperationException("No milestone rolls available.");
+
+        using (var tokenSource = new CancellationTokenSource(timeout))
+        {
+            await store.ClaimMilestoneRollAsync(Owner, receiptId, tokenSource.Token);
+        }
         await RefreshAsync();
     }
 

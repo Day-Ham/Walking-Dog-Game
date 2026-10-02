@@ -58,7 +58,7 @@ namespace WalkingDog.Leaderboards
                 {
                     var settings = await firestore.Document($"socialProfiles/{uid}").GetSnapshotAsync(Source.Server);
                     CheckAccount(uid, revision, work);
-                    result.CanShare = settings.Exists && settings.GetValue<bool>("shareActivity");
+                    result.CanShare = settings.Exists && settings.TryGetValue("shareActivity", out bool shareActivity) && shareActivity;
                 }
                 if (doc.Exists)
                     result.Points = SocialRouteCodec.Decode(doc.GetValue<string>("routeJson"));
