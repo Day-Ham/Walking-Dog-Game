@@ -33,7 +33,15 @@ public class UIMilestoneNotifier : MonoBehaviour
 
             if (badgeGraphic != null)
             {
-                badgeGraphic.SetActive(hasRolls);
+                if (badgeGraphic == this.gameObject)
+                {
+                    foreach (var graphic in GetComponents<UnityEngine.UI.Graphic>())
+                        graphic.enabled = hasRolls;
+                }
+                else
+                {
+                    badgeGraphic.SetActive(hasRolls);
+                }
             }
 
             if (alertText != null)
@@ -47,7 +55,18 @@ public class UIMilestoneNotifier : MonoBehaviour
         }
         else
         {
-            if (badgeGraphic != null) badgeGraphic.SetActive(false);
+            if (badgeGraphic != null)
+            {
+                if (badgeGraphic == this.gameObject)
+                {
+                    foreach (var graphic in GetComponents<UnityEngine.UI.Graphic>())
+                        graphic.enabled = false;
+                }
+                else
+                {
+                    badgeGraphic.SetActive(false);
+                }
+            }
             if (alertText != null) alertText.gameObject.SetActive(false);
         }
     }

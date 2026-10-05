@@ -27,7 +27,7 @@ public sealed class PointsWalletTests
         Assert.Throws<ArgumentException>(() => new PointsWalletSnapshot(10, 20, 0));
         Assert.Throws<ArgumentException>(() => new PointsWalletSnapshot(0, -1, -1));
         Assert.Throws<InvalidOperationException>(() => PointsWalletSnapshot.Parse(new Dictionary<string, object> {
-            ["schemaVersion"] = 1L, ["balance"] = 12.0, ["totalEarned"] = 12L, ["totalSpent"] = 0L
+            ["schemaVersion"] = 1L, ["balance"] = true, ["totalEarned"] = 12L, ["totalSpent"] = 0L
         }));
     }
 
