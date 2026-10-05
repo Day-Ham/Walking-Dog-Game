@@ -31,6 +31,22 @@ public sealed class PointsWalletTests
         }));
     }
 
+    [Test] public void MilestoneCountsAllowLegacyWalletsAndRejectMalformedOrUnearnedClaims()
+    {
+        var data = new Dictionary<string, object> {
+            ["schemaVersion"] = 1L, ["balance"] = 2000L, ["totalEarned"] = 2000L, ["totalSpent"] = 0L
+        };
+        Assert.That(PointsWalletSnapshot.Parse(data).MilestoneRollsClaimed, Is.Zero);
+        data["milestoneRollsClaimed"] = 2L;
+        Assert.That(PointsWalletSnapshot.Parse(data).MilestoneRollsClaimed, Is.EqualTo(2));
+        data["milestoneRollsClaimed"] = 3L;
+        Assert.Throws<ArgumentException>(() => PointsWalletSnapshot.Parse(data));
+        data["milestoneRollsClaimed"] = -1L;
+        Assert.Throws<ArgumentException>(() => PointsWalletSnapshot.Parse(data));
+        data["milestoneRollsClaimed"] = 1.0;
+        Assert.Throws<InvalidOperationException>(() => PointsWalletSnapshot.Parse(data));
+    }
+
     [Test] public async Task LoadsSavedBalanceAndKeepsItOnOfflineFailure()
     {
         var store = new Store();

@@ -144,7 +144,7 @@ public sealed class LeaderboardSceneTests
     {
         await panel.RefreshAsync();
         var safe = panel.transform.Find("LeaderBG/LeaderSafeArea");
-        ClickInEditor(safe.Find("Manage friends").GetComponent<Button>());
+        ClickInEditor(Field<Button>("manageFriends"));
         var manager = safe.Find("Friends manager").GetComponent<FriendsPanelUI>();
         var run = typeof(FriendsPanelUI).GetMethod("RunAsync", BindingFlags.Instance | BindingFlags.NonPublic);
         await (Task)run.Invoke(manager, new object[] { null, FriendAction.Send });
@@ -186,7 +186,7 @@ public sealed class LeaderboardSceneTests
         var completion = new TaskCompletionSource<IReadOnlyList<FriendEntry>>();
         service.FriendRead = completion.Task;
         var safe = panel.transform.Find("LeaderBG/LeaderSafeArea");
-        ClickInEditor(safe.Find("Manage friends").GetComponent<Button>());
+        ClickInEditor(Field<Button>("manageFriends"));
         var manager = safe.Find("Friends manager").GetComponent<FriendsPanelUI>();
         var task = (Task)typeof(FriendsPanelUI).GetMethod("RunAsync", BindingFlags.Instance | BindingFlags.NonPublic)
             .Invoke(manager, new object[] { null, FriendAction.Send });

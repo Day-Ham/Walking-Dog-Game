@@ -151,8 +151,100 @@ test("social: sharing settings are owner-only and cannot expose GPS fields", asy
 
 const walletPath = uid => `users/${uid}/wallet/main`;
 const pointReceipt = (uid, id) => `users/${uid}/pointReceipts/${id}`;
-const walletFields = (earned = 0, spent = 0, id = "") => ({ schemaVersion: 1,
-  balance: earned - spent, totalEarned: earned, totalSpent: spent, lastWalkId: id, updatedAt: serverTimestamp() });
+const walletFields = (earned = 0, spent = 0, id = "", claimed = 0) => ({ schemaVersion: 1,
+  balance: earned - spent, totalEarned: earned, totalSpent: spent, lastWalkId: id,
+  milestoneRollsClaimed: claimed, updatedAt: serverTimestamp() });
+
+async function claimMilestone(client, uid, id) {
+  return runTransaction(client, async tx => {
+    const receipt = doc(client, `users/${uid}/milestoneReceipts/${id}`);
+    if ((await tx.get(receipt)).exists()) return;
+    const wallet = doc(client, walletPath(uid));
+    const old = (await tx.get(wallet)).data();
+    const claimed = (old.milestoneRollsClaimed || 0) + 1;
+    tx.set(wallet, walletFields(old.totalEarned, old.totalSpent, id, claimed));
+    tx.set(receipt, { milestone: claimed, claimedAt: serverTimestamp() });
+  });
+}
+
+test("milestones: legacy wallet upgrades, claims once, and preserves claims during step sync and spending", async () => {
+  const alice = environment.authenticatedContext("alice").firestore();
+  const legacy = walletFields(); delete legacy.milestoneRollsClaimed;
+  await assertSucceeds(setDoc(doc(alice, walletPath("alice")), legacy));
+  await assertFails(claimMilestone(alice, "alice", "too-early"));
+  await assertSucceeds(syncActivity(alice, "alice", streamA, 10000));
+  await assertSucceeds(claimMilestone(alice, "alice", "first"));
+  await assertSucceeds(claimMilestone(alice, "alice", "first"));
+  assert.equal((await getDoc(doc(alice, walletPath("alice")))).data().milestoneRollsClaimed, 1);
+  await assertFails(claimMilestone(alice, "alice", "second"));
+  await assertSucceeds(syncActivity(alice, "alice", streamA, 20000));
+  await assertSucceeds(setDoc(doc(alice, walletPath("alice")), walletFields(2000, 500, 'activity', 1)));
+  await assertSucceeds(claimMilestone(alice, "alice", "second"));
+  const result = (await getDoc(doc(alice, walletPath("alice")))).data();
+  assert.equal(result.milestoneRollsClaimed, 2);
+  assert.equal(result.balance, 1500);
+  assert.equal(result.totalEarned, 2000);
+  await seed("alice", "old-walk", 100);
+  await assertSucceeds(awardPoints(alice, "alice", "old-walk"));
+  assert.equal((await getDoc(doc(alice, walletPath("alice")))).data().milestoneRollsClaimed, 2);
+});
+
+test("milestones: forged claims, resets, unrelated wallet writes and editable receipts are denied", async () => {
+  const alice = environment.authenticatedContext("alice").firestore();
+  const bob = environment.authenticatedContext("bob").firestore();
+  await syncActivity(alice, "alice", streamA, 20000);
+  const wallet = doc(alice, walletPath("alice"));
+  await assertFails(setDoc(wallet, walletFields(2000, 0, 'forged', 1)));
+  await assertFails(setDoc(wallet, walletFields(2000, 0, 'activity', -1)));
+  await assertFails(setDoc(wallet, walletFields(2000, 0, 'activity', 0.5)));
+  const skipped = writeBatch(alice);
+  skipped.set(wallet, walletFields(2000, 0, 'skip', 2));
+  skipped.set(doc(alice, 'users/alice/milestoneReceipts/skip'), { milestone: 2, claimedAt: serverTimestamp() });
+  await assertFails(skipped.commit());
+  const wrongPair = writeBatch(alice);
+  wrongPair.set(wallet, walletFields(2000, 0, 'right', 1));
+  wrongPair.set(doc(alice, 'users/alice/milestoneReceipts/wrong'), { milestone: 1, claimedAt: serverTimestamp() });
+  await assertFails(wrongPair.commit());
+  await assertFails(setDoc(doc(alice, 'users/alice/milestoneReceipts/alone'), { milestone: 1, claimedAt: serverTimestamp() }));
+  await assertFails(claimMilestone(bob, "alice", "stolen"));
+  await claimMilestone(alice, "alice", "valid");
+  await assertFails(setDoc(wallet, walletFields(2000, 0, 'activity', 0)));
+  await assertFails(setDoc(wallet, walletFields(2000, 1, 'activity', 0)));
+  const legacy = walletFields(2000, 1, 'activity'); delete legacy.milestoneRollsClaimed;
+  await assertFails(setDoc(wallet, legacy));
+  const receipt = doc(alice, 'users/alice/milestoneReceipts/valid');
+  await assertFails(setDoc(receipt, { milestone: 2, claimedAt: serverTimestamp() }));
+  await assertFails(deleteDoc(receipt));
+  await assertFails(getDoc(doc(bob, 'users/alice/milestoneReceipts/valid')));
+});
+
+test("routes: automatic transaction preserves existing routes and stops when sharing is OFF", async () => {
+  const { alice, bob } = await friendAccounts();
+  await seed("bob", "route-walk");
+  await shareWalks(bob, "bob", true);
+  await followPlayer(alice, "alice", "bob");
+  const own = doc(bob, "users/bob/sharedRoutes/route-walk");
+  async function automaticUpload() {
+    return runTransaction(bob, async tx => {
+      const settings = await tx.get(doc(bob, "socialProfiles/bob"));
+      const summary = await tx.get(doc(bob, "users/bob/walks/route-walk"));
+      const existing = await tx.get(own);
+      if (!settings.data().shareActivity || !summary.exists()) return false;
+      if (!existing.exists()) tx.set(own, sharedRoute());
+      return true;
+    });
+  }
+  await assertSucceeds(automaticUpload());
+  const original = (await getDoc(own)).data().updatedAt;
+  await assertSucceeds(automaticUpload());
+  assert.equal((await getDoc(own)).data().updatedAt.isEqual(original), true);
+  await assertSucceeds(getDoc(doc(alice, "users/bob/sharedRoutes/route-walk")));
+  await shareWalks(bob, "bob", false);
+  assert.equal(await automaticUpload(), false);
+  await assertFails(getDoc(doc(alice, "users/bob/sharedRoutes/route-walk")));
+  await assertFails(setDoc(own, sharedRoute()));
+});
+
 async function awardPoints(client, uid, id) {
   for (let attempt = 0; ; attempt++) {
     try { return await runTransaction(client, async tx => {
@@ -163,7 +255,7 @@ async function awardPoints(client, uid, id) {
     const old = await tx.get(wallet);
     const points = Math.floor(saved.data().steps / 10);
     tx.set(wallet, walletFields((old.exists() ? old.data().totalEarned : 0) + points,
-      old.exists() ? old.data().totalSpent : 0, id));
+      old.exists() ? old.data().totalSpent : 0, id, old.exists() ? old.data().milestoneRollsClaimed || 0 : 0));
     tx.set(receipt, { points, awardedAt: serverTimestamp() });
     }); } catch (error) {
       if (error.code !== "permission-denied" || attempt >= 2) throw error;
@@ -276,7 +368,7 @@ async function syncActivity(client, uid, streamId, total) {
       const old = player.exists() ? player.data() : { totalSteps: 0, totalDistanceMeters: 0, completedWalkCount: 0, displayName: 'Walker-test' };
       tx.set(streamRef, { totalSteps: total, updatedAt: serverTimestamp() });
       tx.set(activityRef, { totalSteps: next, lastStreamId: streamId, updatedAt: serverTimestamp() });
-      tx.set(walletRef, walletFields(earned, spent, 'activity'));
+      tx.set(walletRef, walletFields(earned, spent, 'activity', wallet.exists() ? wallet.data().milestoneRollsClaimed || 0 : 0));
       tx.set(playerRef, { schemaVersion: 1, displayName: profile.exists() ? profile.data().displayName : old.displayName,
         totalSteps: old.totalSteps + delta, totalDistanceMeters: old.totalDistanceMeters, completedWalkCount: old.completedWalkCount,
         pointsBalance: earned - spent, lastWalkId: 'activity', updatedAt: serverTimestamp() });

@@ -26,6 +26,9 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
     private CancellationTokenSource activityLifetime = new CancellationTokenSource();
     private bool activitySyncing;
     private float nextActivitySync;
+    private WalkingDog.Leaderboards.SocialRouteSync socialRouteSync;
+    private float nextRouteSync;
+    private bool routeSyncing;
 
     private async void Start()
     {
@@ -65,6 +68,8 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
             auth.StateChanged += OnWalletAccountChanged;
             store.PointsChanged += () => nextWalletRefresh = 0;
             manager.ConfigureCloudSync(store);
+            socialRouteSync = WalkingDog.Leaderboards.SocialRouteSync.Create(FirebaseFirestore.DefaultInstance,
+                () => store?.AuthenticatedUserId ?? "", manager.LocalWalks);
             HistoryStore = new FirebaseWalkHistoryStore(FirebaseAuth.DefaultInstance, FirebaseFirestore.DefaultInstance);
             IsReady = true;
             Status = "Firebase initialized"; // Does not imply signed in or server connectivity.
@@ -92,6 +97,7 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
         if (!IsReady || Wallet == null) return;
         if (Wallet.SynchronizeAccount()) nextWalletRefresh = 0;
         if (!activitySyncing && Time.realtimeSinceStartup >= nextActivitySync) _ = SyncActivityAsync();
+        if (!routeSyncing && Time.realtimeSinceStartup >= nextRouteSync) _ = SyncSharedRoutesAsync();
         if (Wallet.IsLoading || Time.realtimeSinceStartup < nextWalletRefresh) return;
         Wallet.HasPendingWalks = manager.LocalWalks.LoadAll().Exists(w => w.ownerUserId == Wallet.Owner
             && w.stepAccountingVersion == 0 && w.steps >= 10 && w.sync.state != WalkUploadState.Synced) || HasPendingActivity();
@@ -135,7 +141,22 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
     private static async void ObserveActivityUpload(Task upload)
     { try { await upload; } catch (Exception) { } }
 
-    private void OnApplicationPause(bool paused) { if (!paused) { nextWalletRefresh = 0; nextActivitySync = 0; } }
+    // The profile toggle requests an immediate pass; periodic passes also repair
+    // older ON accounts, newly synced walks and uploads interrupted by app exit.
+    public void RequestRouteSharingSync() { nextRouteSync = 0; }
+
+    private async Task SyncSharedRoutesAsync()
+    {
+        nextRouteSync = Time.realtimeSinceStartup + 15f;
+        if (socialRouteSync == null || string.IsNullOrEmpty(store?.AuthenticatedUserId)) return;
+        routeSyncing = true;
+        try { await socialRouteSync.SyncAsync(activityLifetime.Token); }
+        catch (OperationCanceledException) { }
+        catch (Exception error) { Debug.LogWarning("Automatic route sharing pending: " + error.GetType().Name); }
+        finally { routeSyncing = false; }
+    }
+
+    private void OnApplicationPause(bool paused) { if (!paused) { nextWalletRefresh = 0; nextActivitySync = 0; nextRouteSync = 0; } }
 
     private void OnWalletAccountChanged(object sender, EventArgs args)
     {
@@ -143,6 +164,7 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
         activityLifetime.Dispose();
         activityLifetime = new CancellationTokenSource();
         nextActivitySync = 0;
+        nextRouteSync = 0;
         Wallet?.Reset();
         nextWalletRefresh = 0;
     }
@@ -151,6 +173,7 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
     {
         if (Wallet != null) { Wallet.SynchronizeAccount(); Wallet.HasPendingWalks = true; }
         nextWalletRefresh = 0;
+        nextRouteSync = 0;
     }
 
     private void OnDestroy()

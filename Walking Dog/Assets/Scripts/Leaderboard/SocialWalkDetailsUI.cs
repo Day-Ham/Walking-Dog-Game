@@ -102,9 +102,9 @@ namespace WalkingDog.Leaderboards
         {
             HideMap();
             routeStatus.text = route.Message;
-            shareRoute.gameObject.SetActive(route.IsOwner);
-            shareRoute.interactable = route.IsShared || route.CanShare;
-            shareRoute.GetComponentInChildren<TMP_Text>().text = route.IsShared ? "Stop sharing this route" : "Share this route with followers";
+            // Sharing is controlled by the account's Walk sharing toggle. A
+            // separate per-walk action would conflict with automatic retries.
+            shareRoute.gameObject.SetActive(false);
             if (route.Points.Count == 0) return;
             map.HistoricalRoutePoints = route.Points.Select(p => new Vector2(p.latitude, p.longitude)).ToList();
             map.HistoricalRouteSamples = route.Points;

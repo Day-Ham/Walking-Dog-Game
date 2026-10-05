@@ -40,6 +40,8 @@ namespace WalkingDog.Leaderboards
                 await firestore.Document($"socialProfiles/{uid}").SetAsync(new Dictionary<string, object> {
                     ["shareActivity"] = sharing, ["updatedAt"] = FieldValue.ServerTimestamp
                 });
+                CheckAccount(uid, revision, work);
+                StepCountAndGpsManager.Instance?.GetComponent<FirebaseWalkBootstrap>()?.RequestRouteSharingSync();
                 return true;
             }, token);
 

@@ -21,8 +21,8 @@ namespace WalkingDog.Leaderboards
         Task SetRouteSharedAsync(string owner, string walkId, bool shared, CancellationToken token);
     }
 
-    // Only coordinates and continuity leave the device after the owner taps
-    // Share this route. Sensor timestamps/accuracy and recovery data stay local.
+    // Only coordinates and continuity leave the device while Walk sharing is ON.
+    // Sensor timestamps/accuracy and recovery data stay local.
     internal static class SocialRouteCodec
     {
         internal const int MaxPoints = 2000, MaxJsonLength = 200000;

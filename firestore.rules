@@ -49,8 +49,8 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Routes are a separate, explicitly shared payload, never part of ordinary
-    // walk sync. A known walk route is readable only by its owner or followers
+    // Routes sync automatically from the recording phone while sharing is ON.
+    // A known walk route is readable only by its owner or followers
     // while summary sharing is enabled. Deleting the document revokes sharing.
     match /users/{userId}/sharedRoutes/{walkId} {
       allow get: if isOwner(userId) || (request.auth != null
@@ -71,13 +71,28 @@ service cloud.firestore {
 
     function validWallet(data) {
       let fields = ['schemaVersion', 'balance', 'totalEarned', 'totalSpent', 'lastWalkId', 'updatedAt'];
-      return data.keys().hasAll(fields) && data.keys().hasOnly(fields)
+      return data.keys().hasAll(fields) && data.keys().hasOnly(fields.concat(['milestoneRollsClaimed']))
         && data.schemaVersion is int && data.schemaVersion == 1
         && data.balance is int && data.balance >= 0
         && data.totalEarned is int && data.totalEarned >= 0 && data.totalEarned <= 9007199254740991
         && data.totalSpent is int && data.totalSpent >= 0 && data.totalSpent <= data.totalEarned
         && data.balance == data.totalEarned - data.totalSpent
+        && milestoneCount(data) is int && milestoneCount(data) >= 0
+        && milestoneCount(data) <= int(data.totalEarned / 1000)
         && data.lastWalkId is string && data.updatedAt == request.time;
+    }
+
+    function milestoneCount(data) {
+      return 'milestoneRollsClaimed' in data ? data.milestoneRollsClaimed : 0;
+    }
+
+    function claimsMilestone(userId, data, old) {
+      let receipt = /databases/$(database)/documents/users/$(userId)/milestoneReceipts/$(data.lastWalkId);
+      return data.lastWalkId.matches('[A-Za-z0-9_-]{1,128}')
+        && data.totalEarned == old.totalEarned && data.totalSpent == old.totalSpent
+        && milestoneCount(data) == milestoneCount(old) + 1
+        && !exists(receipt) && getAfter(receipt).data.claimedAt == request.time
+        && getAfter(receipt).data.milestone == milestoneCount(data);
     }
 
     function awardsSavedWalk(userId, data, oldEarned, oldSpent) {
@@ -156,14 +171,17 @@ service cloud.firestore {
     match /users/{userId}/wallet/main {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && validWallet(request.resource.data)
+        && milestoneCount(request.resource.data) == 0
         && ((request.resource.data.balance == 0 && request.resource.data.totalEarned == 0
             && request.resource.data.totalSpent == 0 && request.resource.data.lastWalkId == '')
           || awardsActivity(userId, request.resource.data, 0, 0)
           || awardsSavedWalk(userId, request.resource.data, 0, 0));
       allow update: if isOwner(userId) && validWallet(request.resource.data)
-        && (awardsActivity(userId, request.resource.data, resource.data.totalEarned, resource.data.totalSpent)
+        && (claimsMilestone(userId, request.resource.data, resource.data)
+          || (milestoneCount(request.resource.data) == milestoneCount(resource.data)
+          && (awardsActivity(userId, request.resource.data, resource.data.totalEarned, resource.data.totalSpent)
           || awardsSavedWalk(userId, request.resource.data, resource.data.totalEarned, resource.data.totalSpent)
-          || spendsPoints(request.resource.data, resource.data.totalEarned, resource.data.totalSpent));
+          || spendsPoints(request.resource.data, resource.data.totalEarned, resource.data.totalSpent))));
       allow delete: if false;
     }
 
@@ -186,6 +204,25 @@ service cloud.firestore {
     }
 
     // These owner-scoped paths already exist in production for gacha/inventory.
+    match /users/{userId}/milestoneReceipts/{receiptId} {
+      function pairedClaim() {
+        let wallet = /databases/$(database)/documents/users/$(userId)/wallet/main;
+        let old = get(wallet).data;
+        let after = getAfter(wallet).data;
+        return after.updatedAt == request.time && after.lastWalkId == receiptId
+          && after.totalEarned == old.totalEarned && after.totalSpent == old.totalSpent
+          && milestoneCount(after) == milestoneCount(old) + 1
+          && request.resource.data.milestone == milestoneCount(after);
+      }
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && request.resource.data.keys().hasAll(['milestone', 'claimedAt'])
+        && request.resource.data.keys().hasOnly(['milestone', 'claimedAt'])
+        && request.resource.data.milestone is int && request.resource.data.milestone > 0
+        && request.resource.data.claimedAt == request.time && pairedClaim();
+      allow update, delete: if false;
+    }
+
     match /users/{userId}/spendReceipts/{receiptId} {
       allow read, write: if isOwner(userId);
     }

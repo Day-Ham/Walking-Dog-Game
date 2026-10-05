@@ -101,7 +101,7 @@ public sealed class SocialRouteTests
             service.SharedRouteReader = (_, __, ___) => Task.FromResult(new SocialRoute());
             var result = await service.LoadRouteAsync("bob", "walk", CancellationToken.None);
             Assert.That(result.Points, Is.Empty);
-            Assert.That(result.Message, Does.Contain("hasn't shared"));
+            Assert.That(result.Message, Does.Contain("hasn't synced"));
         }
     }
 
@@ -116,6 +116,29 @@ public sealed class SocialRouteTests
         Assert.That(decoded[2].startsNewSegment, Is.True);
         points[1].latitude = float.NaN;
         Assert.Throws<FormatException>(() => SocialRouteCodec.Encode(points));
+    }
+
+    [Test]
+    public async Task OwnerSeesAutomaticSharingStatusWithoutAPerWalkShareButton()
+    {
+        using (var service = Service(() => "alice"))
+        {
+            service.SharedRouteReader = (_, __, ___) => Task.FromResult(new SocialRoute { IsOwner = true, CanShare = true, Points = Points() });
+            var result = await service.LoadRouteAsync("alice", "walk", CancellationToken.None);
+            Assert.That(result.Message, Does.Contain("share automatically"));
+            var root = new GameObject("Route popup test");
+            var source = new GameObject("Button", typeof(RectTransform), typeof(Button));
+            try
+            {
+                var label = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
+                label.transform.SetParent(source.transform);
+                var popup = SocialWalkDetailsUI.Create(root.transform, source.GetComponent<Button>(), null, () => {}, () => {});
+                result.Points.Clear(); // Keep this test independent of map rendering.
+                popup.ShowRoute("alice:walk", result);
+                Assert.That(popup.transform.Find("Walk details/Share route").gameObject.activeSelf, Is.False);
+            }
+            finally { UnityEngine.Object.DestroyImmediate(root); UnityEngine.Object.DestroyImmediate(source); }
+        }
     }
 }
 

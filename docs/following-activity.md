@@ -1,5 +1,15 @@
 # Following and walking activity prototype
 
+October 5 automatic sharing: Walk sharing ON now uploads existing owned GPS
+routes saved on this phone and future completed routes after summary sync. There
+is no per-route share button. Uploads retry after reconnecting/reopening, preserve
+existing cloud routes, and stop when sharing is OFF or the account changes.
+All 121 Unity EditMode tests, 51 Firebase emulator tests and map script checks
+passed. Firestore rules were deployed to `walky-aa25c` and the live release
+`365715ca-a8e2-49c1-8e60-6a6819fb2fc1` was verified to exactly match this file's
+repository rules. Build/install the updated client for phone testing; no APK or
+physical-device validation was produced by this change.
+
 October 1, 2026: implemented and the rules deployed to `walky-aa25c`. Eight Unity
 EditMode tests and all 45 Firebase emulator tests passed. Activity and Followers
 were rendered and inspected at 720 × 1280, with Activity also checked at
@@ -25,7 +35,9 @@ for reconnecting this layout; it is not an import-time migration.
 
 1. Sign in as Alice and open Profile. Copy Alice's eight-character player code.
 2. Turn **Walk sharing: ON** to let followers read Alice's past and future synced
-   walk summaries. Sharing defaults to off; opening Profile never enables it.
+   walks and GPS routes. Existing routes saved on this phone upload automatically;
+   future completed routes upload after their summaries sync. Sharing defaults to
+   off; opening Profile never enables it.
 3. As Bob, open Profile and enter Alice's code, or find Alice in Discover. Tap
    **Follow**, then **View walks** or **Activity**.
 4. Finish and sync a walk as Alice. Refresh Bob's Activity tab to see its date,
@@ -46,10 +58,14 @@ Back/Escape closes the popup without refreshing or resetting the list position.
 Refreshing, closing Profile, or changing accounts clears the popup.
 The popup also displays the session's saved GPS route. The owner can view the
 recording saved on that phone, including when the cloud request fails. To make
-the map available to followers and other installations, open the walk on the
-recording phone, keep **Walk sharing: ON**, and tap **Share this route with
-followers**. Summary sharing alone does not upload GPS. **Stop sharing this
-route** removes the cloud route. If a route was never uploaded and the original
+the map available to followers and other installations, keep **Walk sharing: ON**
+on the recording phone. No per-walk share action is needed. The persistent manager
+checks for routes at startup, on resume, after changing sharing or saving a walk,
+and every 15 seconds while the app is running. Offline failures retry from saved
+local walks, even after restart. Already uploaded cloud routes are preserved.
+Turning sharing OFF immediately denies new follower reads of summaries and routes
+and stops automatic route uploads. Re-enabling sharing restores access and uploads
+remaining routes. If a route was never uploaded and the original
 local recording was deleted, its coordinates cannot be recovered from a summary.
 Missing routes show an explanation. Saved maps fit the session's entire route;
 manual panning remains available on the vector map.
@@ -69,7 +85,7 @@ from a main tab closes the screen and restores the live map.
   Rules require ownership, or a follow plus the author's sharing opt-in. Wallets,
   inventory, recovery data and continuous-step streams retain their existing
   access controls. No route coordinates are included in summary documents.
-- `users/{uid}/sharedRoutes/{walkId}` stores a separately opted-in GPS route,
+- `users/{uid}/sharedRoutes/{walkId}` stores GPS routes under the account's sharing opt-in,
   bounded to 2,000 samples / 200,000 JSON characters. The owner can read it; a
   follower can read it while the author's summary sharing is enabled. Collection
   listing is denied. Only the owner can upload a route for an existing summary
@@ -90,6 +106,15 @@ cd functions
 npx firebase deploy --only firestore:rules --project walky-aa25c --config ../firebase.json
 ```
 
+The October 5 rules also support the latest pulled milestone wallet field,
+`milestoneRollsClaimed` (missing means zero for older wallets). Each free-roll
+claim increments it once, within the earned-points limit, and creates an immutable
+`users/{uid}/milestoneReceipts/{receiptId}` document with `milestone` and `claimedAt`
+in the same transaction. The wallet's `lastWalkId` identifies that receipt during
+a claim, just as `activity` identifies continuous rewards. Normal earnings and
+spending preserve the claim count. No production balances or histories were
+modified; this rollout changes permissions and validation only.
+
 Rules validate both halves of each follow in the same commit using
 [`getAfter`](https://firebase.google.com/docs/firestore/manage-data/transactions).
 Each author's activity is queried separately because
@@ -107,7 +132,7 @@ Each author's activity is queried separately because
 - Refresh/reopen updates the feed; there are no live listeners or push alerts.
   Continuous steps by themselves are not a feed post. A saved, synced walk is.
 - A user who enables sharing lets any signed-in user follow them and read these
-  summaries and individually shared routes. There are no approval requests,
+  summaries and automatically shared routes. There are no approval requests,
   blocking, likes or comments. Turning sharing off stops new reads; it cannot
   retract data already read.
 

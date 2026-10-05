@@ -35,11 +35,11 @@ namespace WalkingDog.Leaderboards
             if (local.Count > 0) result.Points = local;
             result.CanShare = result.CanShare && result.Points.Count > 0;
             result.Message = result.IsOwner
-                ? result.IsShared ? "This route is shared with your followers while Walk sharing is ON."
+                ? result.IsShared ? "Followers can see this route while Walk sharing is ON."
                 : result.Points.Count == 0 ? "No GPS route is saved on this device or in the cloud. Open this walk on the phone that recorded it."
-                : result.CanShare ? "Only you can see this route until you share it with followers."
+                : result.CanShare ? "Walk sharing is ON. This route will share automatically after it syncs; keep this phone online."
                 : "Your route is private. Turn Walk sharing ON to share this route."
-                : result.Points.Count == 0 ? "The walker hasn't shared this session's GPS route yet." : "Shared route · Gaps indicate missing GPS recordings.";
+                : result.Points.Count == 0 ? "This walk's route hasn't synced yet. The recording phone shares it automatically while Walk sharing is ON." : "Shared route · Gaps indicate missing GPS recordings.";
             return result;
         }
 

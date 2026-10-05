@@ -154,13 +154,12 @@ internal sealed class FirebasePointsWalletStore : IPointsWalletStore
             if (totalFreeRolls <= old.MilestoneRollsClaimed) throw new InvalidOperationException("No milestone rolls available.");
             
             var claimed = checked(old.MilestoneRollsClaimed + 1);
-            
-            dict.TryGetValue("lastWalkId", out var walkIdObj);
-            string lastWalkId = walkIdObj as string ?? "";
 
-            transaction.Set(walletRef, Fields(old.TotalEarned, old.TotalSpent, lastWalkId, claimed));
+            // Identify the immutable receipt in the wallet update so rules can
+            // require both halves of this claim in the same transaction.
+            transaction.Set(walletRef, Fields(old.TotalEarned, old.TotalSpent, receiptId, claimed));
             transaction.Set(receiptRef, new Dictionary<string, object> {
-                ["claimedAt"] = FieldValue.ServerTimestamp
+                ["milestone"] = claimed, ["claimedAt"] = FieldValue.ServerTimestamp
             });
         }), token);
     }

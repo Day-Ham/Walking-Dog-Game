@@ -14,7 +14,8 @@ public sealed class PointsWalletSnapshot
 
     public PointsWalletSnapshot(long balance, long earned, long spent, long milestoneRollsClaimed = 0, bool reconciling = false)
     {
-        if (balance < 0 || earned < 0 || spent < 0 || earned > Maximum || spent > earned || balance != earned - spent)
+        if (balance < 0 || earned < 0 || spent < 0 || earned > Maximum || spent > earned || balance != earned - spent
+            || milestoneRollsClaimed < 0 || milestoneRollsClaimed > earned / 1000)
             throw new ArgumentException("Invalid points wallet.");
         Balance = balance; TotalEarned = earned; TotalSpent = spent; MilestoneRollsClaimed = milestoneRollsClaimed; IsReconciling = reconciling;
     }
@@ -34,6 +35,8 @@ public sealed class PointsWalletSnapshot
             throw new InvalidOperationException("Invalid points wallet.");
             
         data.TryGetValue("milestoneRollsClaimed", out var m);
+        if (data.ContainsKey("milestoneRollsClaimed") && !(m is long))
+            throw new InvalidOperationException("Invalid milestone count.");
         long milestoneRollsClaimed = m is long mVal ? mVal : 0;
             
         return new PointsWalletSnapshot(balance, earned, spent, milestoneRollsClaimed, reconciling);
