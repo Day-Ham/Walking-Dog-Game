@@ -74,15 +74,15 @@ public sealed class TerritoryTests
     {
         var repository = new LocalTerritoryRepository(directory, "alice");
         var first = Square(); var award = repository.Apply(first);
-        Assert.That(award.newAreaSquareMeters, Is.InRange(20000d, 22000d));
+        Assert.That(award.newAreaSquareMeters, Is.InRange(20000d, 27000d));
         Assert.That(repository.Apply(first), Is.SameAs(award));
         repository = new LocalTerritoryRepository(directory, "alice");
         Assert.That(repository.Apply(first).newAreaSquareMeters, Is.EqualTo(award.newAreaSquareMeters), "A retry preserves the original receipt, without adding tiles.");
-        Assert.That(repository.AreaSquareMeters, Is.InRange(20000d, 22000d));
+        Assert.That(repository.AreaSquareMeters, Is.InRange(20000d, 27000d));
         Assert.That(repository.Apply(Square()).newAreaSquareMeters, Is.Zero);
         var overlapping = Polygon(100, 0, 250, 0, 250, 150, 100, 150, 100, 0);
-        Assert.That(repository.Apply(overlapping).newAreaSquareMeters, Is.InRange(13000d, 15000d));
-        Assert.That(new LocalTerritoryRepository(directory, "alice").AreaSquareMeters, Is.InRange(34000d, 36000d));
+        Assert.That(repository.Apply(overlapping).newAreaSquareMeters, Is.InRange(13000d, 18000d));
+        Assert.That(new LocalTerritoryRepository(directory, "alice").AreaSquareMeters, Is.InRange(34000d, 40000d));
     }
 
     [Test] public void OwnersAreIsolatedAndIdsCannotChangePaths()
@@ -105,8 +105,8 @@ public sealed class TerritoryTests
         File.WriteAllText(path, "truncated");
         service = new TerritoryService(walks); service.Refresh("alice");
         Assert.That(service.Error, Is.Empty);
-        Assert.That(service.AreaSquareMeters, Is.InRange(34000d, 36000d));
-        Assert.That(new LocalTerritoryRepository(Path.Combine(directory, "Territories"), "alice").AreaSquareMeters, Is.InRange(34000d, 36000d));
+        Assert.That(service.AreaSquareMeters, Is.InRange(34000d, 40000d));
+        Assert.That(new LocalTerritoryRepository(Path.Combine(directory, "Territories"), "alice").AreaSquareMeters, Is.InRange(34000d, 40000d));
     }
 
     [Test] public void FailedCommitDoesNotAwardInMemoryAndRetryWorks()
@@ -116,7 +116,7 @@ public sealed class TerritoryTests
         Assert.Catch(() => repository.Apply(Square()));
         Assert.That(repository.AreaSquareMeters, Is.Zero);
         Directory.Delete(repository.FilePath + ".tmp");
-        Assert.That(repository.Apply(Square()).newAreaSquareMeters, Is.InRange(20000d, 22000d));
+        Assert.That(repository.Apply(Square()).newAreaSquareMeters, Is.InRange(20000d, 27000d));
     }
 
     [Test] public void CorruptOrFutureLedgersArePreserved()
@@ -139,11 +139,11 @@ public sealed class TerritoryTests
         Assert.That(service.AreaSquareMeters, Is.Zero);
         var walk = Square(); walks.Save(walk); // Simulates shutdown between completed walk and claim commit.
         service = new TerritoryService(walks); service.Refresh("alice");
-        Assert.That(service.AreaSquareMeters, Is.InRange(20000d, 22000d));
+        Assert.That(service.AreaSquareMeters, Is.InRange(20000d, 27000d));
         Assert.That(service.Summary(walk.id, "alice", false), Does.Contain("m²"));
         var revision = service.Revision; service.Refresh("");
         Assert.That(service.AreaSquareMeters, Is.Zero); Assert.That(service.Revision, Is.Not.EqualTo(revision));
-        service.Refresh("bob"); Assert.That(service.AreaSquareMeters, Is.InRange(20000d, 22000d));
+        service.Refresh("bob"); Assert.That(service.AreaSquareMeters, Is.InRange(20000d, 27000d));
         Assert.That(service.Summary(walk.id, "alice", false), Does.Contain("Sign in"));
     }
 
@@ -192,7 +192,7 @@ public sealed class TerritoryTests
             newTiles = new List<TerritoryCapture.Tile> { new TerritoryCapture.Tile(269360,32800), new TerritoryCapture.Tile(269361,32800) } });
         File.WriteAllText(path, JsonUtility.ToJson(legacy));
         var repository = new LocalTerritoryRepository(directory, "alice", walks.Find);
-        Assert.That(repository.AreaSquareMeters, Is.InRange(20000d, 22000d));
+        Assert.That(repository.AreaSquareMeters, Is.InRange(20000d, 27000d));
         Assert.That(repository.Find(walk.id).message, Does.Contain("m²"));
         Assert.That(File.ReadAllText(path + ".bak"), Does.Contain("\"version\":1"));
         Assert.That(new LocalTerritoryRepository(directory, "alice", walks.Find).AreaSquareMeters, Is.EqualTo(repository.AreaSquareMeters).Within(0.1));
@@ -219,7 +219,7 @@ public sealed class TerritoryTests
         Assert.That(service.Error, Does.Contain("pending"));
         Assert.That(service.AreaSquareMeters, Is.Zero); Assert.That(walks.Find(walk.id), Is.Not.Null);
         File.Delete(Path.Combine(directory, "Territories")); service.Refresh("alice");
-        Assert.That(service.Error, Is.Empty); Assert.That(service.AreaSquareMeters, Is.InRange(20000d, 22000d));
+        Assert.That(service.Error, Is.Empty); Assert.That(service.AreaSquareMeters, Is.InRange(20000d, 27000d));
     }
 
     [Test] public void StoppingWalkCommitsClaimAndRepeatedSavePreservesReceipt()
@@ -239,10 +239,10 @@ public sealed class TerritoryTests
             Set(manager, "sessionDistanceMeters", 600f);
             manager.EndWalkingSession();
             Assert.That(manager.HasUnsavedCompletedWalk, Is.False);
-            Assert.That(manager.Territories.AreaSquareMeters, Is.InRange(20000d, 22000d));
+            Assert.That(manager.Territories.AreaSquareMeters, Is.InRange(20000d, 27000d));
             Assert.That(manager.TerritorySummary, Does.Contain("m²"));
             manager.SaveCurrentWalkingSession();
-            Assert.That(manager.Territories.AreaSquareMeters, Is.InRange(20000d, 22000d));
+            Assert.That(manager.Territories.AreaSquareMeters, Is.InRange(20000d, 27000d));
             Assert.That(manager.LocalWalks.Find(manager.CurrentSessionId).territoryVersion, Is.EqualTo(2));
             manager.ConfigureCloudSync(null);
             Assert.That(manager.Territories.AreaSquareMeters, Is.Zero);

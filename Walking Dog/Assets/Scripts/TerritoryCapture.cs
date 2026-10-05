@@ -72,24 +72,73 @@ public static class TerritoryCapture
             var point = Project(p.latitude, p.longitude);
             if (points.Count == 0 || Length(points[points.Count - 1], point) > 0.01) points.Add(point);
         }
+        if (fullLoop)
+        {
+            if (distance < 50) return Reject(result, "No territory claimed: walk at least 50 m to claim your path.");
+            var tgPoints = new List<TerritoryGeometry.Point>();
+            foreach (var p in points) tgPoints.Add(new TerritoryGeometry.Point(p.x, p.y));
+            var pathPolygons = TerritoryGeometry.BufferLine(tgPoints, 5.0);
+            
+            bool isLoop = false;
+            if (points.Count >= 3 && Distance(samples[0], samples[samples.Count - 1]) <= ClosureMeters && distance >= 200)
+            {
+                double minX = points[0].x, maxX = minX, minY = points[0].y, maxY = minY, area = 0;
+                var origin = points[0];
+                for (int i = 0; i < points.Count; i++)
+                {
+                    var a = points[i]; var b = points[(i + 1) % points.Count];
+                    minX = Math.Min(minX, a.x); maxX = Math.Max(maxX, a.x);
+                    minY = Math.Min(minY, a.y); maxY = Math.Max(maxY, a.y);
+                    area += (a.x - origin.x) * (b.y - origin.y) - (b.x - origin.x) * (a.y - origin.y);
+                }
+                
+                bool tooLarge = (maxX - minX > 5000 || maxY - minY > 5000) || (Math.Abs(area) * 0.5 > 2500000);
+                double scale = Math.Cos(samples[0].latitude * Math.PI / 180);
+                bool largeEnough = Math.Abs(area) * 0.5 * scale * scale >= 2500;
+                
+                bool crosses = false;
+                for (int i = 0; i < points.Count; i++)
+                    for (int j = i + 2; j < points.Count; j++)
+                    {
+                        if (i == 0 && j == points.Count - 1) continue;
+                        if (Intersects(points[i], points[(i + 1) % points.Count], points[j], points[(j + 1) % points.Count]))
+                        { crosses = true; break; }
+                    }
+                    
+                if (!tooLarge && largeEnough && !crosses)
+                {
+                    isLoop = true;
+                    var ring = new TerritoryGeometry.Ring();
+                    foreach (var p in points) ring.points.Add(new TerritoryGeometry.Point(p.x, p.y));
+                    var loopPolygon = new TerritoryGeometry.Polygon { rings = new List<TerritoryGeometry.Ring> { ring } };
+                    pathPolygons = TerritoryGeometry.Union(pathPolygons, new List<TerritoryGeometry.Polygon> { loopPolygon });
+                }
+            }
+            
+            result.polygons.AddRange(pathPolygons);
+            result.message = isLoop ? "Loop and trail completed." : "Trail claimed.";
+            return result;
+        }
+
+        // Legacy V1 Tile-based checks
         if (Distance(samples[0], samples[samples.Count - 1]) > ClosureMeters)
             return Reject(result, $"No tiles claimed: finish within {ClosureMeters:0} m of where you started to close the loop.");
         if (distance < 200) return Reject(result, "No tiles claimed: walk at least 200 m around a loop.");
         if (points.Count > 1 && Length(points[0], points[points.Count - 1]) < 0.01) points.RemoveAt(points.Count - 1);
         if (points.Count < 3) return Reject(result, "No tiles claimed: the route needs to enclose an area.");
 
-        double minX = points[0].x, maxX = minX, minY = points[0].y, maxY = minY, area = 0;
-        var origin = points[0];
+        double minXV1 = points[0].x, maxXV1 = minXV1, minYV1 = points[0].y, maxYV1 = minYV1, areaV1 = 0;
+        var originV1 = points[0];
         for (int i = 0; i < points.Count; i++)
         {
             var a = points[i]; var b = points[(i + 1) % points.Count];
-            minX = Math.Min(minX, a.x); maxX = Math.Max(maxX, a.x);
-            minY = Math.Min(minY, a.y); maxY = Math.Max(maxY, a.y);
-            area += (a.x - origin.x) * (b.y - origin.y) - (b.x - origin.x) * (a.y - origin.y);
+            minXV1 = Math.Min(minXV1, a.x); maxXV1 = Math.Max(maxXV1, a.x);
+            minYV1 = Math.Min(minYV1, a.y); maxYV1 = Math.Max(maxYV1, a.y);
+            areaV1 += (a.x - originV1.x) * (b.y - originV1.y) - (b.x - originV1.x) * (a.y - originV1.y);
         }
-        int left = (int)Math.Floor(minX / TileSize), right = (int)Math.Floor(maxX / TileSize);
-        int bottom = (int)Math.Floor(minY / TileSize), top = (int)Math.Floor(maxY / TileSize);
-        if (maxX - minX > 5000 || maxY - minY > 5000 || (long)(right - left + 1) * (top - bottom + 1) > 10000)
+        int left = (int)Math.Floor(minXV1 / TileSize), right = (int)Math.Floor(maxXV1 / TileSize);
+        int bottom = (int)Math.Floor(minYV1 / TileSize), top = (int)Math.Floor(maxYV1 / TileSize);
+        if (maxXV1 - minXV1 > 5000 || maxYV1 - minYV1 > 5000 || (long)(right - left + 1) * (top - bottom + 1) > 10000)
             return Reject(result, "No tiles claimed: this loop is too large for the first version.");
         // Reject crossing/touching non-adjacent edges, including the short closing edge.
         // Bounding boxes avoid most expensive intersection checks on dense GPS routes.
@@ -100,18 +149,10 @@ public static class TerritoryCapture
                 if (Intersects(points[i], points[(i + 1) % points.Count], points[j], points[(j + 1) % points.Count]))
                     return Reject(result, "No tiles claimed: use a simple loop without crossing or retracing your route.");
             }
-        double scale = Math.Cos(samples[0].latitude * Math.PI / 180);
-        if (Math.Abs(area) * 0.5 * scale * scale < 2500)
+        double scaleV1 = Math.Cos(samples[0].latitude * Math.PI / 180);
+        if (Math.Abs(areaV1) * 0.5 * scaleV1 * scaleV1 < 2500)
             return Reject(result, "No tiles claimed: enclose a larger area (at least 2,500 m²).");
-        if (fullLoop)
-        {
-            if (Math.Abs(area) * 0.5 > 2500000) return Reject(result, "No territory claimed: this loop is too large.");
-            var ring = new TerritoryGeometry.Ring();
-            foreach (var p in points) ring.points.Add(new TerritoryGeometry.Point(p.x, p.y));
-            result.polygons.Add(new TerritoryGeometry.Polygon { rings = new List<TerritoryGeometry.Ring> { ring } });
-            result.message = "Loop completed.";
-            return result;
-        }
+
         for (int x = left; x <= right; x++)
             for (int y = bottom; y <= top; y++)
                 if (Contains(points, new Point((x + 0.5) * TileSize, (y + 0.5) * TileSize)))
