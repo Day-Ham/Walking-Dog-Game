@@ -149,8 +149,7 @@ internal sealed class FirebasePointsWalletStore : IPointsWalletStore
             var dict = wallet.ToDictionary();
             var old = PointsWalletSnapshot.Parse(dict);
             
-            long totalSteps = old.TotalEarned * 10;
-            long totalFreeRolls = totalSteps / 10000;
+            long totalFreeRolls = PointsWalletSnapshot.MilestoneRollsForEarnedPoints(old.TotalEarned);
             if (totalFreeRolls <= old.MilestoneRollsClaimed) throw new InvalidOperationException("No milestone rolls available.");
             
             var claimed = checked(old.MilestoneRollsClaimed + 1);

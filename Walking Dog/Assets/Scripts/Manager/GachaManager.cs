@@ -54,8 +54,7 @@ public class GachaManager : MonoBehaviour
         {
             if (bootstrap != null && bootstrap.Wallet != null && bootstrap.Wallet.Snapshot != null)
             {
-                long totalSteps = bootstrap.Wallet.Snapshot.TotalEarned * 10;
-                long totalFreeRolls = totalSteps / 10000;
+                long totalFreeRolls = PointsWalletSnapshot.MilestoneRollsForEarnedPoints(bootstrap.Wallet.Snapshot.TotalEarned);
                 long claimed = bootstrap.Wallet.Snapshot.MilestoneRollsClaimed;
                 milestoneButton.gameObject.SetActive(totalFreeRolls > claimed);
             }
@@ -156,8 +155,7 @@ public class GachaManager : MonoBehaviour
             return;
         }
         
-        long totalSteps = wallet.Snapshot.TotalEarned * 10;
-        long totalFreeRolls = totalSteps / 10000;
+        long totalFreeRolls = PointsWalletSnapshot.MilestoneRollsForEarnedPoints(wallet.Snapshot.TotalEarned);
         if (totalFreeRolls <= wallet.Snapshot.MilestoneRollsClaimed)
         {
             SetResultText("No milestone rolls available.");

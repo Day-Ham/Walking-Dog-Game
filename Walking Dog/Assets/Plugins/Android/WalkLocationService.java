@@ -26,7 +26,6 @@ public final class WalkLocationService extends Service implements LocationListen
 
   //// modify these according to the minimum
     private static final float MINIMUM_TERRITORY_DISTANCE_METERS = 200f;
-    private static final float TERRITORY_CLOSURE_METERS = 30f;
   
   
     private static final ArrayList<JSONObject> records = new ArrayList<>();
@@ -42,10 +41,11 @@ public final class WalkLocationService extends Service implements LocationListen
     private boolean territoryAlertSent;
     private double territoryStartLatitude, territoryStartLongitude;
     private float territoryDistanceMeters;
+    private float territoryClosureMeters;
     private Location lastTerritoryLocation;
 
     public static String begin(Activity activity, String directory, String id, boolean canClaimTerritory,
-        float startLatitude, float startLongitude, float distanceAlreadyWalked) {
+        float startLatitude, float startLongitude, float distanceAlreadyWalked, float territoryClosureMeters) {
         synchronized (LOCK) {
             try {
                 if (activity.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED)
@@ -62,6 +62,7 @@ public final class WalkLocationService extends Service implements LocationListen
                 intent.putExtra("startLatitude", startLatitude);
                 intent.putExtra("startLongitude", startLongitude);
                 intent.putExtra("distanceAlreadyWalked", distanceAlreadyWalked);
+                intent.putExtra("territoryClosureMeters", territoryClosureMeters);
                 if (Build.VERSION.SDK_INT >= 26) activity.startForegroundService(intent);
                 else activity.startService(intent);
                 return "";
@@ -81,6 +82,7 @@ public final class WalkLocationService extends Service implements LocationListen
         try {
             NotificationManager notifications = (NotificationManager)activity.getSystemService(NOTIFICATION_SERVICE);
             createAlertChannel(notifications);
+            if (!canPostAlerts(notifications)) return false;
             Intent launch = activity.getPackageManager().getLaunchIntentForPackage(activity.getPackageName());
             PendingIntent open = PendingIntent.getActivity(activity, FREE_ROLL_NOTIFICATION, launch,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
@@ -92,6 +94,13 @@ public final class WalkLocationService extends Service implements LocationListen
                 .setAutoCancel(true).setContentIntent(open).build());
             return true;
         } catch (Exception ignored) { return false; }
+    }
+
+    /** Creates the Android alert channel before the first alert is needed. */
+    public static void prepareNotifications(Activity activity) {
+        if (activity == null) return;
+        NotificationManager notifications = (NotificationManager)activity.getSystemService(NOTIFICATION_SERVICE);
+        createAlertChannel(notifications);
     }
 
     public static void finish(String id) {
@@ -176,6 +185,8 @@ public final class WalkLocationService extends Service implements LocationListen
                 territoryStartLatitude = intent.getFloatExtra("startLatitude", 0f);
                 territoryStartLongitude = intent.getFloatExtra("startLongitude", 0f);
                 territoryDistanceMeters = Math.max(0f, intent.getFloatExtra("distanceAlreadyWalked", 0f));
+                // Unity supplies this from TerritoryCapture so the alert always matches the real claim rule.
+                territoryClosureMeters = Math.max(1f, intent.getFloatExtra("territoryClosureMeters", 50f));
                 territoryAlertSent = false;
                 lastTerritoryLocation = null;
                 locations = (LocationManager)getSystemService(LOCATION_SERVICE);
@@ -235,7 +246,7 @@ public final class WalkLocationService extends Service implements LocationListen
         float[] result = new float[1];
         Location.distanceBetween(location.getLatitude(), location.getLongitude(), territoryStartLatitude,
             territoryStartLongitude, result);
-        if (result[0] > TERRITORY_CLOSURE_METERS) return;
+        if (result[0] > territoryClosureMeters) return;
 
         territoryAlertSent = showTerritoryClosureNotification(Math.round(result[0]));
     }
@@ -246,6 +257,7 @@ public final class WalkLocationService extends Service implements LocationListen
             != PackageManager.PERMISSION_GRANTED) return false;
         NotificationManager notifications = (NotificationManager)getSystemService(NOTIFICATION_SERVICE);
         createAlertChannel(notifications);
+        if (!canPostAlerts(notifications)) return false;
         Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
         PendingIntent open = PendingIntent.getActivity(this, TERRITORY_ALERT_NOTIFICATION, launch,
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
@@ -262,6 +274,20 @@ public final class WalkLocationService extends Service implements LocationListen
     private static void createAlertChannel(NotificationManager notifications) {
         if (Build.VERSION.SDK_INT >= 26) notifications.createNotificationChannel(
             new NotificationChannel(ALERT_CHANNEL, "Walk alerts", NotificationManager.IMPORTANCE_DEFAULT));
+    }
+
+    /**
+     * Detects notification settings that Android will silently suppress. The app cannot turn a
+     * player-disabled channel back on, but returning false lets the next GPS/wallet update retry
+     * after the player enables notifications in Android Settings.
+     */
+    private static boolean canPostAlerts(NotificationManager notifications) {
+        if (notifications == null || !notifications.areNotificationsEnabled()) return false;
+        if (Build.VERSION.SDK_INT >= 26) {
+            NotificationChannel channel = notifications.getNotificationChannel(ALERT_CHANNEL);
+            return channel != null && channel.getImportance() != NotificationManager.IMPORTANCE_NONE;
+        }
+        return true;
     }
 
     private void journalFailure() {

@@ -241,6 +241,8 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         Instance = this;
         DontDestroyOnLoad(gameObject);
         syncLifetime = new CancellationTokenSource();
+        // Ask once at startup so local walk alerts have permission before a walk begins.
+        LocalPhoneNotifications.Initialize();
     }
 
     private void OnDestroy()
@@ -269,10 +271,30 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         ActivitySteps.Observe(StepOwner, steps, walkingSessionActive && sessionStepAccountingVersion == 0);
         stepsCounted = Mathf.Max(0, steps);
 
+        // Trigger the local alert from the phone's saved step total. GPS and a Firebase refresh
+        // are not needed; Firebase still validates the free pull when the player claims it.
+        NotifyLocalMilestoneFromSteps();
+
         if (walkingSessionActive)
         {
             sessionEndSteps = stepsCounted;
         }
+    }
+
+    /// <summary>
+    /// Sends a local notification once when the phone reaches a milestone. A new milestone always
+    /// adds at least one roll, so this can alert promptly before the wallet has finished syncing.
+    /// </summary>
+    private void NotifyLocalMilestoneFromSteps()
+    {
+        var owner = StepOwner;
+        if (string.IsNullOrEmpty(owner)) return;
+        var totalFreeRolls = PointsWalletSnapshot.MilestoneRollsForSteps(TotalTrackedSteps);
+        if (totalFreeRolls <= 0) return;
+
+        var claimed = GetComponent<FirebaseWalkBootstrap>()?.Wallet?.Snapshot?.MilestoneRollsClaimed ?? 0;
+        LocalPhoneNotifications.NotifyNewMilestone(owner, totalFreeRolls,
+            Math.Max(1, totalFreeRolls - claimed));
     }
 
     public int GetSteps()
@@ -647,7 +669,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         var canClaimTerritory = sessionTerritoryVersion == TerritoryCapture.Version && HasRouteStart;
         var start = canClaimTerritory ? routePoints[0] : Vector2.zero;
         backgroundTracking.Start(currentSessionId, LocalWalks.DirectoryPath, canClaimTerritory,
-            start.x, start.y, sessionDistanceMeters);
+            start.x, start.y, sessionDistanceMeters, (float)TerritoryCapture.ClosureMeters);
     }
 
     internal long NativeSequence => nativeSequence;

@@ -6,6 +6,9 @@ using System.Threading.Tasks;
 public sealed class PointsWalletSnapshot
 {
     public const long Maximum = 9007199254740991;
+    // Change this one value to tune free rolls. Set it to 10 only for a notification test,
+    // then restore 10000 before shipping.
+    public const long StepsPerMilestoneRoll = 10000;
     public long Balance { get; }
     public long TotalEarned { get; }
     public long TotalSpent { get; }
@@ -15,7 +18,7 @@ public sealed class PointsWalletSnapshot
     public PointsWalletSnapshot(long balance, long earned, long spent, long milestoneRollsClaimed = 0, bool reconciling = false)
     {
         if (balance < 0 || earned < 0 || spent < 0 || earned > Maximum || spent > earned || balance != earned - spent
-            || milestoneRollsClaimed < 0 || milestoneRollsClaimed > earned / 1000)
+            || milestoneRollsClaimed < 0 || milestoneRollsClaimed > MilestoneRollsForEarnedPoints(earned))
             throw new ArgumentException("Invalid points wallet.");
         Balance = balance; TotalEarned = earned; TotalSpent = spent; MilestoneRollsClaimed = milestoneRollsClaimed; IsReconciling = reconciling;
     }
@@ -24,6 +27,20 @@ public sealed class PointsWalletSnapshot
     {
         if (steps < 0 || steps > int.MaxValue) throw new ArgumentOutOfRangeException(nameof(steps));
         return steps / 10;
+    }
+
+    /// <summary>Calculates the number of free rolls earned from physical steps.</summary>
+    public static long MilestoneRollsForSteps(long steps)
+    {
+        if (steps < 0) throw new ArgumentOutOfRangeException(nameof(steps));
+        return steps / StepsPerMilestoneRoll;
+    }
+
+    /// <summary>Calculates free rolls from wallet points, where one point represents ten steps.</summary>
+    public static long MilestoneRollsForEarnedPoints(long earned)
+    {
+        if (earned < 0) throw new ArgumentOutOfRangeException(nameof(earned));
+        return checked(earned * 10) / StepsPerMilestoneRoll;
     }
 
     internal static PointsWalletSnapshot Parse(IDictionary<string, object> data, bool reconciling = false)
@@ -162,8 +179,7 @@ public sealed class PointsWalletSession : IDisposable
         if (string.IsNullOrEmpty(Owner)) throw new InvalidOperationException("Not authenticated");
         if (Snapshot == null) throw new InvalidOperationException("Wallet not ready");
         
-        long totalSteps = Snapshot.TotalEarned * 10;
-        long totalFreeRolls = totalSteps / 10000;
+        long totalFreeRolls = PointsWalletSnapshot.MilestoneRollsForEarnedPoints(Snapshot.TotalEarned);
         if (totalFreeRolls <= Snapshot.MilestoneRollsClaimed) throw new InvalidOperationException("No milestone rolls available.");
 
         using (var tokenSource = new CancellationTokenSource(timeout))
