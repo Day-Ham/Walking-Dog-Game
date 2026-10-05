@@ -6,11 +6,13 @@ public static class TerritoryCapture
 {
     public const int Version = 2;
     public const double TileSize = 50;
-    public const double Radius = 6378137;
+    public const double Radius = 6378137; // earth radius
     // A loop may close when its final accepted GPS sample is this close to its first one.
     // The live walk HUD uses this same value so it never advertises a different range.
-    public const double ClosureMeters = 50;
+    public const double ClosureMeters = 30; // minimum distance to close the loop
     public const int MaxTiles = 1000;
+
+    // to be added  radius where the line has a capture radius for territory idk dont add yet until we figure out 
 
     [Serializable]
     public struct Tile : IEquatable<Tile>

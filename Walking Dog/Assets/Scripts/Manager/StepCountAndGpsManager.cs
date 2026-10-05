@@ -642,7 +642,12 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     private void StartBackgroundTracking()
     {
         backgroundTracking = backgroundTracking ?? new AndroidWalkTracking(this);
-        backgroundTracking.Start(currentSessionId, LocalWalks.DirectoryPath);
+        // Give Android the first accepted route point and distance already walked. This lets
+        // the local territory notification work even while Unity is in the background.
+        var canClaimTerritory = sessionTerritoryVersion == TerritoryCapture.Version && HasRouteStart;
+        var start = canClaimTerritory ? routePoints[0] : Vector2.zero;
+        backgroundTracking.Start(currentSessionId, LocalWalks.DirectoryPath, canClaimTerritory,
+            start.x, start.y, sessionDistanceMeters);
     }
 
     internal long NativeSequence => nativeSequence;

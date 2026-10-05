@@ -25,6 +25,11 @@ public class UIMilestoneNotifier : MonoBehaviour
             long claimed = bootstrap.Wallet.Snapshot.MilestoneRollsClaimed;
             long availableRolls = totalFreeRolls - claimed;
 
+            // This is a phone notification created on this device, not a Firebase push.
+            // The helper remembers each account's last alerted milestone, so Update() cannot
+            // create the same notification every frame.
+            LocalPhoneNotifications.NotifyNewMilestone(bootstrap.Wallet.Owner, totalFreeRolls, availableRolls);
+
             bool hasRolls = availableRolls > 0;
 
             if (badgeGraphic != null)

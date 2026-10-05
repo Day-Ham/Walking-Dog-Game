@@ -18,7 +18,8 @@ internal sealed class AndroidWalkTracking
 #endif
     internal AndroidWalkTracking(StepCountAndGpsManager manager) { this.manager = manager; }
 
-    public void Start(string id, string walkDirectory)
+    public void Start(string id, string walkDirectory, bool canClaimTerritory, float startLatitude,
+        float startLongitude, float distanceAlreadyWalked)
     {
         walkId = id;
         directory = Path.Combine(walkDirectory, "Background");
@@ -31,7 +32,10 @@ internal sealed class AndroidWalkTracking
             using (var activity = unity.GetStatic<AndroidJavaObject>("currentActivity"))
             using (var service = new AndroidJavaClass(ServiceClass))
             {
-                Error = service.CallStatic<string>("begin", activity, directory, walkId) ?? "";
+                // The native service needs these values because Unity may be paused while the
+                // phone is locked. It uses them only to show a local "return to start" alert.
+                Error = service.CallStatic<string>("begin", activity, directory, walkId,
+                    canClaimTerritory, startLatitude, startLongitude, distanceAlreadyWalked) ?? "";
                 requested = IsRunning = string.IsNullOrEmpty(Error);
             }
             // Android 13+ lets the player choose whether the ongoing notification

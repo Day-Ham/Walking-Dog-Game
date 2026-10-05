@@ -17,7 +17,18 @@ import java.util.ArrayList;
 public final class WalkLocationService extends Service implements LocationListener {
     private static final Object LOCK = new Object();
     private static final String CHANNEL = "walking_dog_walk";
-    private static final int NOTIFICATION = 4102;
+    
+    private static final String ALERT_CHANNEL = "walking_dog_alerts"; // notification alert
+    
+    private static final int NOTIFICATION = 4102; // code for notification default
+    private static final int TERRITORY_ALERT_NOTIFICATION = 4103; // notification code for territory
+    private static final int FREE_ROLL_NOTIFICATION = 4104; // notification code for free roll
+
+  //// modify these according to the minimum
+    private static final float MINIMUM_TERRITORY_DISTANCE_METERS = 200f;
+    private static final float TERRITORY_CLOSURE_METERS = 30f;
+  
+  
     private static final ArrayList<JSONObject> records = new ArrayList<>();
     private static WalkLocationService instance;
     private static String activeId = "", loadedPath = "", error = "";
@@ -26,7 +37,15 @@ public final class WalkLocationService extends Service implements LocationListen
     private LocationManager locations;
     private FileOutputStream journal;
 
-    public static String begin(Activity activity, String directory, String id) {
+    // Territory parameters for notification in local android 
+    private boolean territoryAlertEnabled;
+    private boolean territoryAlertSent;
+    private double territoryStartLatitude, territoryStartLongitude;
+    private float territoryDistanceMeters;
+    private Location lastTerritoryLocation;
+
+    public static String begin(Activity activity, String directory, String id, boolean canClaimTerritory,
+        float startLatitude, float startLongitude, float distanceAlreadyWalked) {
         synchronized (LOCK) {
             try {
                 if (activity.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED)
@@ -39,11 +58,40 @@ public final class WalkLocationService extends Service implements LocationListen
                 Intent intent = new Intent(activity, WalkLocationService.class);
                 intent.putExtra("directory", directory);
                 intent.putExtra("id", id);
+                intent.putExtra("canClaimTerritory", canClaimTerritory);
+                intent.putExtra("startLatitude", startLatitude);
+                intent.putExtra("startLongitude", startLongitude);
+                intent.putExtra("distanceAlreadyWalked", distanceAlreadyWalked);
                 if (Build.VERSION.SDK_INT >= 26) activity.startForegroundService(intent);
                 else activity.startService(intent);
                 return "";
             } catch (Exception e) { starting = false; error = "Could not start screen-off tracking"; return error; }
         }
+    }
+
+    /**
+     * Shows a free-roll notification created entirely on this phone.
+     * Unity calls this after its wallet sees a newly reached step milestone. Returning false
+     * tells Unity not to record the milestone as alerted when Android permission is missing.
+     */
+    public static boolean notifyFreeRoll(Activity activity, long availableRolls) {
+        if (activity == null || availableRolls <= 0) return false;
+        if (Build.VERSION.SDK_INT >= 33 && activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED) return false;
+        try {
+            NotificationManager notifications = (NotificationManager)activity.getSystemService(NOTIFICATION_SERVICE);
+            createAlertChannel(notifications);
+            Intent launch = activity.getPackageManager().getLaunchIntentForPackage(activity.getPackageName());
+            PendingIntent open = PendingIntent.getActivity(activity, FREE_ROLL_NOTIFICATION, launch,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            String rollText = availableRolls == 1 ? "1 free roll is ready." : availableRolls + " free rolls are ready.";
+            Notification.Builder builder = Build.VERSION.SDK_INT >= 26
+                ? new Notification.Builder(activity, ALERT_CHANNEL) : new Notification.Builder(activity);
+            notifications.notify(FREE_ROLL_NOTIFICATION, builder.setContentTitle("Free roll available!")
+                .setContentText(rollText).setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setAutoCancel(true).setContentIntent(open).build());
+            return true;
+        } catch (Exception ignored) { return false; }
     }
 
     public static void finish(String id) {
@@ -122,6 +170,14 @@ public final class WalkLocationService extends Service implements LocationListen
                 if (!folder.exists() && !folder.mkdirs()) throw new IOException("Cannot create journal");
                 journal = new FileOutputStream(loadedPath, true);
                 instance = this; accepting = true; starting = false;
+               
+               // territory function notif
+                territoryAlertEnabled = intent.getBooleanExtra("canClaimTerritory", false);
+                territoryStartLatitude = intent.getFloatExtra("startLatitude", 0f);
+                territoryStartLongitude = intent.getFloatExtra("startLongitude", 0f);
+                territoryDistanceMeters = Math.max(0f, intent.getFloatExtra("distanceAlreadyWalked", 0f));
+                territoryAlertSent = false;
+                lastTerritoryLocation = null;
                 locations = (LocationManager)getSystemService(LOCATION_SERVICE);
                 // Zero minimum distance keeps fresh timestamps even while the dog stops.
                 locations.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1500, 0, this, Looper.getMainLooper());
@@ -146,6 +202,7 @@ public final class WalkLocationService extends Service implements LocationListen
                     .put("longitude", location.getLongitude()).put("accuracy", location.hasAccuracy() ? location.getAccuracy() : 0)
                     .put("timestamp", observed - age).put("observedAt", observed);
                 append(sample);
+                checkTerritoryClosure(location);
             } catch (Exception e) { journalFailure(); }
         }
     }
@@ -157,6 +214,54 @@ public final class WalkLocationService extends Service implements LocationListen
         journal.write(bytes);
         journal.getFD().sync();
         records.add(sample); sequence++;
+    }
+
+    /**
+     * Watches the active walk locally while Unity may be paused. Once the player has travelled
+     * at least 200 m and enters the 50 m range around the route start, it posts one notification.
+     * This is only a helpful cue; Unity still performs the final area and route validation.
+     */
+    private void checkTerritoryClosure(Location location) {
+        if (!territoryAlertEnabled || territoryAlertSent || !location.hasAccuracy() || location.getAccuracy() > 10f) return;
+        if (lastTerritoryLocation != null) {
+            float legMeters = lastTerritoryLocation.distanceTo(location);
+            // Ignore an implausible GPS jump so it cannot falsely qualify the 200 m requirement.
+            long elapsedMilliseconds = Math.max(1L, location.getElapsedRealtimeNanos() - lastTerritoryLocation.getElapsedRealtimeNanos()) / 1000000L;
+            if (legMeters <= 6f * (elapsedMilliseconds / 1000f) + 5f) territoryDistanceMeters += legMeters;
+        }
+        lastTerritoryLocation = new Location(location);
+        if (territoryDistanceMeters < MINIMUM_TERRITORY_DISTANCE_METERS) return;
+
+        float[] result = new float[1];
+        Location.distanceBetween(location.getLatitude(), location.getLongitude(), territoryStartLatitude,
+            territoryStartLongitude, result);
+        if (result[0] > TERRITORY_CLOSURE_METERS) return;
+
+        territoryAlertSent = showTerritoryClosureNotification(Math.round(result[0]));
+    }
+
+    /** Shows the one-time local alert used when an active walk returns close enough to its start. */
+    private boolean showTerritoryClosureNotification(int distanceToStartMeters) {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED) return false;
+        NotificationManager notifications = (NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+        createAlertChannel(notifications);
+        Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
+        PendingIntent open = PendingIntent.getActivity(this, TERRITORY_ALERT_NOTIFICATION, launch,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        String text = "You are " + distanceToStartMeters + " m from your start. End the walk to validate your territory.";
+        Notification.Builder builder = Build.VERSION.SDK_INT >= 26
+            ? new Notification.Builder(this, ALERT_CHANNEL) : new Notification.Builder(this);
+        notifications.notify(TERRITORY_ALERT_NOTIFICATION, builder.setContentTitle("Territory closing range reached")
+            .setContentText(text).setSmallIcon(android.R.drawable.ic_menu_mylocation)
+            .setAutoCancel(true).setContentIntent(open).build());
+        return true;
+    }
+
+    /** Creates the visible alert channel once; the existing low-priority channel remains for tracking. */
+    private static void createAlertChannel(NotificationManager notifications) {
+        if (Build.VERSION.SDK_INT >= 26) notifications.createNotificationChannel(
+            new NotificationChannel(ALERT_CHANNEL, "Walk alerts", NotificationManager.IMPORTANCE_DEFAULT));
     }
 
     private void journalFailure() {
