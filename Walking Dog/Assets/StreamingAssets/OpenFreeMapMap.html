@@ -276,6 +276,10 @@
 
       // Displays the current map state based on whether the vector map or raster fallback is active.
       function setReadyStatus() {
+        if (state.historicalRouteKey && (isRasterFallbackActive || hasVisibleVectorFeatures)) {
+          setStatus("Saved walk route" + (isRasterFallbackActive ? " (raster map)" : ""));
+          return;
+        }
         if (isRasterFallbackActive) {
           setStatus(state.hasLocation ? "GPS tracking (raster map)" : "Preview location (raster map)");
           return;
@@ -313,6 +317,44 @@
         var rawZoom = Number(state.zoom);
         var roundedZoom = Number.isFinite(rawZoom) ? Math.round(rawZoom) : 17;
         return clamp(roundedZoom, 1, 19);
+      }
+
+      // Fit saved sessions independently of the live GPS/follow camera.
+      function historicalRouteCamera(currentState, width, height) {
+        if (!currentState.historicalRouteKey) return null;
+        var points = (currentState.routePoints || []).filter(function (p) {
+          return p && Number.isFinite(p.lng) && Number.isFinite(p.lat)
+            && Math.abs(p.lng) <= 180 && Math.abs(p.lat) <= 85;
+        });
+        if (!points.length) return null;
+        var west = Infinity, east = -Infinity, south = Infinity, north = -Infinity;
+        points.forEach(function (p) {
+          west = Math.min(west, p.lng); east = Math.max(east, p.lng);
+          south = Math.min(south, p.lat); north = Math.max(north, p.lat);
+        });
+        var topLeft = lonLatToWorldPixels(west, north, 0);
+        var bottomRight = lonLatToWorldPixels(east, south, 0);
+        var padding = Math.min(40, width / 4, height / 4);
+        var zoom = Math.min(17,
+          Math.log2(Math.max(1, width - 2 * padding) / Math.max(0.000001, bottomRight.x - topLeft.x)),
+          Math.log2(Math.max(1, height - 2 * padding) / Math.max(0.000001, bottomRight.y - topLeft.y)));
+        var midY = (topLeft.y + bottomRight.y) / (2 * rasterTileSize);
+        var latitude = Math.atan(Math.sinh(Math.PI * (1 - 2 * midY))) * 180 / Math.PI;
+        return { center: [(west + east) / 2, latitude], zoom: clamp(Math.floor(zoom), 0, 17),
+          bounds: [[west, south], [east, north]], padding: padding };
+      }
+
+      var lastHistoricalFitKey = "";
+      function fitHistoricalRoute() {
+        var container = map.getContainer();
+        var width = container.clientWidth || window.innerWidth || 1;
+        var height = container.clientHeight || window.innerHeight || 1;
+        var camera = historicalRouteCamera(state, width, height);
+        if (!camera) { lastHistoricalFitKey = ""; return; }
+        var key = state.historicalRouteKey + ":" + width + ":" + height;
+        if (key === lastHistoricalFitKey) return; // Keep the user's pan/zoom between syncs.
+        map.fitBounds(camera.bounds, { padding: camera.padding, maxZoom: 17, duration: 0 });
+        lastHistoricalFitKey = key;
       }
 
       // Builds the URL for a specific raster tile based on zoom and tile coordinates.
@@ -396,9 +438,22 @@
         }
 
         var zoom = getRasterZoom();
+        var savedCamera = historicalRouteCamera(state,
+          rasterElement.clientWidth || window.innerWidth || 1,
+          rasterElement.clientHeight || window.innerHeight || 1);
+        if (savedCamera) { center = savedCamera.center; zoom = savedCamera.zoom; }
         var layout = getRasterLayout(center, zoom);
         if (!layout) {
           return;
+        }
+
+        // The saved-route camera is at the bounds center; its marker stays at
+        // the recorded start, including sessions containing just one GPS point.
+        var locationMarker = document.querySelector('.raster-current-location-marker');
+        if (locationMarker) {
+          var anchor = lonLatToWorldPixels(Number(state.lng), Number(state.lat), zoom);
+          locationMarker.style.left = (anchor.x - layout.topLeftX) + "px";
+          locationMarker.style.top = (anchor.y - layout.topLeftY) + "px";
         }
 
         var key = [
@@ -1006,6 +1061,8 @@
         applyGestureState(state);
         ensureTerritoryLayer();
         ensureRouteLayer();
+
+        fitHistoricalRoute();
 
         var center = toCenter(state);
         if (center) {

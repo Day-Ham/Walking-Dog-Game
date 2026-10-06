@@ -265,6 +265,13 @@ public sealed class WalkHistoryUI : MonoBehaviour
         }
         
         mapPanel.SetActive(true);
+        // The native WebView is asynchronous. Re-sync after the panel has a
+        // valid layout so reopening a walk cannot retain the previous hidden
+        // view state.
+        if (openFreeMap != null && openFreeMap.enabled)
+        {
+            openFreeMap.ForceSync(); // Immediately redraw the selected walk's route.
+        }
     }
 
     private void OnDisable()

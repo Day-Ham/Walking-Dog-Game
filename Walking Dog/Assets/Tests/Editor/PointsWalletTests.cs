@@ -14,6 +14,7 @@ public sealed class PointsWalletTests
         public void Reset() { Resets++; }
         public Task<PointsWalletSnapshot> LoadAsync(string owner, CancellationToken token) => Read(owner, token);
         public Task SpendAsync(string owner, long amount, string receiptId, CancellationToken token) => Task.CompletedTask;
+        public Task ClaimMilestoneRollAsync(string owner, string receiptId, CancellationToken token) => Task.CompletedTask;
     }
 
     [TestCase(0, 0)] [TestCase(9, 0)] [TestCase(10, 1)] [TestCase(129, 12)] [TestCase(int.MaxValue, 214748364)]
@@ -26,8 +27,24 @@ public sealed class PointsWalletTests
         Assert.Throws<ArgumentException>(() => new PointsWalletSnapshot(10, 20, 0));
         Assert.Throws<ArgumentException>(() => new PointsWalletSnapshot(0, -1, -1));
         Assert.Throws<InvalidOperationException>(() => PointsWalletSnapshot.Parse(new Dictionary<string, object> {
-            ["schemaVersion"] = 1L, ["balance"] = 12.0, ["totalEarned"] = 12L, ["totalSpent"] = 0L
+            ["schemaVersion"] = 1L, ["balance"] = true, ["totalEarned"] = 12L, ["totalSpent"] = 0L
         }));
+    }
+
+    [Test] public void MilestoneCountsAllowLegacyWalletsAndRejectMalformedOrUnearnedClaims()
+    {
+        var data = new Dictionary<string, object> {
+            ["schemaVersion"] = 1L, ["balance"] = 2000L, ["totalEarned"] = 2000L, ["totalSpent"] = 0L
+        };
+        Assert.That(PointsWalletSnapshot.Parse(data).MilestoneRollsClaimed, Is.Zero);
+        data["milestoneRollsClaimed"] = 2L;
+        Assert.That(PointsWalletSnapshot.Parse(data).MilestoneRollsClaimed, Is.EqualTo(2));
+        data["milestoneRollsClaimed"] = 3L;
+        Assert.Throws<ArgumentException>(() => PointsWalletSnapshot.Parse(data));
+        data["milestoneRollsClaimed"] = -1L;
+        Assert.Throws<ArgumentException>(() => PointsWalletSnapshot.Parse(data));
+        data["milestoneRollsClaimed"] = 1.0;
+        Assert.Throws<InvalidOperationException>(() => PointsWalletSnapshot.Parse(data));
     }
 
     [Test] public async Task LoadsSavedBalanceAndKeepsItOnOfflineFailure()
@@ -105,7 +122,7 @@ public sealed class PointsWalletTests
 
     [Test] public async Task HistoryReconciliationAndLocalUploadsRemainVisible()
     {
-        var store = new Store { Read = (_, __) => Task.FromResult(new PointsWalletSnapshot(12, 12, 0, true)) };
+        var store = new Store { Read = (_, __) => Task.FromResult(new PointsWalletSnapshot(12, 12, 0, 0, true)) };
         using (var session = new PointsWalletSession(store))
         {
             await session.RefreshAsync();

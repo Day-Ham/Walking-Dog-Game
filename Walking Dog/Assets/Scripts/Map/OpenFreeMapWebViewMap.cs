@@ -55,6 +55,10 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
     private bool paused;
     private bool developmentBuild;
     private float nextCreateAttempt;
+    // Native WebView calls are posted to Android's UI thread.  A panel can be
+    // closed and reopened before an older hide call runs, so tag each request
+    // and ignore any stale visibility operation.
+    private int webViewVisibilityRevision;
 
     public bool IsMapVisible => isActiveAndEnabled && !paused && visibilityBlockers.Count == 0;
 
@@ -71,6 +75,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
     {
         visibilityBlockers.Remove(owner);
         viewWanted = IsMapVisible;
+        SetWebViewVisible(viewWanted); // Show the native map again when no screen is covering it.
         ForceSync();
     }
 
@@ -111,6 +116,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         UpdateTerritoryClaimText();
         SetStatus("Starting OpenFreeMap...");
         viewWanted = IsMapVisible;
+        SetWebViewVisible(viewWanted); // Restore the native map when this component becomes active.
     }
 
     private void Update()
@@ -487,11 +493,17 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
 
     private void SetWebViewVisible(bool isVisible)
     {
-        RunOnAndroidUiThread(() => SetWebViewVisibleOnUiThread(isVisible));
+        var revision = ++webViewVisibilityRevision; // Give this show/hide request a newer version number.
+        RunOnAndroidUiThread(() => SetWebViewVisibleOnUiThread(isVisible, revision));
     }
 
-    private void SetWebViewVisibleOnUiThread(bool isVisible)
+    private void SetWebViewVisibleOnUiThread(bool isVisible, int revision)
     {
+        if (revision != webViewVisibilityRevision) // Ignore an older request after the map has reopened.
+        {
+            return;
+        }
+
         isVisible = isVisible && viewWanted && !destroyed;
         if (webView == null)
         {
@@ -568,6 +580,8 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
     public IReadOnlyList<Vector2> HistoricalRoutePoints { get; set; }
     public IReadOnlyList<StepCountAndGpsManager.WalkRoutePoint> HistoricalRouteSamples { get; set; }
     public bool ShowHistoricalRoute { get; set; }
+    public bool ShowHistoricalTerritories { get; set; } = true;
+    public string HistoricalRouteKey { get; set; } = "";
 
     private OpenFreeMapState BuildMapState()
     {
@@ -594,13 +608,21 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
                 markerColor = colorHex,
                 markerIconDataUrl = markerIconDataUrl
             };
+            historyState.historicalRouteKey = HistoricalRouteKey;
 
             if (hasPoints)
             {
                 if (HistoricalRouteSamples != null) AddRouteSamples(HistoricalRouteSamples, historyState.routePoints);
                 else AddRoutePoints(HistoricalRoutePoints, historyState.routePoints);
             }
-            AddTerritoryState(historyState);
+            if (ShowHistoricalTerritories) AddTerritoryState(historyState);
+            else
+            {
+                historyState.territoryPolygons = new List<TerritoryGeometry.Polygon>();
+                historyState.territoryRevision = "social-route";
+                historyState.territoryMessage = "Shared walk route";
+                historyState.markerIconDataUrl = "";
+            }
             return historyState;
         }
 
@@ -813,6 +835,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         public string territoryMessage;
         public string markerColor; // color of marker
         public string markerIconDataUrl; // marker image
+        public string historicalRouteKey;
     }
 
     [Serializable]

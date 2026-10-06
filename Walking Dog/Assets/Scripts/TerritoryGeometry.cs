@@ -16,6 +16,30 @@ public static class TerritoryGeometry
 
     public static List<Polygon> Union(List<Polygon> a, List<Polygon> b) => Clip(a, b, ClipType.Union);
     public static List<Polygon> Difference(List<Polygon> a, List<Polygon> b) => Clip(a, b, ClipType.Difference);
+    
+    public static List<Polygon> BufferLine(List<Point> linePoints, double radiusMeters)
+    {
+        var path = new Path64();
+        foreach (var p in linePoints) path.Add(new Point64((long)Math.Round(p.x * 100), (long)Math.Round(p.y * 100)));
+        var paths = new Paths64 { path };
+        
+        var offsetter = new ClipperOffset();
+        offsetter.AddPaths(paths, JoinType.Round, EndType.Round);
+        
+        var solution = new Paths64();
+        offsetter.Execute(radiusMeters * 100, solution); // scale radius by 100 to match coordinate multiplier
+        
+        // Pass through an engine to parse holes into a tree structure
+        var engine = new Clipper64(); 
+        engine.AddSubject(solution);
+        var tree = new PolyTree64();
+        engine.Execute(ClipType.Union, FillRule.NonZero, tree);
+        
+        var polygons = new List<Polygon>();
+        AddChildren(tree, polygons);
+        return polygons;
+    }
+
     private static List<Polygon> Clip(List<Polygon> a, List<Polygon> b, ClipType operation)
     {
         var engine = new Clipper64(); engine.AddSubject(Paths(a)); engine.AddClip(Paths(b));

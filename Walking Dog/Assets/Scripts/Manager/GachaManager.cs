@@ -13,6 +13,8 @@ public class GachaManager : MonoBehaviour
     public TMP_Text resultText;
     public TMP_Text currentPointsText;
 
+    public Button milestoneButton;
+
     [Header("Gacha catalog")]
     [Tooltip("Add every GachaItem asset here. Items are selected from this catalog.")]
     public GachaItem[] itemCatalog;
@@ -29,12 +31,16 @@ public class GachaManager : MonoBehaviour
     {
         if (gachaButton != null)
             gachaButton.onClick.AddListener(OnGachaButtonClicked);
+        if (milestoneButton != null)
+            milestoneButton.onClick.AddListener(OnMilestoneButtonClicked);
     }
 
     private void OnDestroy()
     {
         if (gachaButton != null)
             gachaButton.onClick.RemoveListener(OnGachaButtonClicked);
+        if (milestoneButton != null)
+            milestoneButton.onClick.RemoveListener(OnMilestoneButtonClicked);
     }
 
     private void Update()
@@ -43,6 +49,20 @@ public class GachaManager : MonoBehaviour
         var bootstrap = manager == null ? null : manager.GetComponent<FirebaseWalkBootstrap>();
         if (currentPointsText != null && bootstrap != null && bootstrap.Wallet != null)
             currentPointsText.text = "Points: " + bootstrap.Wallet.DisplayText;
+
+        if (milestoneButton != null)
+        {
+            if (bootstrap != null && bootstrap.Wallet != null && bootstrap.Wallet.Snapshot != null)
+            {
+                long totalFreeRolls = PointsWalletSnapshot.MilestoneRollsForEarnedPoints(bootstrap.Wallet.Snapshot.TotalEarned);
+                long claimed = bootstrap.Wallet.Snapshot.MilestoneRollsClaimed;
+                milestoneButton.gameObject.SetActive(totalFreeRolls > claimed);
+            }
+            else
+            {
+                milestoneButton.gameObject.SetActive(false);
+            }
+        }
     }
 
     public async void OnGachaButtonClicked()
@@ -81,11 +101,10 @@ public class GachaManager : MonoBehaviour
         isPulling = true;
         SetResultText("Pulling...");
         if (gachaButton != null) gachaButton.interactable = false;
+        if (milestoneButton != null) milestoneButton.interactable = false;
 
         try
         {
-            // Points are spent before the item is written. Move both operations
-            // into a Cloud Function later if you need fully atomic server-side pulls.
             await wallet.SpendPointsAsync(pullCost, Guid.NewGuid().ToString("N"));
             await FirebaseLeaderboardWriter.SynchronizePointsBalanceAsync(FirebaseFirestore.DefaultInstance, wallet.Owner);
             await GrantRolledItemAsync(wallet.Owner, item);
@@ -99,6 +118,70 @@ public class GachaManager : MonoBehaviour
         {
             isPulling = false;
             if (gachaButton != null) gachaButton.interactable = true;
+            if (milestoneButton != null) milestoneButton.interactable = true;
+        }
+    }
+
+    public async void OnMilestoneButtonClicked()
+    {
+        if (isPulling) return;
+
+        var manager = StepCountAndGpsManager.Instance;
+        var bootstrap = manager == null ? null : manager.GetComponent<FirebaseWalkBootstrap>();
+        if (bootstrap == null || !bootstrap.IsReady || bootstrap.Wallet == null)
+        {
+            SetResultText("Error: Wallet not ready.");
+            return;
+        }
+
+        var wallet = bootstrap.Wallet;
+        wallet.SynchronizeAccount();
+        if (string.IsNullOrEmpty(wallet.Owner))
+        {
+            SetResultText("Please sign in first.");
+            return;
+        }
+
+        var item = RollItem();
+        if (item == null)
+        {
+            SetResultText("No valid gacha items are configured.");
+            return;
+        }
+
+        if (wallet.Snapshot == null)
+        {
+            SetResultText("Wallet snapshot not loaded.");
+            return;
+        }
+        
+        long totalFreeRolls = PointsWalletSnapshot.MilestoneRollsForEarnedPoints(wallet.Snapshot.TotalEarned);
+        if (totalFreeRolls <= wallet.Snapshot.MilestoneRollsClaimed)
+        {
+            SetResultText("No milestone rolls available.");
+            return;
+        }
+
+        isPulling = true;
+        SetResultText("Pulling free milestone roll...");
+        if (gachaButton != null) gachaButton.interactable = false;
+        if (milestoneButton != null) milestoneButton.interactable = false;
+
+        try
+        {
+            await wallet.ClaimMilestoneRollAsync(Guid.NewGuid().ToString("N"));
+            await GrantRolledItemAsync(wallet.Owner, item);
+        }
+        catch (Exception ex)
+        {
+            SetResultText("Milestone pull failed: " + ex.Message);
+            Debug.LogError("Milestone Pull Error: " + ex);
+        }
+        finally
+        {
+            isPulling = false;
+            if (gachaButton != null) gachaButton.interactable = true;
+            if (milestoneButton != null) milestoneButton.interactable = true;
         }
     }
 

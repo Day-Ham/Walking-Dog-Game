@@ -6,16 +6,25 @@ using System.Threading.Tasks;
 public sealed class PointsWalletSnapshot
 {
     public const long Maximum = 9007199254740991;
+    // Change this one value to tune free rolls. Set it to 10 only for a notification test,
+    // then restore 10000 before shipping.
+    public const long StepsPerMilestoneRoll = 10000;
     public long Balance { get; }
     public long TotalEarned { get; }
     public long TotalSpent { get; }
+    public long MilestoneRollsClaimed { get; }
     public bool IsReconciling { get; }
 
-    public PointsWalletSnapshot(long balance, long earned, long spent, bool reconciling = false)
+    public PointsWalletSnapshot(long balance, long earned, long spent, long milestoneRollsClaimed = 0, bool reconciling = false)
     {
         if (balance < 0 || earned < 0 || spent < 0 || earned > Maximum || spent > earned || balance != earned - spent)
             throw new ArgumentException("Invalid points wallet.");
-        Balance = balance; TotalEarned = earned; TotalSpent = spent; IsReconciling = reconciling;
+            
+        long maxRolls = MilestoneRollsForEarnedPoints(earned);
+        if (milestoneRollsClaimed < 0) milestoneRollsClaimed = 0;
+        if (milestoneRollsClaimed > maxRolls) milestoneRollsClaimed = maxRolls;
+        
+        Balance = balance; TotalEarned = earned; TotalSpent = spent; MilestoneRollsClaimed = milestoneRollsClaimed; IsReconciling = reconciling;
     }
 
     public static long RewardForSteps(long steps)
@@ -24,14 +33,51 @@ public sealed class PointsWalletSnapshot
         return steps / 10;
     }
 
+    /// <summary>Calculates the number of free rolls earned from physical steps.</summary>
+    public static long MilestoneRollsForSteps(long steps)
+    {
+        if (steps < 0) throw new ArgumentOutOfRangeException(nameof(steps));
+        return steps / StepsPerMilestoneRoll;
+    }
+
+    /// <summary>Calculates free rolls from wallet points, where one point represents ten steps.</summary>
+    public static long MilestoneRollsForEarnedPoints(long earned)
+    {
+        if (earned < 0) throw new ArgumentOutOfRangeException(nameof(earned));
+        return checked(earned * 10) / StepsPerMilestoneRoll;
+    }
+
+    private static long ParseLong(object obj)
+    {
+        if (obj == null) return 0;
+        if (obj is long l) return l;
+        if (obj is int i) return i;
+        if (obj is double d) return (long)d;
+        if (obj is float f) return (long)f;
+        if (obj is string s && long.TryParse(s, out var p)) return p;
+        throw new InvalidCastException();
+    }
+
     internal static PointsWalletSnapshot Parse(IDictionary<string, object> data, bool reconciling = false)
     {
-        if (data == null || !data.TryGetValue("schemaVersion", out var version) || !(version is long v) || v != 1
-            || !data.TryGetValue("balance", out var b) || !(b is long balance)
-            || !data.TryGetValue("totalEarned", out var e) || !(e is long earned)
-            || !data.TryGetValue("totalSpent", out var s) || !(s is long spent))
-            throw new InvalidOperationException("Invalid points wallet.");
-        return new PointsWalletSnapshot(balance, earned, spent, reconciling);
+        if (data == null) throw new InvalidOperationException("Wallet data is null.");
+        
+        try 
+        {
+            long v = data.TryGetValue("schemaVersion", out var versionObj) ? ParseLong(versionObj) : 0;
+            if (v != 1) throw new InvalidOperationException("Unsupported schema version.");
+
+            long balance = data.TryGetValue("balance", out var bObj) ? ParseLong(bObj) : 0;
+            long earned = data.TryGetValue("totalEarned", out var eObj) ? ParseLong(eObj) : 0;
+            long spent = data.TryGetValue("totalSpent", out var sObj) ? ParseLong(sObj) : 0;
+            long milestoneRollsClaimed = data.TryGetValue("milestoneRollsClaimed", out var mObj) ? ParseLong(mObj) : 0;
+
+            return new PointsWalletSnapshot(balance, earned, spent, milestoneRollsClaimed, reconciling);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("Invalid points wallet format.", ex);
+        }
     }
 }
 
@@ -41,6 +87,7 @@ internal interface IPointsWalletStore
     void Reset();
     Task<PointsWalletSnapshot> LoadAsync(string owner, CancellationToken token);
     Task SpendAsync(string owner, long amount, string receiptId, CancellationToken token);
+    Task ClaimMilestoneRollAsync(string owner, string receiptId, CancellationToken token);
 }
 
 // UI state is scoped to one account. Late/offline native calls cannot replace a
@@ -144,6 +191,22 @@ public sealed class PointsWalletSession : IDisposable
             await store.SpendAsync(Owner, amount, receiptId, tokenSource.Token);
         }
         // Force refresh after spend
+        await RefreshAsync();
+    }
+
+    public async Task ClaimMilestoneRollAsync(string receiptId)
+    {
+        SynchronizeAccount();
+        if (string.IsNullOrEmpty(Owner)) throw new InvalidOperationException("Not authenticated");
+        if (Snapshot == null) throw new InvalidOperationException("Wallet not ready");
+        
+        long totalFreeRolls = PointsWalletSnapshot.MilestoneRollsForEarnedPoints(Snapshot.TotalEarned);
+        if (totalFreeRolls <= Snapshot.MilestoneRollsClaimed) throw new InvalidOperationException("No milestone rolls available.");
+
+        using (var tokenSource = new CancellationTokenSource(timeout))
+        {
+            await store.ClaimMilestoneRollAsync(Owner, receiptId, tokenSource.Token);
+        }
         await RefreshAsync();
     }
 

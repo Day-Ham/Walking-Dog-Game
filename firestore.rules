@@ -37,7 +37,11 @@ service cloud.firestore {
     }
 
     match /users/{userId}/walks/{walkId} {
-      allow read: if isOwner(userId);
+      // Only the allowlisted summary above is stored here; GPS routes stay local.
+      // Sharing is opt-in and revocable, including for existing followers.
+      allow read: if isOwner(userId) || (request.auth != null
+        && exists(/databases/$(database)/documents/social/$(request.auth.uid)/following/$(userId))
+        && get(/databases/$(database)/documents/socialProfiles/$(userId)).data.shareActivity == true);
       allow create: if isOwner(userId) && validSummary(walkId);
       // Completed summaries are immutable. A retry may refresh the server timestamp.
       allow update: if isOwner(userId) && validSummary(walkId)
@@ -45,15 +49,50 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Routes sync automatically from the recording phone while sharing is ON.
+    // A known walk route is readable only by its owner or followers
+    // while summary sharing is enabled. Deleting the document revokes sharing.
+    match /users/{userId}/sharedRoutes/{walkId} {
+      allow get: if isOwner(userId) || (request.auth != null
+        && exists(/databases/$(database)/documents/social/$(request.auth.uid)/following/$(userId))
+        && get(/databases/$(database)/documents/socialProfiles/$(userId)).data.shareActivity == true);
+      allow list: if false;
+      allow create, update: if isOwner(userId)
+        && get(/databases/$(database)/documents/socialProfiles/$(userId)).data.shareActivity == true
+        && exists(/databases/$(database)/documents/users/$(userId)/walks/$(walkId))
+        && request.resource.data.keys().hasAll(['schemaVersion', 'walkId', 'routeJson', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['schemaVersion', 'walkId', 'routeJson', 'updatedAt'])
+        && request.resource.data.schemaVersion == 1 && request.resource.data.walkId == walkId
+        && request.resource.data.routeJson is string
+        && request.resource.data.routeJson.size() > 0 && request.resource.data.routeJson.size() <= 200000
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isOwner(userId);
+    }
+
     function validWallet(data) {
       let fields = ['schemaVersion', 'balance', 'totalEarned', 'totalSpent', 'lastWalkId', 'updatedAt'];
-      return data.keys().hasAll(fields) && data.keys().hasOnly(fields)
+      return data.keys().hasAll(fields) && data.keys().hasOnly(fields.concat(['milestoneRollsClaimed']))
         && data.schemaVersion is int && data.schemaVersion == 1
         && data.balance is int && data.balance >= 0
         && data.totalEarned is int && data.totalEarned >= 0 && data.totalEarned <= 9007199254740991
         && data.totalSpent is int && data.totalSpent >= 0 && data.totalSpent <= data.totalEarned
         && data.balance == data.totalEarned - data.totalSpent
+        && milestoneCount(data) is int && milestoneCount(data) >= 0
+        && milestoneCount(data) <= int(data.totalEarned / 1000)
         && data.lastWalkId is string && data.updatedAt == request.time;
+    }
+
+    function milestoneCount(data) {
+      return 'milestoneRollsClaimed' in data ? data.milestoneRollsClaimed : 0;
+    }
+
+    function claimsMilestone(userId, data, old) {
+      let receipt = /databases/$(database)/documents/users/$(userId)/milestoneReceipts/$(data.lastWalkId);
+      return data.lastWalkId.matches('[A-Za-z0-9_-]{1,128}')
+        && data.totalEarned == old.totalEarned && data.totalSpent == old.totalSpent
+        && milestoneCount(data) == milestoneCount(old) + 1
+        && !exists(receipt) && getAfter(receipt).data.claimedAt == request.time
+        && getAfter(receipt).data.milestone == milestoneCount(data);
     }
 
     function awardsSavedWalk(userId, data, oldEarned, oldSpent) {
@@ -132,14 +171,17 @@ service cloud.firestore {
     match /users/{userId}/wallet/main {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && validWallet(request.resource.data)
+        && milestoneCount(request.resource.data) == 0
         && ((request.resource.data.balance == 0 && request.resource.data.totalEarned == 0
             && request.resource.data.totalSpent == 0 && request.resource.data.lastWalkId == '')
           || awardsActivity(userId, request.resource.data, 0, 0)
           || awardsSavedWalk(userId, request.resource.data, 0, 0));
       allow update: if isOwner(userId) && validWallet(request.resource.data)
-        && (awardsActivity(userId, request.resource.data, resource.data.totalEarned, resource.data.totalSpent)
+        && (claimsMilestone(userId, request.resource.data, resource.data)
+          || (milestoneCount(request.resource.data) == milestoneCount(resource.data)
+          && (awardsActivity(userId, request.resource.data, resource.data.totalEarned, resource.data.totalSpent)
           || awardsSavedWalk(userId, request.resource.data, resource.data.totalEarned, resource.data.totalSpent)
-          || spendsPoints(request.resource.data, resource.data.totalEarned, resource.data.totalSpent));
+          || spendsPoints(request.resource.data, resource.data.totalEarned, resource.data.totalSpent))));
       allow delete: if false;
     }
 
@@ -162,6 +204,25 @@ service cloud.firestore {
     }
 
     // These owner-scoped paths already exist in production for gacha/inventory.
+    match /users/{userId}/milestoneReceipts/{receiptId} {
+      function pairedClaim() {
+        let wallet = /databases/$(database)/documents/users/$(userId)/wallet/main;
+        let old = get(wallet).data;
+        let after = getAfter(wallet).data;
+        return after.updatedAt == request.time && after.lastWalkId == receiptId
+          && after.totalEarned == old.totalEarned && after.totalSpent == old.totalSpent
+          && milestoneCount(after) == milestoneCount(old) + 1
+          && request.resource.data.milestone == milestoneCount(after);
+      }
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && request.resource.data.keys().hasAll(['milestone', 'claimedAt'])
+        && request.resource.data.keys().hasOnly(['milestone', 'claimedAt'])
+        && request.resource.data.milestone is int && request.resource.data.milestone > 0
+        && request.resource.data.claimedAt == request.time && pairedClaim();
+      allow update, delete: if false;
+    }
+
     match /users/{userId}/spendReceipts/{receiptId} {
       allow read, write: if isOwner(userId);
     }
@@ -310,6 +371,46 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /socialProfiles/{userId} {
+      allow read: if request.auth != null;
+      allow create, update: if isOwner(userId)
+        && request.resource.data.keys().hasAll(['shareActivity', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['shareActivity', 'updatedAt'])
+        && request.resource.data.shareActivity is bool
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isOwner(userId);
+    }
+
+    function socialTargetExists(userId) {
+      return exists(/databases/$(database)/documents/friendCodes/$(userId))
+        || exists(/databases/$(database)/documents/leaderboards/allTime/players/$(userId));
+    }
+    function validFollow() {
+      return request.resource.data.keys().hasAll(['createdAt'])
+        && request.resource.data.keys().hasOnly(['createdAt'])
+        && request.resource.data.createdAt == request.time;
+    }
+    // A one-way follow has mirrored indexes. Only the follower can create or
+    // remove it; following back is a separate operation by the other account.
+    match /social/{userId}/following/{otherId} {
+      allow read: if request.auth != null;
+      allow create: if isOwner(userId) && userId != otherId
+        && socialTargetExists(otherId) && validFollow()
+        && getAfter(/databases/$(database)/documents/social/$(otherId)/followers/$(userId)).data == request.resource.data;
+      allow update: if false;
+      allow delete: if isOwner(userId)
+        && !existsAfter(/databases/$(database)/documents/social/$(otherId)/followers/$(userId));
+    }
+    match /social/{userId}/followers/{otherId} {
+      allow read: if request.auth != null;
+      allow create: if isOwner(otherId) && userId != otherId
+        && socialTargetExists(userId) && validFollow()
+        && getAfter(/databases/$(database)/documents/social/$(otherId)/following/$(userId)).data == request.resource.data;
+      allow update: if false;
+      allow delete: if isOwner(otherId)
+        && !existsAfter(/databases/$(database)/documents/social/$(otherId)/following/$(userId));
+    }
+
     // Each relationship has two identical records, committed atomically. Only
     // the recipient can accept; either participant can decline/cancel/remove.
     match /friends/{userId}/links/{otherId} {
@@ -341,7 +442,7 @@ service cloud.firestore {
       allow delete: if participant() && !existsAfter(mirror());
     }
 
-    // Rewards, GPS routes, and all other paths remain private.
+    // All paths without an explicit permission above remain private.
     match /{document=**} {
       allow read, write: if false;
     }
