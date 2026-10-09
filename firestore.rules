@@ -230,6 +230,61 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
 
+    function validDog(data) {
+      let fields = ['schemaVersion', 'speed', 'stamina', 'acceleration', 'trainingCount', 'lastTrainingId', 'updatedAt'];
+      return data.keys().hasAll(fields) && data.keys().hasOnly(fields)
+        && data.schemaVersion == 1
+        && data.speed is int && data.speed >= 40 && data.speed <= 100
+        && data.stamina is int && data.stamina >= 40 && data.stamina <= 100
+        && data.acceleration is int && data.acceleration >= 40 && data.acceleration <= 100
+        && data.trainingCount is int && data.trainingCount >= 0 && data.trainingCount <= 36
+        && data.lastTrainingId is string && data.updatedAt == request.time;
+    }
+    function trainsDog(userId, old, data) {
+      let receipt = /databases/$(database)/documents/users/$(userId)/dogTrainingReceipts/$(data.lastTrainingId);
+      let afterReceipt = getAfter(receipt).data;
+      let wallet = /databases/$(database)/documents/users/$(userId)/wallet/main;
+      let beforeWallet = get(wallet).data;
+      let afterWallet = getAfter(wallet).data;
+      return data.lastTrainingId.matches('[a-f0-9]{32}') && !exists(receipt)
+        && afterReceipt.cost == 20 && afterReceipt.trainedAt == request.time
+        && data.trainingCount == old.trainingCount + 1
+        && afterWallet.updatedAt == request.time && afterWallet.totalEarned == beforeWallet.totalEarned
+        && afterWallet.totalSpent == beforeWallet.totalSpent + 20
+        && milestoneCount(afterWallet) == milestoneCount(beforeWallet)
+        && ((afterReceipt.stat == 'speed' && old.speed < 100 && data.speed == old.speed + 5
+              && data.stamina == old.stamina && data.acceleration == old.acceleration)
+          || (afterReceipt.stat == 'stamina' && old.stamina < 100 && data.stamina == old.stamina + 5
+              && data.speed == old.speed && data.acceleration == old.acceleration)
+          || (afterReceipt.stat == 'acceleration' && old.acceleration < 100 && data.acceleration == old.acceleration + 5
+              && data.speed == old.speed && data.stamina == old.stamina));
+    }
+    match /users/{userId}/dog/main {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && validDog(request.resource.data)
+        && request.resource.data.speed == 40 && request.resource.data.stamina == 40 && request.resource.data.acceleration == 40
+        && request.resource.data.trainingCount == 0 && request.resource.data.lastTrainingId == '';
+      allow update: if isOwner(userId) && validDog(request.resource.data)
+        && trainsDog(userId, resource.data, request.resource.data);
+      allow delete: if false;
+    }
+    match /users/{userId}/dogTrainingReceipts/{receiptId} {
+      function pairedDog() {
+        let dog = /databases/$(database)/documents/users/$(userId)/dog/main;
+        return getAfter(dog).data.lastTrainingId == receiptId
+          && getAfter(dog).data.updatedAt == request.time
+          && getAfter(dog).data.trainingCount == get(dog).data.trainingCount + 1;
+      }
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && receiptId.matches('[a-f0-9]{32}')
+        && request.resource.data.keys().hasAll(['stat', 'cost', 'trainedAt'])
+        && request.resource.data.keys().hasOnly(['stat', 'cost', 'trainedAt'])
+        && request.resource.data.stat in ['speed', 'stamina', 'acceleration']
+        && request.resource.data.cost is int && request.resource.data.cost == 20
+        && request.resource.data.trainedAt == request.time && pairedDog();
+      allow update, delete: if false;
+    }
+
     function validName(name) {
       return name is string && name.matches('[A-Za-z0-9][A-Za-z0-9 _-]{2,23}');
     }

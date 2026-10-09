@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
 
-// Version 2 claims the full validated loop. Tile evaluation remains for legacy data/tests.
+// Version 2 claims the walked trail and the interior of a qualifying loop.
+// Tile evaluation remains for legacy data/tests.
 public static class TerritoryCapture
 {
     public const int Version = 2;
@@ -11,8 +12,9 @@ public static class TerritoryCapture
     // The live walk HUD uses this same value so it never advertises a different range.
     public const double ClosureMeters = 30; // minimum distance to close the loop
     public const int MaxTiles = 1000;
-
-    // to be added  radius where the line has a capture radius for territory idk dont add yet until we figure out 
+    public const double MinimumTrailMeters = 50;
+    public const double MinimumLoopMeters = 200;
+    public const double TrailRadiusMeters = 5;
 
     [Serializable]
     public struct Tile : IEquatable<Tile>
@@ -74,13 +76,19 @@ public static class TerritoryCapture
         }
         if (fullLoop)
         {
-            if (distance < 50) return Reject(result, "No territory claimed: walk at least 50 m to claim your path.");
+            if (distance < MinimumTrailMeters) return Reject(result, $"No territory claimed: walk at least {MinimumTrailMeters:0} m to claim your path.");
             var tgPoints = new List<TerritoryGeometry.Point>();
             foreach (var p in points) tgPoints.Add(new TerritoryGeometry.Point(p.x, p.y));
-            var pathPolygons = TerritoryGeometry.BufferLine(tgPoints, 5.0);
+            var pathPolygons = TerritoryGeometry.BufferLine(tgPoints, TrailRadiusMeters);
+
+            // Keep the closing leg in the trail buffer above, but use each loop
+            // vertex only once. Otherwise the last real edge is mistaken for a
+            // non-adjacent edge touching the first one at the shared endpoint.
+            if (points.Count > 1 && Length(points[0], points[points.Count - 1]) < 0.01)
+                points.RemoveAt(points.Count - 1);
             
             bool isLoop = false;
-            if (points.Count >= 3 && Distance(samples[0], samples[samples.Count - 1]) <= ClosureMeters && distance >= 200)
+            if (points.Count >= 3 && Distance(samples[0], samples[samples.Count - 1]) <= ClosureMeters && distance >= MinimumLoopMeters)
             {
                 double minX = points[0].x, maxX = minX, minY = points[0].y, maxY = minY, area = 0;
                 var origin = points[0];

@@ -217,7 +217,7 @@ public class GPSUIController : MonoBehaviour
         var tracking = manager.IsWalkingSessionActive ? manager.TrackingStatus
             : !manager.HasFreshLocation && !manager.HasWalkingSession ? manager.AccuracyStatus : sessionState;
         
-        // Surface the 50 m closure-range notification in the existing status row. It is
+        // Surface trail progress and loop-closing guidance in the existing status row. It is
         // deliberately a HUD notification, so no Android notification permission is needed.
        
         if (!string.IsNullOrEmpty(manager.TerritoryClosureStatus)) return manager.TerritoryClosureStatus;

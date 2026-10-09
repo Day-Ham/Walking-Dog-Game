@@ -149,17 +149,46 @@ public sealed class TerritoryTests
 
     private static Walk Square() => Polygon(0, 0, 150, 0, 150, 150, 0, 150, 0, 0);
 
-    [Test] public void LoopClaimFollowsActualVerticesWithoutSnappingToTiles()
+    [Test] public void ClosedLoopClaimsItsInteriorAndTrailWithoutSnappingToTiles()
     {
         var walk = Polygon(0, 0, 150, 0, 110, 150, 0, 100, 0, 0);
         var result = TerritoryCapture.EvaluateLoop(walk);
         Assert.That(result.Accepted, Is.True, result.message);
         Assert.That(result.tiles, Is.Empty);
-        Assert.That(result.polygons[0].rings[0].points.Count, Is.EqualTo(4));
+        Assert.That(result.message, Is.EqualTo("Loop and trail completed."));
+        Assert.That(result.polygons.Count, Is.EqualTo(1));
+        Assert.That(result.polygons[0].rings.Count, Is.EqualTo(1), "The loop interior must not remain a hole.");
+        var interiorRing = new TerritoryGeometry.Ring();
+        for (int i = 0; i < walk.routePoints.Count - 1; i++)
+        {
+            var sample = walk.routePoints[i];
+            interiorRing.points.Add(new TerritoryGeometry.Point(
+                TerritoryCapture.Radius * sample.longitude * Math.PI / 180,
+                TerritoryCapture.Radius * Math.Log(Math.Tan(Math.PI / 4 + sample.latitude * Math.PI / 360))));
+        }
+        var interior = new List<TerritoryGeometry.Polygon> { new TerritoryGeometry.Polygon {
+            rings = new List<TerritoryGeometry.Ring> { interiorRing }
+        } };
+        Assert.That(TerritoryGeometry.Difference(interior, result.polygons), Is.Empty, "Every part of the enclosed loop must be claimed.");
+        Assert.That(TerritoryGeometry.Area(result.polygons), Is.GreaterThan(TerritoryGeometry.Area(interior) + 100), "Keep the trail corridor outside the loop.");
         var repository = new LocalTerritoryRepository(directory, "alice"); repository.Apply(walk);
         Assert.That(repository.Polygons.Count, Is.EqualTo(1));
-        Assert.That(repository.Polygons[0].rings[0].points.Count, Is.EqualTo(4));
+        Assert.That(repository.Polygons[0].rings.Count, Is.EqualTo(1));
         Assert.That(repository.AreaSquareMeters, Is.EqualTo(TerritoryGeometry.Area(result.polygons)).Within(2));
+    }
+
+    [Test] public void OpenTrailsStillClaimAfterFiftyMetresWithoutFillingCrossedLoops()
+    {
+        var shortTrail = TerritoryCapture.EvaluateLoop(Polygon(0, 0, 10, 0, 20, 0, 30, 0));
+        Assert.That(shortTrail.Accepted, Is.False);
+        var trail = TerritoryCapture.EvaluateLoop(Polygon(0, 0, 20, 0, 40, 0, 60, 0));
+        Assert.That(trail.Accepted, Is.True);
+        Assert.That(trail.message, Is.EqualTo("Trail claimed."));
+        Assert.That(TerritoryGeometry.Area(trail.polygons), Is.InRange(400d, 800d));
+        var crossed = TerritoryCapture.EvaluateLoop(Polygon(0, 0, 150, 150, 0, 150, 150, 0, 0, 0));
+        Assert.That(crossed.Accepted, Is.True, "A crossing prevents loop filling, not the existing trail award.");
+        Assert.That(crossed.message, Is.EqualTo("Trail claimed."));
+        Assert.That(TerritoryGeometry.Area(crossed.polygons), Is.LessThan(10000));
     }
 
     [Test] public void UnionAndDifferencePreserveHolesAndDoNotDoubleCountNestedLoops()

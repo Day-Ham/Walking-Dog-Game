@@ -155,6 +155,90 @@ const walletFields = (earned = 0, spent = 0, id = "", claimed = 0) => ({ schemaV
   balance: earned - spent, totalEarned: earned, totalSpent: spent, lastWalkId: id,
   milestoneRollsClaimed: claimed, updatedAt: serverTimestamp() });
 
+const dogFields = (patch = {}) => ({ schemaVersion: 1, speed: 40, stamina: 40, acceleration: 40,
+  trainingCount: 0, lastTrainingId: '', updatedAt: serverTimestamp(), ...patch });
+async function trainDog(client, uid, stat, id) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await runTransaction(client, async tx => {
+      const receiptRef = doc(client, `users/${uid}/dogTrainingReceipts/${id}`);
+      const dogRef = doc(client, `users/${uid}/dog/main`);
+      const walletRef = doc(client, walletPath(uid));
+      const receipt = await tx.get(receiptRef), dog = await tx.get(dogRef), wallet = await tx.get(walletRef);
+      if (receipt.exists()) return;
+      const before = dog.data(), cash = wallet.data();
+      tx.set(walletRef, walletFields(cash.totalEarned, cash.totalSpent + 20, cash.lastWalkId, cash.milestoneRollsClaimed || 0));
+      tx.set(dogRef, dogFields({ ...before, [stat]: before[stat] + 5, trainingCount: before.trainingCount + 1,
+        lastTrainingId: id, updatedAt: serverTimestamp() }));
+      tx.set(receiptRef, { stat, cost: 20, trainedAt: serverTimestamp() });
+    }); } catch (error) {
+      if (error.code !== 'permission-denied' || attempt >= 2) throw error;
+      await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+    }
+  }
+}
+
+test('dogs: profiles start at baseline, stay private, and cannot be freely upgraded or reset', async () => {
+  const alice = environment.authenticatedContext('alice').firestore();
+  const bob = environment.authenticatedContext('bob').firestore();
+  const profile = doc(alice, 'users/alice/dog/main');
+  await assertFails(setDoc(profile, dogFields({ speed: 45 })));
+  await assertSucceeds(setDoc(profile, dogFields()));
+  await assertSucceeds(getDoc(profile));
+  await assertFails(getDoc(doc(bob, 'users/alice/dog/main')));
+  await assertFails(setDoc(doc(bob, 'users/alice/dog/main'), dogFields()));
+  await assertFails(setDoc(profile, dogFields({ speed: 50 })));
+  await assertFails(deleteDoc(profile));
+  await assertFails(setDoc(profile, dogFields()));
+});
+
+test('dogs: training pays and upgrades atomically, preserves milestones, and retries without double charging', async () => {
+  const alice = environment.authenticatedContext('alice').firestore();
+  await db.doc(walletPath('alice')).set({ ...walletFields(2000, 0, 'activity', 1), updatedAt: new Date() });
+  await setDoc(doc(alice, 'users/alice/dog/main'), dogFields());
+  const id = 'a'.repeat(32);
+  await assertSucceeds(trainDog(alice, 'alice', 'speed', id));
+  await assertSucceeds(trainDog(alice, 'alice', 'speed', id));
+  const dog = (await getDoc(doc(alice, 'users/alice/dog/main'))).data();
+  const wallet = (await getDoc(doc(alice, walletPath('alice')))).data();
+  assert.equal(dog.speed, 45); assert.equal(dog.stamina, 40); assert.equal(dog.acceleration, 40);
+  assert.equal(dog.trainingCount, 1); assert.equal(wallet.balance, 1980); assert.equal(wallet.milestoneRollsClaimed, 1);
+  const receipt = doc(alice, `users/alice/dogTrainingReceipts/${id}`);
+  await assertFails(setDoc(receipt, { stat: 'stamina', cost: 20, trainedAt: serverTimestamp() }));
+  await assertFails(deleteDoc(receipt));
+});
+
+test('dogs: insufficient points and forged upgrades leave both wallet and dog unchanged', async () => {
+  const alice = environment.authenticatedContext('alice').firestore();
+  await db.doc(walletPath('alice')).set({ ...walletFields(10), updatedAt: new Date() });
+  const profile = doc(alice, 'users/alice/dog/main');
+  await setDoc(profile, dogFields());
+  await assertFails(trainDog(alice, 'alice', 'stamina', 'b'.repeat(32)));
+  assert.equal((await getDoc(profile)).data().stamina, 40);
+  assert.equal((await getDoc(doc(alice, walletPath('alice')))).data().balance, 10);
+  assert.equal((await getDoc(doc(alice, `users/alice/dogTrainingReceipts/${'b'.repeat(32)}`))).exists(), false);
+  await db.doc(walletPath('alice')).set({ ...walletFields(100), updatedAt: new Date() });
+  const forged = writeBatch(alice), id = 'c'.repeat(32);
+  forged.set(profile, dogFields({ speed: 50, trainingCount: 1, lastTrainingId: id }));
+  forged.set(doc(alice, walletPath('alice')), walletFields(100, 20));
+  forged.set(doc(alice, `users/alice/dogTrainingReceipts/${id}`), { stat: 'speed', cost: 20, trainedAt: serverTimestamp() });
+  await assertFails(forged.commit());
+  await assertFails(setDoc(doc(alice, `users/alice/dogTrainingReceipts/${id}`), { stat: 'speed', cost: 20, trainedAt: serverTimestamp() }));
+});
+
+test('dogs: training is capped at 100 and independent sessions accumulate correctly', async () => {
+  const alice = environment.authenticatedContext('alice').firestore();
+  await db.doc(walletPath('alice')).set({ ...walletFields(1000), updatedAt: new Date() });
+  await setDoc(doc(alice, 'users/alice/dog/main'), dogFields());
+  await Promise.all([trainDog(alice, 'alice', 'speed', 'd'.repeat(32)), trainDog(alice, 'alice', 'acceleration', 'e'.repeat(32))]);
+  for (let i=1; i<12; i++) await trainDog(alice, 'alice', 'speed', i.toString(16).padStart(32,'0'));
+  const profile = doc(alice, 'users/alice/dog/main');
+  const before = (await getDoc(profile)).data();
+  assert.equal(before.speed, 100); assert.equal(before.acceleration, 45); assert.equal(before.trainingCount, 13);
+  await assertFails(trainDog(alice, 'alice', 'speed', 'f'.repeat(32)));
+  assert.equal((await getDoc(profile)).data().speed, 100);
+  assert.equal((await getDoc(doc(alice, walletPath('alice')))).data().balance, 740);
+});
+
 async function claimMilestone(client, uid, id) {
   return runTransaction(client, async tx => {
     const receipt = doc(client, `users/${uid}/milestoneReceipts/${id}`);

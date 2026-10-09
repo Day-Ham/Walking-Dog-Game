@@ -238,6 +238,27 @@ public sealed class WalkTrackingTests
         }
     }
 
+    [Test] public void TerritoryGuidanceDistinguishesTrailMinimumFromLoopClosureAndGpsGaps()
+    {
+        CreateManager();
+        manager.SetGpsLocation(14.5f, 121, 5);
+        manager.BeginWalkingSession();
+        var flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        typeof(StepCountAndGpsManager).GetField("sessionTerritoryVersion", flags).SetValue(manager, TerritoryCapture.Version);
+        var distance = typeof(StepCountAndGpsManager).GetField("sessionDistanceMeters", flags);
+        distance.SetValue(manager, 49f);
+        Assert.That(manager.TerritoryClosureStatus, Does.Contain("trail minimum"));
+        distance.SetValue(manager, 50f);
+        Assert.That(manager.TerritoryClosureStatus, Does.Contain("validate your trail"));
+        distance.SetValue(manager, 200f);
+        Assert.That(manager.TerritoryClosureStatus, Does.Contain("Loop closing range"));
+        manager.InterruptTracking("GPS lost");
+        Assert.That(manager.TerritoryClosureStatus, Is.Empty, "During a GPS outage, leave the status row to tracking feedback.");
+        manager.SetGpsLocation(14.5f, 121, 5);
+        Assert.That(manager.TerritoryClosureStatus, Does.Contain("GPS gaps"));
+        Assert.That(manager.getTFlag(), Is.Zero);
+    }
+
     private void CreateManager()
     {
         gameObject = new GameObject("Walk tracking test");
