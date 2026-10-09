@@ -181,24 +181,29 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
             if (!walkingSessionActive || sessionTerritoryVersion != TerritoryCapture.Version || !HasRouteStart)
                 return "";
 
-            // At the beginning of every walk the player is naturally beside the start.
-            // Wait until the minimum loop distance is covered before showing a return cue.
-            if (sessionDistanceMeters < 200f) return "";
-
             var distance = DistanceToRouteStartMeters;
-            if (distance < 0f) return "";            
+            if (distance < 0f) return "";
+            if (HasTrackingGaps) return "GPS gaps prevent a territory claim. Your walk will still save.";
+            if (sessionDistanceMeters < TerritoryCapture.MinimumTrailMeters)
+                return $"Walk {TerritoryCapture.MinimumTrailMeters - sessionDistanceMeters:0} m more to reach the trail minimum.";
+            if (sessionDistanceMeters < TerritoryCapture.MinimumLoopMeters)
+            {
+                territtoryFlag = 2;
+                return "Trail distance reached. End walk to validate your trail, or keep walking for a loop.";
+            }
+
             if (distance <= TerritoryCapture.ClosureMeters)
             {    // This only confirms the closing-distance requirement; area, route length,
                 // and non-crossing checks are still validated when the walk is saved.
               
                 territtoryFlag = 2; //signal to green
-                return $"You are now within claimable territory range ({distance:0} m) — within the {TerritoryCapture.ClosureMeters:0} m Starting point range. End walk to claim.";
+                return $"Loop closing range reached ({distance:0} m from start). End walk to validate your trail and loop.";
                
             }
             
             territtoryFlag = 1; //signal to yellow
 
-            return $"Finish your territory — {distance - (float)TerritoryCapture.ClosureMeters:0} m to the starting point range";
+            return $"Trail distance reached. End walk to validate it, or return {distance - (float)TerritoryCapture.ClosureMeters:0} m toward start for a loop.";
         }
     }
     public int RoutePointCount

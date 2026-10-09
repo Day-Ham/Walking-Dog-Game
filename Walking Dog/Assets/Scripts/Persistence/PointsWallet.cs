@@ -21,8 +21,8 @@ public sealed class PointsWalletSnapshot
             throw new ArgumentException("Invalid points wallet.");
             
         long maxRolls = MilestoneRollsForEarnedPoints(earned);
-        if (milestoneRollsClaimed < 0) milestoneRollsClaimed = 0;
-        if (milestoneRollsClaimed > maxRolls) milestoneRollsClaimed = maxRolls;
+        if (milestoneRollsClaimed < 0 || milestoneRollsClaimed > maxRolls)
+            throw new ArgumentException("Invalid milestone count.");
         
         Balance = balance; TotalEarned = earned; TotalSpent = spent; MilestoneRollsClaimed = milestoneRollsClaimed; IsReconciling = reconciling;
     }
@@ -49,35 +49,25 @@ public sealed class PointsWalletSnapshot
 
     private static long ParseLong(object obj)
     {
-        if (obj == null) return 0;
         if (obj is long l) return l;
         if (obj is int i) return i;
-        if (obj is double d) return (long)d;
-        if (obj is float f) return (long)f;
-        if (obj is string s && long.TryParse(s, out var p)) return p;
-        throw new InvalidCastException();
+        throw new InvalidOperationException("Wallet fields must be integers.");
     }
 
     internal static PointsWalletSnapshot Parse(IDictionary<string, object> data, bool reconciling = false)
     {
         if (data == null) throw new InvalidOperationException("Wallet data is null.");
         
-        try 
-        {
-            long v = data.TryGetValue("schemaVersion", out var versionObj) ? ParseLong(versionObj) : 0;
-            if (v != 1) throw new InvalidOperationException("Unsupported schema version.");
+        if (!data.TryGetValue("schemaVersion", out var versionObj) || ParseLong(versionObj) != 1
+            || !data.TryGetValue("balance", out var bObj)
+            || !data.TryGetValue("totalEarned", out var eObj)
+            || !data.TryGetValue("totalSpent", out var sObj))
+            throw new InvalidOperationException("Invalid points wallet format.");
 
-            long balance = data.TryGetValue("balance", out var bObj) ? ParseLong(bObj) : 0;
-            long earned = data.TryGetValue("totalEarned", out var eObj) ? ParseLong(eObj) : 0;
-            long spent = data.TryGetValue("totalSpent", out var sObj) ? ParseLong(sObj) : 0;
-            long milestoneRollsClaimed = data.TryGetValue("milestoneRollsClaimed", out var mObj) ? ParseLong(mObj) : 0;
-
-            return new PointsWalletSnapshot(balance, earned, spent, milestoneRollsClaimed, reconciling);
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException("Invalid points wallet format.", ex);
-        }
+        // Only the optional milestone field defaults to zero for older wallets.
+        // Missing totals or malformed numbers must never invent a valid balance.
+        long milestoneRollsClaimed = data.TryGetValue("milestoneRollsClaimed", out var mObj) ? ParseLong(mObj) : 0;
+        return new PointsWalletSnapshot(ParseLong(bObj), ParseLong(eObj), ParseLong(sObj), milestoneRollsClaimed, reconciling);
     }
 }
 

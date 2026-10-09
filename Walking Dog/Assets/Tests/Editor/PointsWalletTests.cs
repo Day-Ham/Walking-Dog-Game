@@ -47,6 +47,24 @@ public sealed class PointsWalletTests
         Assert.Throws<InvalidOperationException>(() => PointsWalletSnapshot.Parse(data));
     }
 
+    [Test] public void MissingNullAndNonintegerWalletFieldsCannotCreateABalance()
+    {
+        var fields = new[] { "schemaVersion", "balance", "totalEarned", "totalSpent" };
+        foreach (var field in fields)
+        {
+            var data = new Dictionary<string, object> {
+                ["schemaVersion"] = 1L, ["balance"] = 0L, ["totalEarned"] = 0L, ["totalSpent"] = 0L
+            };
+            data.Remove(field);
+            Assert.Throws<InvalidOperationException>(() => PointsWalletSnapshot.Parse(data), "Missing " + field);
+            foreach (var malformed in new object[] { null, 0.5, 0.0, "0", true, double.NaN, double.PositiveInfinity })
+            {
+                data[field] = malformed;
+                Assert.Throws<InvalidOperationException>(() => PointsWalletSnapshot.Parse(data), "Malformed " + field);
+            }
+        }
+    }
+
     [Test] public async Task LoadsSavedBalanceAndKeepsItOnOfflineFailure()
     {
         var store = new Store();
