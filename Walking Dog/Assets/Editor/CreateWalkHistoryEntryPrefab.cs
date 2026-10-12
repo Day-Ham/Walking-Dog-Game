@@ -6,14 +6,22 @@ using UnityEngine.UI;
 internal static class CreateWalkHistoryEntryPrefab
 {
     [MenuItem("Tools/Walking Dog/Create Walk History Entry Prefab")]
-    // Creates the editable prefab from the exact runtime layout formerly
-    // assembled in WalkHistoryUI.Render(). Safe to run again to replace it.
+    // Creates the editable row prefab once. Later runs select the existing
+    // asset so an in-progress Inspector redesign is never overwritten.
     public static void Create()
     {
-        const string folder = "Assets/prefab/walks";
+        const string folder = "Assets/Resources";
         const string path = folder + "/WalkHistoryEntry.prefab";
-        if (!AssetDatabase.IsValidFolder("Assets/prefab/walks"))
-            AssetDatabase.CreateFolder("Assets/prefab", "walks");
+        var existing = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+        if (existing != null)
+        {
+            Selection.activeObject = existing;
+            EditorGUIUtility.PingObject(existing);
+            return;
+        }
+
+        if (!AssetDatabase.IsValidFolder(folder))
+            AssetDatabase.CreateFolder("Assets", "Resources");
 
         var root = new GameObject("Walk History Entry", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement), typeof(WalkDataTab));
         var image = root.GetComponent<Image>();
@@ -39,6 +47,8 @@ internal static class CreateWalkHistoryEntryPrefab
         Object.DestroyImmediate(root);
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
+        Selection.activeObject = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+        EditorGUIUtility.PingObject(Selection.activeObject);
     }
 
     private static TMP_Text CreateLabel(string name, Transform parent, string value, float size, Color color)

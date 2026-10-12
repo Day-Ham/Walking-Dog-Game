@@ -5,9 +5,13 @@ using UnityEngine.UI;
 
 public class WalkDataTab : MonoBehaviour
 {
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
+    [Header("Entry content")]
+    [Tooltip("The title shown for the date and time of this walk.")]
     [SerializeField] private TMP_Text dateText;
+    [Tooltip("The steps, distance, and duration line.")]
     [SerializeField] private TMP_Text measurementsText;
+    [Header("Interaction")]
+    [Tooltip("The whole row button that opens the recorded route.")]
     [SerializeField] private Button selectButton;
 
     public void SetData(string date, string measurements, UnityAction onSelected)

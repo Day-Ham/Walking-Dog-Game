@@ -12,6 +12,8 @@ using UnityEngine.UI;
 [DisallowMultipleComponent]
 public sealed class WalkHistoryUI : MonoBehaviour
 {
+    private const string EntryPrefabResource = "WalkHistoryEntry";
+
     [SerializeField]
     private GameObject panel;
     //private RectTransform panelSafeArea;
@@ -44,6 +46,7 @@ public sealed class WalkHistoryUI : MonoBehaviour
     private bool destroyed; // for destroying
  
     private int viewGeneration; //keep
+    private GameObject entryPrefab;
 
    
 
@@ -208,22 +211,26 @@ public sealed class WalkHistoryUI : MonoBehaviour
 
         foreach (var entry in session.Entries)
         {
-            RectTransform row = Rect("Walk " + entry.Id, content);
-            row.gameObject.AddComponent<Image>().color = new Color(0.13f, 0.20f, 0.24f);
-            var button = row.gameObject.AddComponent<Button>();
             string entryId = entry.Id;
-            button.onClick.AddListener(() => OpenWalkMap(entryId));
-
-            var layout = row.gameObject.AddComponent<LayoutElement>();
-            layout.minHeight = 116;
-            layout.preferredHeight = 116;
-            TMP_Text date = Label("Date", row, entry.DateLabel, 26);
-            Place(date.rectTransform, new Vector2(0, 0.5f), Vector2.one, new Vector2(20, 0), new Vector2(-20, -10));
-            TMP_Text stats = Label("Measurements", row, entry.StatsLabel, 23);
-            Place(stats.rectTransform, Vector2.zero, new Vector2(1, 0.5f), new Vector2(20, 10), new Vector2(-20, 0));
-            stats.color = new Color(0.72f, 0.84f, 0.87f);
+            var tab = Instantiate(GetEntryPrefab(), content).GetComponent<WalkDataTab>();
+            tab.name = "Walk " + entry.Id;
+            tab.SetData(entry.DateLabel, entry.StatsLabel, () => OpenWalkMap(entryId));
         }
 
+    }
+
+    // The row is a prefab so it can be redesigned in the Inspector without
+    // changing this history-loading code.
+    private GameObject GetEntryPrefab()
+    {
+        if (entryPrefab == null)
+            entryPrefab = Resources.Load<GameObject>(EntryPrefabResource);
+
+        if (entryPrefab == null || entryPrefab.GetComponent<WalkDataTab>() == null)
+            throw new InvalidOperationException(
+                "Missing or invalid Resources/WalkHistoryEntry prefab. Run Tools/Walking Dog/Create Walk History Entry Prefab.");
+
+        return entryPrefab;
     }
 
 
@@ -294,36 +301,6 @@ public sealed class WalkHistoryUI : MonoBehaviour
     public void OnLoadMoreClicked()
     {
         LoadMore();
-    }
-
-    private static RectTransform Rect(string name, Transform parent)
-    {
-        var rect = new GameObject(name, typeof(RectTransform)).GetComponent<RectTransform>();
-        rect.SetParent(parent, false);
-        Place(rect, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
-        return rect;
-    }
-
-    private static TMP_Text Label(string name, Transform parent, string value, float size)
-    {
-        var text = Rect(name, parent).gameObject.AddComponent<TextMeshProUGUI>();
-        text.text = value;
-        text.fontSize = size;
-        text.enableAutoSizing = true;
-        text.fontSizeMin = size * 0.75f;
-        text.fontSizeMax = size;
-        text.color = Color.white;
-        text.alignment = TextAlignmentOptions.MidlineLeft;
-        text.raycastTarget = false;
-        text.richText = false;
-        return text;
-    }
-    private static void Place(RectTransform rect, Vector2 min, Vector2 max, Vector2 insetMin, Vector2 insetMax)
-    {
-        rect.anchorMin = min;
-        rect.anchorMax = max;
-        rect.offsetMin = insetMin;
-        rect.offsetMax = insetMax;
     }
 
 }
