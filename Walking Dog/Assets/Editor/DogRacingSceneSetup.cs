@@ -25,7 +25,7 @@ public static class DogRacingSceneSetup
         var scene = EditorSceneManager.OpenScene(ScenePath);
         var canvas = GameObject.Find("Canvas");
         var controller = canvas.GetComponent<DogGameScreens>() ?? canvas.AddComponent<DogGameScreens>();
-        foreach (var name in new[] { "Dog Race Screen", "Dog Training Screen" })
+        foreach (var name in new[] { "Dog Race Screen", "Dog Training Screen", "Dog Lobby Screen" })
         {
             var old = canvas.transform.Find(name);
             if (old != null) UnityEngine.Object.DestroyImmediate(old.gameObject);
@@ -34,9 +34,13 @@ public static class DogRacingSceneSetup
         if (font == null) font = TMP_Settings.defaultFontAsset;
         var training = Screen(canvas.transform, "Dog Training Screen");
         var racing = Screen(canvas.transform, "Dog Race Screen");
-        Set(controller, "trainingScreen", training.gameObject); Set(controller, "raceScreen", racing.gameObject);
+        var lobby = Screen(canvas.transform, "Dog Lobby Screen");
+        Set(controller, "trainingScreen", training.gameObject);
+        Set(controller, "raceScreen", racing.gameObject);
+        Set(controller, "lobbyScreen", lobby.gameObject);
         var trainSafe = Safe(training);
         var raceSafe = Safe(racing);
+        var lobbySafe = Safe(lobby);
 
         Label(trainSafe, "Eyebrow", "DOG TRAINING", .06f,.92f,.68f,.98f, 25, Green);
         Label(trainSafe, "Title", "A little stronger\nevery session.", .06f,.79f,.94f,.92f, 55, Ink);
@@ -64,7 +68,7 @@ public static class DogRacingSceneSetup
         Set(controller, "stats", rows);
         Set(controller, "trainingStatus", Label(trainSafe, "Status", "Load your dog to start training.", .06f,.09f,.94f,.15f, 23, Ink));
         Set(controller, "refreshTraining", Button(trainSafe, "Refresh", "Refresh", .06f,.025f,.45f,.075f, controller.RefreshTraining, Green));
-        Button(trainSafe, "Practice", "Go to race", .49f,.025f,.94f,.075f, controller.OpenRace, Green);
+        Button(trainSafe, "Practice", "Go to race", .49f,.025f,.94f,.075f, controller.OpenLobby, Green);
 
         Label(raceSafe, "Eyebrow", "PRACTICE RACE", .06f,.92f,.68f,.98f, 25, Green);
         Label(raceSafe, "Title", "Ready. Set.\nLet them run.", .06f,.79f,.94f,.92f, 55, Ink);
@@ -86,14 +90,71 @@ public static class DogRacingSceneSetup
             marker.anchorMin = marker.anchorMax = new Vector2(.08f,.5f); marker.sizeDelta = new Vector2(70,58);
             marker.GetComponent<DogIconGraphic>().color = new Color(.58f,.38f,.23f);
             marker.GetComponent<DogIconGraphic>().collarColor = colors[i]; marker.GetComponent<DogIconGraphic>().raycastTarget = false;
+
+            var iconObj = new GameObject("Gacha icon", typeof(RectTransform), typeof(Image));
+            iconObj.transform.SetParent(marker, false);
+            var iconImg = iconObj.GetComponent<Image>();
+            iconImg.rectTransform.anchorMin = Vector2.zero;
+            iconImg.rectTransform.anchorMax = Vector2.one;
+            iconImg.rectTransform.offsetMin = iconImg.rectTransform.offsetMax = Vector2.zero;
+            iconImg.preserveAspect = true;
+            iconImg.raycastTarget = false;
+            iconImg.gameObject.SetActive(false);
+
             var label = Label(lane, "Runner stats", entrants[i].Name + "  ·  40 / 40 / 40", .025f,.73f,.98f,.99f, 20, Ink);
-            lanes[i] = new DogGameScreens.RaceLane { marker = marker, details = label };
+            lanes[i] = new DogGameScreens.RaceLane { marker = marker, details = label, iconImage = iconImg };
         }
         Set(controller, "lanes", lanes);
         Set(controller, "raceStatus", Label(raceSafe, "Race status", "200 m · Three simulated training partners", .06f,.23f,.94f,.285f, 22, Ink));
         Set(controller, "results", Label(raceSafe, "Results", "Speed sets pace. Acceleration helps the start.\nStamina delays fatigue.", .06f,.105f,.94f,.225f, 24, Ink));
-        Set(controller, "startRace", Button(raceSafe, "Start race", "Start race", .06f,.025f,.55f,.082f, controller.StartRace, Green));
-        Button(raceSafe, "Training", "Training", .59f,.025f,.94f,.082f, controller.OpenTraining, Green);
+        Set(controller, "startRace", Button(raceSafe, "Start race", "Start race", .06f,.025f,.46f,.082f, controller.StartRace, Green));
+        Button(raceSafe, "Lobby", "Lobby", .50f,.025f,.72f,.082f, controller.OpenLobby, Green);
+        Button(raceSafe, "Training", "Training", .76f,.025f,.94f,.082f, controller.OpenTraining, Green);
+
+        // Dog Lobby Screen
+        Label(lobbySafe, "Eyebrow", "MULTIPLAYER RACE", .06f,.92f,.68f,.98f, 25, Green);
+        Label(lobbySafe, "Title", "Gather your pack.\nRace together.", .06f,.79f,.94f,.92f, 55, Ink);
+        Button(lobbySafe, "Back", "Back", .76f,.925f,.94f,.975f, controller.Close, Green);
+
+        var findSection = Panel(lobbySafe, "Find Section", .06f, .16f, .94f, .76f, Color.clear);
+        Set(controller, "lobbyFindSection", findSection.gameObject);
+        var createBtn = Button(findSection, "Create Room", "Create Room\n(Host a new race)", 0, .65f, 1, .98f, controller.CreateRoom, Green);
+        Set(controller, "createRoomButton", createBtn);
+
+        var joinCard = Panel(findSection, "Join Card", 0, .26f, 1, .58f, Color.white);
+        Label(joinCard, "Join Title", "Enter Room Code", .06f, .60f, .94f, .90f, 24, Ink);
+        var inputObj = InputField(joinCard, "Code Input", "e.g. K9742", .06f, .15f, .60f, .55f);
+        Set(controller, "roomCodeInput", inputObj);
+        var joinBtn = Button(joinCard, "Join Room", "Join", .65f, .15f, .94f, .55f, controller.JoinRoom, Green);
+        Set(controller, "joinRoomButton", joinBtn);
+
+        var practiceBtn = Button(findSection, "Practice Race", "Practice Race (Solo vs AI)", 0, 0, 1, .20f, controller.OpenRace, new Color(.35f, .50f, .40f));
+        Set(controller, "practiceRaceButton", practiceBtn);
+
+        var roomSection = Panel(lobbySafe, "Room Section", .06f, .16f, .94f, .76f, Color.clear);
+        Set(controller, "lobbyRoomSection", roomSection.gameObject);
+        var codeLabel = Label(roomSection, "Room Code", "Room  —", 0, .86f, 1, .98f, 34, Green);
+        Set(controller, "lobbyRoomCodeText", codeLabel);
+
+        var entrantRows = new TMP_Text[4];
+        for (int i = 0; i < 4; i++)
+        {
+            float top = .84f - i * .14f;
+            var slot = Panel(roomSection, "Slot " + i, 0, top - .12f, 1, top, Color.white);
+            entrantRows[i] = Label(slot, "Details", $"{i + 1}.  [Open slot]", .04f, .05f, .96f, .95f, 19, Ink);
+        }
+        Set(controller, "lobbyEntrantRows", entrantRows);
+
+        var startLobbyBtn = Button(roomSection, "Start Race", "Start Race", 0, 0, .58f, .12f, controller.StartLobbyRace, Green);
+        Set(controller, "startLobbyRaceButton", startLobbyBtn);
+        var leaveBtn = Button(roomSection, "Leave Room", "Leave", .62f, 0, 1, .12f, controller.LeaveRoom, new Color(.70f, .30f, .25f));
+        Set(controller, "leaveRoomButton", leaveBtn);
+
+        var lobbyStatusLabel = Label(lobbySafe, "Status", "Enter a room code or create a new room.", .06f, .09f, .94f, .15f, 22, Ink);
+        Set(controller, "lobbyStatus", lobbyStatusLabel);
+
+        Button(lobbySafe, "Training Button", "Go to Training", .06f, .015f, .94f, .065f, controller.OpenTraining, Green);
+        roomSection.gameObject.SetActive(false);
 
         var menu = canvas.transform.Find("Walk Screen Safe Area/SideArea/Buttons");
         if (menu == null) menu = canvas.GetComponentsInChildren<Transform>(true).First(t => t.name == "SideArea").Find("Buttons");
@@ -101,11 +162,11 @@ public static class DogRacingSceneSetup
         { var old = menu.Find(name); if (old != null) UnityEngine.Object.DestroyImmediate(old.gameObject); }
         // Keep all eight navigation buttons inside the existing side panel.
         var grid = menu.GetComponent<GridLayoutGroup>(); grid.cellSize = new Vector2(125,125); grid.spacing = new Vector2(0,18);
-        Button(menu, "Race Button", "Race", 0,0,1,1, controller.OpenRace, Green);
+        Button(menu, "Race Button", "Race", 0,0,1,1, controller.OpenLobby, Green);
         Button(menu, "Training Button", "Training", 0,0,1,1, controller.OpenTraining, Green);
-        training.gameObject.SetActive(false); racing.gameObject.SetActive(false);
+        training.gameObject.SetActive(false); racing.gameObject.SetActive(false); lobby.gameObject.SetActive(false);
         EditorSceneManager.MarkSceneDirty(scene); EditorSceneManager.SaveScene(scene);
-        Debug.Log("Dog race and training screens connected.");
+        Debug.Log("Dog race, training, and lobby screens connected.");
     }
 
     private static RectTransform Screen(Transform parent, string name) => Panel(parent, name, 0,0,1,1, Paper);
@@ -137,6 +198,30 @@ public static class DogRacingSceneSetup
         slider.minValue = 0; slider.maxValue = 100; slider.interactable = false;
         slider.fillRect = Panel(rect,"Fill",0,0,1,1,Gold); return slider;
     }
+    private static TMP_InputField InputField(Transform parent, string name, string placeholderText, float x, float y, float x2, float y2)
+    {
+        var rect = Panel(parent, name, x, y, x2, y2, new Color(.93f, .93f, .93f));
+        var input = rect.gameObject.AddComponent<TMP_InputField>();
+        input.targetGraphic = rect.GetComponent<Image>();
+
+        var textObj = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
+        textObj.transform.SetParent(rect, false);
+        Place(textObj.GetComponent<RectTransform>(), .06f, .1f, .94f, .9f);
+        var text = textObj.GetComponent<TextMeshProUGUI>();
+        text.font = font; text.fontSize = 24; text.color = Ink; text.alignment = TextAlignmentOptions.MidlineLeft;
+
+        var phObj = new GameObject("Placeholder", typeof(RectTransform), typeof(TextMeshProUGUI));
+        phObj.transform.SetParent(rect, false);
+        Place(phObj.GetComponent<RectTransform>(), .06f, .1f, .94f, .9f);
+        var ph = phObj.GetComponent<TextMeshProUGUI>();
+        ph.font = font; ph.fontSize = 24; ph.color = new Color(.55f, .55f, .55f); ph.text = placeholderText;
+        ph.alignment = TextAlignmentOptions.MidlineLeft;
+
+        input.textComponent = text;
+        input.placeholder = ph;
+        input.characterLimit = 8;
+        return input;
+    }
     private static void Dog(Transform parent, string name, float x, float y, float x2, float y2, Color collar)
     {
         var rect = new GameObject(name,typeof(RectTransform),typeof(CanvasRenderer),typeof(DogIconGraphic)).GetComponent<RectTransform>();
@@ -154,8 +239,27 @@ public static class DogRacingSceneSetup
         var controller = canvas.GetComponent<DogGameScreens>();
         Set(controller,"snapshot",new DogStats { speed=55,stamina=45,acceleration=50,trainingCount=6 });
         Set(controller,"owner","preview"); Set(controller,"OwnerReader",(Func<string>)(() => "preview"));
-        foreach (Transform child in canvas.transform) if (child.name != "Dog Training Screen" && child.name != "Dog Race Screen") child.gameObject.SetActive(false);
-        var training = canvas.transform.Find("Dog Training Screen"); var racing = canvas.transform.Find("Dog Race Screen");
+        foreach (Transform child in canvas.transform)
+            if (child.name != "Dog Training Screen" && child.name != "Dog Race Screen" && child.name != "Dog Lobby Screen")
+                child.gameObject.SetActive(false);
+        var training = canvas.transform.Find("Dog Training Screen");
+        var racing = canvas.transform.Find("Dog Race Screen");
+        var lobby = canvas.transform.Find("Dog Lobby Screen");
+
+        lobby.gameObject.SetActive(true);
+        Render(controller, "RenderLobby");
+        Capture(canvas, "Logs/dog-lobby-preview.png", 720, 1280);
+
+        var previewRoom = new RaceRoom("K9742", "preview", "Your Dog", "waiting", 0, 200, new[] {
+            new RaceEntrant("preview", "Your Dog", Get<DogStats>(controller, "snapshot"), isHost: true),
+            new RaceEntrant("friend1", "Rex", new DogStats { speed = 50, stamina = 48, acceleration = 44 }, isHost: false)
+        });
+        Set(controller, "currentRoom", previewRoom);
+        Render(controller, "RenderLobby");
+        Capture(canvas, "Logs/dog-lobby-room-preview.png", 720, 1280);
+        Set(controller, "currentRoom", null);
+        lobby.gameObject.SetActive(false);
+
         training.gameObject.SetActive(true); Render(controller,"RenderStats");
         Get<TMP_Text>(controller,"points").text = "Wallet  240 points";
         Get<TMP_Text>(controller,"trainingStatus").text = "Choose a training session. Each costs 20 points and adds 5 to one stat.";
