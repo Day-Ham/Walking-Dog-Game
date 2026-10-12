@@ -56,6 +56,38 @@ public sealed class DogRacingTests
         Assert.That(race.Runners.All(r => r.Distance == 20 && r.FinishTime > 0), Is.True);
         var finish = race.Runners[0].FinishTime; race.Advance(1); Assert.That(race.Runners[0].FinishTime, Is.EqualTo(finish));
     }
+    [Test] public void RoomCodesAreCleanNormalizedAndFormatted()
+    {
+        var code = RaceRoomCodes.Create(5);
+        Assert.That(code.Length, Is.EqualTo(5));
+        Assert.That(RaceRoomCodes.Normalize("  k9-742  "), Is.EqualTo("K9742"));
+        Assert.That(RaceRoomCodes.Format("k9742"), Is.EqualTo("K9-742"));
+        Assert.That(RaceRoomCodes.Normalize("invalid!code?"), Is.EqualTo(""));
+    }
+    [Test] public void RaceRoomSerializesAndBuildsMultiplayerFieldFillingAiSlots()
+    {
+        var hostStats = new DogStats { speed = 60, stamina = 55, acceleration = 50 };
+        var entrant1 = new RaceEntrant("host1", "Alice", hostStats, "collar_gold", isHost: true);
+        var entrant2 = new RaceEntrant("guest2", "Bob", new DogStats { speed = 45, stamina = 45, acceleration = 45 }, "collar_blue", isHost: false);
+        var room = new RaceRoom("K9742", "host1", "Alice", "waiting", 0, 200, new[] { entrant1, entrant2 });
+
+        var dict = room.ToDictionary();
+        var parsed = RaceRoom.Parse("K9742", dict);
+        Assert.That(parsed.RoomCode, Is.EqualTo("K9742"));
+        Assert.That(parsed.Entrants.Count, Is.EqualTo(2));
+        Assert.That(parsed.Entrants[0].DisplayName, Is.EqualTo("Alice"));
+        Assert.That(parsed.Entrants[0].EquippedItemId, Is.EqualTo("collar_gold"));
+        Assert.That(parsed.CanStart("host1"), Is.True);
+        Assert.That(parsed.CanStart("guest2"), Is.False);
+
+        var field = parsed.BuildSimulationField();
+        Assert.That(field.Count, Is.EqualTo(4));
+        Assert.That(field[0].Name, Is.EqualTo("Alice"));
+        Assert.That(field[0].EquippedItemId, Is.EqualTo("collar_gold"));
+        Assert.That(field[1].Name, Is.EqualTo("Bob"));
+        Assert.That(field[2].Name, Is.EqualTo("Dash"));
+        Assert.That(field[3].Name, Is.EqualTo("Pip"));
+    }
 }
 
 public sealed class DogRacingSceneTests
@@ -103,6 +135,68 @@ public sealed class DogRacingSceneTests
         Assert.That(Field<DogGameScreens.StatRow[]>("stats").Select(r => r.stat).Distinct().Count(), Is.EqualTo(3));
         Assert.That(Field<DogGameScreens.RaceLane[]>("lanes").Length, Is.EqualTo(4));
         Assert.That(screens.GetComponentsInChildren<DogIconGraphic>(true).All(icon => icon.GetComponent<CanvasRenderer>() != null), Is.True);
+    }
+    [Test] public async Task LobbyScreenCanCreateRoomAndTransitionsOnRaceStart()
+    {
+        var fakeLobby = new FakeRaceLobbyService();
+        screens.LobbyServiceFactory = () => Task.FromResult<IRaceLobbyService>(fakeLobby);
+        screens.OpenLobby();
+        await screens.RefreshAsync();
+        Assert.That(Field<GameObject>("lobbyScreen").activeSelf, Is.True);
+
+        await screens.CreateRoomAsync();
+        Assert.That(screens.CurrentRoom, Is.Not.Null);
+        Assert.That(screens.CurrentRoom.Entrants.Count, Is.EqualTo(1));
+
+        // Simulate a second player joining
+        await fakeLobby.JoinRoomAsync(screens.CurrentRoom.RoomCode, "bob", "Bob", new DogStats(), "item_red", CancellationToken.None);
+        fakeLobby.TriggerUpdate();
+        Assert.That(screens.CurrentRoom.Entrants.Count, Is.EqualTo(2));
+
+        // Start race
+        await screens.StartLobbyRaceAsync();
+        fakeLobby.TriggerUpdate();
+        Assert.That(screens.Race, Is.Not.Null);
+        Assert.That(screens.Race.Runners.Count, Is.EqualTo(4));
+        Assert.That(Field<GameObject>("raceScreen").activeSelf, Is.True);
+        screens.Close();
+    }
+    private sealed class FakeRaceLobbyService : IRaceLobbyService
+    {
+        public RaceRoom Room;
+        private Action<RaceRoom> onUpdate;
+
+        public Task<RaceRoom> CreateRoomAsync(string hostUid, string hostName, DogStats stats, string equippedItemId, CancellationToken token)
+        {
+            var host = new RaceEntrant(hostUid, hostName, stats, equippedItemId, isHost: true);
+            Room = new RaceRoom("K9742", hostUid, hostName, "waiting", 0, 200, new[] { host });
+            return Task.FromResult(Room);
+        }
+        public Task<RaceRoom> JoinRoomAsync(string roomCode, string playerUid, string playerName, DogStats stats, string equippedItemId, CancellationToken token)
+        {
+            var list = Room.Entrants.ToList();
+            list.Add(new RaceEntrant(playerUid, playerName, stats, equippedItemId, isHost: false));
+            Room = new RaceRoom(roomCode, Room.HostUid, Room.HostName, Room.Status, Room.Seed, Room.TrackLength, list);
+            return Task.FromResult(Room);
+        }
+        public Task LeaveRoomAsync(string roomCode, string playerUid, CancellationToken token)
+        {
+            var list = Room.Entrants.Where(e => e.PlayerId != playerUid).ToList();
+            Room = new RaceRoom(roomCode, Room.HostUid, Room.HostName, Room.Status, Room.Seed, Room.TrackLength, list);
+            return Task.CompletedTask;
+        }
+        public Task StartRaceAsync(string roomCode, string hostUid, int seed, CancellationToken token)
+        {
+            Room = new RaceRoom(roomCode, Room.HostUid, Room.HostName, "racing", seed, Room.TrackLength, Room.Entrants);
+            return Task.CompletedTask;
+        }
+        public IDisposable ListenRoom(string roomCode, Action<RaceRoom> onUpdate, Action<Exception> onError)
+        {
+            this.onUpdate = onUpdate;
+            return new DummySub();
+        }
+        public void TriggerUpdate() => onUpdate?.Invoke(Room);
+        private sealed class DummySub : IDisposable { public void Dispose() { } }
     }
     private T Field<T>(string field) => (T)typeof(DogGameScreens).GetField(field,BindingFlags.Instance|BindingFlags.NonPublic).GetValue(screens);
     private sealed class FakeStore : IDogTrainingStore

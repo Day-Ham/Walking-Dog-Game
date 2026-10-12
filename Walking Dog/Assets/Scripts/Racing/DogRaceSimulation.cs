@@ -9,10 +9,11 @@ namespace WalkingDog.Racing
         public string Id { get; }
         public string Name { get; }
         public DogStats Stats { get; }
-        public DogRaceEntry(string id, string name, DogStats stats)
+        public string EquippedItemId { get; }
+        public DogRaceEntry(string id, string name, DogStats stats, string equippedItemId = "")
         {
             if (string.IsNullOrEmpty(id) || stats == null) throw new ArgumentException("A racer needs an ID and stats.");
-            stats.Validate(); Id = id; Name = name; Stats = stats.Copy();
+            stats.Validate(); Id = id; Name = name; Stats = stats.Copy(); EquippedItemId = equippedItemId ?? "";
         }
     }
 
@@ -25,7 +26,7 @@ namespace WalkingDog.Racing
         public bool Finished => !double.IsPositiveInfinity(FinishTime);
         internal readonly double Form;
         internal DogRaceRunner(DogRaceEntry entry, double form)
-        { Entry = new DogRaceEntry(entry.Id, entry.Name, entry.Stats); Form = form; }
+        { Entry = new DogRaceEntry(entry.Id, entry.Name, entry.Stats, entry.EquippedItemId); Form = form; }
     }
 
     // Pure, deterministic simulation; rendering never decides winners. Every
@@ -83,8 +84,8 @@ namespace WalkingDog.Racing
         public List<DogRaceRunner> Standings() => Runners.OrderBy(r => r.FinishTime)
             .ThenByDescending(r => r.Distance).ThenBy(r => r.Entry.Id, StringComparer.Ordinal).ToList();
 
-        public static List<DogRaceEntry> PracticeField(DogStats player) => new List<DogRaceEntry> {
-            new DogRaceEntry("player", "Your dog", player),
+        public static List<DogRaceEntry> PracticeField(DogStats player, string equippedItemId = "") => new List<DogRaceEntry> {
+            new DogRaceEntry("player", "Your dog", player, equippedItemId),
             new DogRaceEntry("dash", "Dash", new DogStats { speed = 48, stamina = 30, acceleration = 35 }),
             new DogRaceEntry("pip", "Pip", new DogStats { speed = 35, stamina = 48, acceleration = 48 }),
             new DogRaceEntry("scout", "Scout", new DogStats { speed = 42, stamina = 42, acceleration = 42 })
