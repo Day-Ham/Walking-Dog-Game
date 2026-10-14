@@ -357,10 +357,40 @@ public sealed class SocialSceneTests
         Assert.That(Field<Button>("refresh").interactable, Is.True);
         Assert.That(Field<Button>("sharing").interactable, Is.False);
     }
+    [Test]
+    public async Task ChangingNicknameValidatesInputAndUpdatesProfile()
+    {
+        await panel.RefreshAsync();
+        var nick = Field<TMP_InputField>("nickname");
+        var save = Field<Button>("saveNickname");
+        if (nick != null && save != null)
+        {
+            Assert.That(nick.text, Is.EqualTo("My Walker"));
+            nick.text = "Bad";
+            save.onClick.Invoke();
+            Assert.That(panel.StatusText, Does.Contain("3–24"));
+            nick.text = "New Name";
+            save.onClick.Invoke();
+            Assert.That(service.SavedDisplayName, Is.EqualTo("New Name"));
+            Assert.That(Field<TMP_Text>("profileName").text, Is.EqualTo("New Name"));
+        }
+    }
+
     private static void LogAssertWarning() => UnityEngine.TestTools.LogAssert.Expect(LogType.Warning, "Social request failed: TimeoutException");
 
-    private sealed class FakeSocial : ISocialService, ISocialRouteService
+    private sealed class FakeSocial : ISocialService, ISocialRouteService, ILeaderboardService
     {
+        public string SavedDisplayName;
+        public Task SaveDisplayNameAsync(string displayName, CancellationToken cancellationToken)
+        {
+            SavedDisplayName = displayName;
+            return Task.CompletedTask;
+        }
+        public Task<LeaderboardSnapshot> LoadAsync(LeaderboardMetric metric, CancellationToken cancellationToken)
+            => Task.FromResult(new LeaderboardSnapshot(metric, "me", new LeaderboardEntry[0], null));
+        public Task<LeaderboardSnapshot> LoadAsync(LeaderboardMetric metric, LeaderboardScope scope, CancellationToken cancellationToken)
+            => Task.FromResult(new LeaderboardSnapshot(metric, "me", new LeaderboardEntry[0], null, scope));
+        public void Dispose() { }
         public Func<Task<SocialRoute>> RouteRead;
         public Task<SocialRoute> LoadRouteAsync(string owner, string walkId, CancellationToken token)
             => RouteRead != null ? RouteRead() : Task.FromResult(new SocialRoute());

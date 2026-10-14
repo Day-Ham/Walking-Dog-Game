@@ -21,8 +21,6 @@ namespace WalkingDog.Leaderboards
         [SerializeField] private Button refresh;
         [SerializeField] private Button distance;
         [SerializeField] private Button steps;
-        [SerializeField] private TMP_InputField nickname;
-        [SerializeField] private Button saveNickname;
 
         private readonly List<GameObject> cards = new List<GameObject>();
         private readonly List<OpenFreeMapWebViewMap> hiddenMaps = new List<OpenFreeMapWebViewMap>();
@@ -55,7 +53,6 @@ namespace WalkingDog.Leaderboards
             refresh.onClick.AddListener(OnRefresh);
             distance.onClick.AddListener(ShowDistance);
             steps.onClick.AddListener(ShowSteps);
-            saveNickname.onClick.AddListener(OnSaveNickname);
             if (uploadPhoto != null) uploadPhoto.onClick.AddListener(UploadProfilePhoto);
             else Debug.LogWarning("Assign Upload Photo on LeaderboardPanelUI in the Inspector.");
             if (googlePhoto != null) googlePhoto.onClick.AddListener(UseGooglePhoto);
@@ -78,7 +75,6 @@ namespace WalkingDog.Leaderboards
             if (service != null && observedUser != service.AuthenticatedUserId)
             {
                 observedUser = service.AuthenticatedUserId;
-                nickname.text = "";
                 ClearCards();
                 personalTotals.text = "";
                 OnRefresh();
@@ -97,8 +93,6 @@ namespace WalkingDog.Leaderboards
         public void ShowGlobal() { scope = LeaderboardScope.Global; OnRefresh(); }
         // Friends tab -> ShowFriends
         public void ShowFriends() { scope = LeaderboardScope.Friends; OnRefresh(); }
-        // Save nickname button -> OnSaveNickname
-        public void OnSaveNickname() { _ = SaveNicknameAsync(); }
         public void UploadProfilePhoto() { _ = ChangePhotoAsync(true); }
         public void UseGooglePhoto() { _ = ChangePhotoAsync(false); }
         // Manage friends button -> OpenFriendsPanel
@@ -208,7 +202,6 @@ namespace WalkingDog.Leaderboards
             }
             personalTotals.text = own == null ? "You · No synced walks counted yet"
                 : $"You · {own.TotalDistanceMeters / 1000d:N2} km · {own.TotalSteps:N0} steps\n{own.CompletedWalkCount:N0} completed walks";
-            if (own != null && !nickname.isFocused) nickname.SetTextWithoutNotify(own.DisplayName);
         }
 
         private async Task ChangePhotoAsync(bool upload)
@@ -242,39 +235,14 @@ namespace WalkingDog.Leaderboards
             finally { if (IsCurrent(request)) { busy = false; SetButtons(); } }
         }
 
-        private async Task SaveNicknameAsync() // save nickname function for the leaderboard
-        {
-            if (busy || destroyed || !isActiveAndEnabled) return;
-            var name = nickname.text.Trim();
-            if (!LeaderboardNames.IsValid(name))
-            { status.text = "Use 3–24 letters, numbers, spaces, _ or -. Start with a letter or number."; return; }
-            int request = BeginRequest("Saving nickname…");
-            var token = pending.Token;
-            try
-            {
-                var store = await GetServiceAsync();
-                if (!IsCurrent(request)) return;
-                await store.SaveDisplayNameAsync(name, token);
-                if (IsCurrent(request)) status.text = "Nickname saved. Tap Refresh to see your updated card.";
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception exception)
-            {
-                if (IsCurrent(request)) status.text = "Couldn't save nickname. Check your connection and try again.";
-                Debug.LogWarning("Leaderboard nickname save failed: " + exception.GetType().Name);
-            }
-            finally { if (IsCurrent(request)) { busy = false; SetButtons(); } }
-        }
-
         private void SetButtons() // set buttons 
         {
             refresh.interactable = !busy;
             distance.interactable = metric != LeaderboardMetric.Distance;
             steps.interactable = metric != LeaderboardMetric.Steps;
-            saveNickname.interactable = !busy && service != null && !string.IsNullOrEmpty(service.AuthenticatedUserId);
-            nickname.interactable = saveNickname.interactable;
-            if (uploadPhoto != null) uploadPhoto.interactable = saveNickname.interactable;
-            if (googlePhoto != null) googlePhoto.interactable = saveNickname.interactable;
+            bool signedIn = !busy && service != null && !string.IsNullOrEmpty(service.AuthenticatedUserId);
+            if (uploadPhoto != null) uploadPhoto.interactable = signedIn;
+            if (googlePhoto != null) googlePhoto.interactable = signedIn;
             if (globalTab != null) globalTab.interactable = scope != LeaderboardScope.Global;
             if (friendsTab != null) friendsTab.interactable = scope != LeaderboardScope.Friends;
         }
@@ -307,7 +275,6 @@ namespace WalkingDog.Leaderboards
             ClearCards();
             if (status != null) status.text = "";
             if (personalTotals != null) personalTotals.text = "";
-            if (nickname != null) nickname.SetTextWithoutNotify("");
             if (ownPhoto != null) ownPhoto.gameObject.SetActive(false);
             foreach (var map in hiddenMaps) if (map != null) map.Resume(this);
             hiddenMaps.Clear();
@@ -341,7 +308,6 @@ namespace WalkingDog.Leaderboards
             if (refresh != null) refresh.onClick.RemoveListener(OnRefresh);
             if (distance != null) distance.onClick.RemoveListener(ShowDistance);
             if (steps != null) steps.onClick.RemoveListener(ShowSteps);
-            if (saveNickname != null) saveNickname.onClick.RemoveListener(OnSaveNickname);
             if (uploadPhoto != null) uploadPhoto.onClick.RemoveListener(UploadProfilePhoto);
             if (googlePhoto != null) googlePhoto.onClick.RemoveListener(UseGooglePhoto);
         }

@@ -41,8 +41,12 @@ public static class LeaderboardSceneSetup
         Place(back.transform, .70f, .93f, .94f, .98f);
         Place(scroll.transform, .10f, .30f, .90f, .74f);
         Place(refresh.transform, .10f, .025f, .47f, .077f);
-        refresh.GetComponentInChildren<TMP_Text>().text = "Refresh";
-        Place(canvas.transform.Find("Walk Screen Safe Area/Leaderboard Button"), .05f, .92f, .45f, .97f);
+        var refreshText = refresh.GetComponentInChildren<TMP_Text>();
+        if (refreshText != null) refreshText.text = "Refresh";
+        var launchTransform = canvas.transform.Find("Walk Screen Safe Area/Top Panel/Leaderboard Button")
+            ?? canvas.transform.Find("Walk Screen Safe Area/Leaderboard Button")
+            ?? canvas.GetComponentsInChildren<Button>(true).FirstOrDefault(b => b.name == "Leaderboard Button")?.transform;
+        if (launchTransform != null) Place(launchTransform, .05f, .92f, .45f, .97f);
 
         scroll.horizontal = true;
         scroll.vertical = false;
@@ -85,27 +89,12 @@ public static class LeaderboardSceneSetup
         var own = MakeText(safe, title, "Your Totals", 32);
         Place(own.transform, .10f, .16f, .90f, .235f);
         own.text = "";
-        var hint = MakeText(safe, title, "Nickname Hint", 24);
-        hint.text = "Nickname · 3–24 letters, numbers, spaces, _ or -";
-        Place(hint.transform, .10f, .122f, .90f, .15f);
-        var inputObject = safe.Find("Nickname")?.gameObject ?? new GameObject("Nickname", typeof(RectTransform), typeof(Image));
-        inputObject.transform.SetParent(safe, false);
-        Place(inputObject.transform, .10f, .081f, .70f, .121f);
-        inputObject.GetComponent<Image>().color = new Color(.09f, .08f, .18f, .95f);
-        var input = GetOrAdd<TMP_InputField>(inputObject);
-        var inputText = MakeText(inputObject.transform, title, "Text", 30);
-        Place(inputText.transform, 0, 0, 1, 1);
-        inputText.rectTransform.offsetMin = new Vector2(16, 0);
-        inputText.rectTransform.offsetMax = new Vector2(-16, 0);
-        inputText.alignment = TextAlignmentOptions.MidlineLeft;
-        inputText.text = "";
-        inputText.enableAutoSizing = false;
-        input.textComponent = inputText;
-        input.textViewport = inputObject.GetComponent<RectTransform>();
-        input.targetGraphic = inputObject.GetComponent<Image>();
-        input.characterLimit = 24;
-        input.lineType = TMP_InputField.LineType.SingleLine;
-        var save = MakeButton(safe, refresh, "Save Nickname", "Save", .73f, .081f, .90f, .121f);
+        var oldHint = safe.Find("Nickname Hint") ?? safe.Find("Nickname Guide");
+        if (oldHint != null) UnityEngine.Object.DestroyImmediate(oldHint.gameObject);
+        var oldNickname = safe.Find("Nickname");
+        if (oldNickname != null) UnityEngine.Object.DestroyImmediate(oldNickname.gameObject);
+        var oldSave = safe.Find("Save Nickname");
+        if (oldSave != null) UnityEngine.Object.DestroyImmediate(oldSave.gameObject);
         var controller = GetOrAdd<LeaderboardPanelUI>(panel.gameObject);
         Set(controller, "content", content);
         Set(controller, "cardTemplate", card);
@@ -115,14 +104,15 @@ public static class LeaderboardSceneSetup
         Set(controller, "refresh", refresh);
         Set(controller, "distance", distance);
         Set(controller, "steps", steps);
-        Set(controller, "nickname", input);
-        Set(controller, "saveNickname", save);
         // Visibility must follow the controller's root, not just its background.
-        panel.Find("LeaderBG").gameObject.SetActive(true);
-        var launch = canvas.transform.Find("Walk Screen Safe Area/Leaderboard Button").GetComponent<Button>();
-        launch.onClick = new Button.ButtonClickedEvent();
+        var launch = (launchTransform != null ? launchTransform.GetComponent<Button>() : null)
+            ?? canvas.GetComponentsInChildren<Button>(true).FirstOrDefault(b => b.name == "Leaderboard Button");
+        if (launch != null)
+        {
+            launch.onClick = new Button.ButtonClickedEvent();
+            UnityEditor.Events.UnityEventTools.AddBoolPersistentListener(launch.onClick, panel.gameObject.SetActive, true);
+        }
         back.onClick = new Button.ButtonClickedEvent();
-        UnityEditor.Events.UnityEventTools.AddBoolPersistentListener(launch.onClick, panel.gameObject.SetActive, true);
         UnityEditor.Events.UnityEventTools.AddBoolPersistentListener(back.onClick, panel.gameObject.SetActive, false);
         panel.gameObject.SetActive(false);
         EditorSceneManager.MarkSceneDirty(scene);
@@ -220,13 +210,20 @@ public static class LeaderboardSceneSetup
     private static T GetOrAdd<T>(GameObject go) where T : Component => go.GetComponent<T>() ?? go.AddComponent<T>();
     private static void Set(UnityEngine.Object target, string name, UnityEngine.Object value)
     {
+        if (target == null) return;
         var serialized = new SerializedObject(target);
-        serialized.FindProperty(name).objectReferenceValue = value;
-        serialized.ApplyModifiedPropertiesWithoutUndo();
+        var prop = serialized.FindProperty(name);
+        if (prop != null)
+        {
+            prop.objectReferenceValue = value;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
     }
     private static void Place(Transform transform, float left, float bottom, float right, float top)
     {
-        var rect = (RectTransform)transform;
+        if (transform == null) return;
+        var rect = transform as RectTransform;
+        if (rect == null) return;
         rect.anchorMin = new Vector2(left, bottom);
         rect.anchorMax = new Vector2(right, top);
         rect.pivot = new Vector2(.5f, .5f);

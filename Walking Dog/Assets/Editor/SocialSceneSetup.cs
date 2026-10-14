@@ -31,30 +31,53 @@ public static class SocialSceneSetup
         var picture = safe.Find("Profile Picture");
         var aspect = picture.GetComponent<AspectRatioFitter>();
         if (aspect != null) UnityEngine.Object.DestroyImmediate(aspect);
-        Place(picture, .055f, .82f, .22f, .925f);
-        Place(safe.Find("Profile Desc"), .26f, .82f, .95f, .925f);
+        Place(picture, .055f, .845f, .22f, .935f);
+        Place(safe.Find("Profile Desc"), .26f, .845f, .95f, .935f);
         Place(name.transform, .02f, .48f, .98f, .96f); Style(name, 46);
         Place(followingCount.transform, .02f, .06f, .48f, .42f); Style(followingCount, 29);
         Place(followerCount.transform, .52f, .06f, .98f, .42f); Style(followerCount, 29);
         Set(panel, "profileName", name); Set(panel, "followingCount", followingCount); Set(panel, "followerCount", followerCount);
         Set(panel, "photo", Add<ProfilePhotoUI>(picture.gameObject));
         name.text = "Your circle"; followingCount.text = "Following"; followerCount.text = "Followers";
-        var back = safe.Find("BACK").GetComponent<Button>();
-        ConfigureButton(back, "Back", .74f, .943f, .95f, .985f);
+        var back = safe.Find("BACK")?.GetComponent<Button>() ?? safe.Find("Back")?.GetComponent<Button>();
+        ConfigureButton(back, "Back", .74f, .943f, .95f, .985f, name?.font);
         Set(panel, "back", back);
         Label(safe, name, "Social title", "WALK TOGETHER", .05f, .943f, .70f, .985f, 32);
         var discover = safe.Find("Display Users").GetComponent<Button>();
         var following = safe.Find("Display Following Users").GetComponent<Button>();
         var followers = safe.Cast<Transform>().First(t => t.name.Trim() == "Display Follower Users").GetComponent<Button>();
-        ConfigureButton(discover, "Discover", .28f, .695f, .49f, .745f);
-        ConfigureButton(following, "Following", .51f, .695f, .72f, .745f);
-        ConfigureButton(followers, "Followers", .74f, .695f, .95f, .745f);
+        ConfigureButton(discover, "Discover", .28f, .695f, .49f, .745f, name?.font);
+        ConfigureButton(following, "Following", .51f, .695f, .72f, .745f, name?.font);
+        ConfigureButton(followers, "Followers", .74f, .695f, .95f, .745f, name?.font);
         Set(panel, "discover", discover); Set(panel, "following", following); Set(panel, "followers", followers);
         Set(panel, "activity", Button(safe, discover, "Activity tab", "Activity", .05f, .695f, .26f, .745f));
         Set(panel, "refresh", Button(safe, discover, "Social refresh", "Refresh", .73f, .01f, .95f, .06f));
-        Set(panel, "sharing", Button(safe, discover, "Share walks", "Walk sharing: OFF", .60f, .76f, .95f, .803f));
-        Set(panel, "copy", Button(safe, discover, "Copy player code", "Copy code", .33f, .76f, .57f, .803f));
-        Set(panel, "code", Label(safe, name, "Player code", "", .05f, .76f, .31f, .803f, 27));
+        Set(panel, "sharing", Button(safe, discover, "Share walks", "Walk sharing: OFF", .60f, .75f, .95f, .79f));
+        Set(panel, "copy", Button(safe, discover, "Copy player code", "Copy code", .33f, .75f, .57f, .79f));
+        Set(panel, "code", Label(safe, name, "Player code", "", .05f, .75f, .31f, .79f, 27));
+
+        var oldNick = safe.Find("Edit nickname");
+        if (oldNick != null) UnityEngine.Object.DestroyImmediate(oldNick.gameObject);
+        var nickInput = new GameObject("Edit nickname", typeof(RectTransform), typeof(Image), typeof(TMP_InputField)).GetComponent<TMP_InputField>();
+        nickInput.transform.SetParent(safe, false);
+        nickInput.GetComponent<Image>().color = new Color(.08f, .16f, .20f);
+        nickInput.targetGraphic = nickInput.GetComponent<Image>();
+        var nickTextArea = new GameObject("Text area", typeof(RectTransform), typeof(RectMask2D)).GetComponent<RectTransform>();
+        nickTextArea.SetParent(nickInput.transform, false);
+        nickInput.textViewport = nickTextArea;
+        nickInput.textComponent = (TextMeshProUGUI)Label(nickTextArea, name, "Input text", "", 0, 0, 1, 1, 28);
+        Place(nickInput.transform, .05f, .795f, .74f, .835f);
+        nickInput.onValueChanged = new TMP_InputField.OnChangeEvent(); nickInput.onEndEdit = new TMP_InputField.SubmitEvent();
+        nickInput.characterLimit = 24; nickInput.contentType = TMP_InputField.ContentType.Standard;
+        nickInput.lineType = TMP_InputField.LineType.SingleLine;
+        nickInput.SetTextWithoutNotify("");
+        Place(nickInput.textViewport, .035f, .05f, .965f, .95f);
+        Place(nickInput.textComponent.transform, 0, 0, 1, 1); Style(nickInput.textComponent, 28);
+        var nickPlaceholder = Label(nickInput.textViewport, name, "Nickname placeholder", "Change nickname", 0, 0, 1, 1, 28);
+        nickPlaceholder.color = new Color(.75f, .8f, .85f); nickInput.placeholder = nickPlaceholder;
+        Set(panel, "nickname", nickInput);
+        Set(panel, "saveNickname", Button(safe, discover, "Save nickname", "Save", .76f, .795f, .95f, .835f));
+
         Label(safe, name, "Sharing explanation", "Sharing ON lets followers see your past and future synced walk summaries.", .05f, .593f, .95f, .63f, 25);
         Label(safe, name, "Social footer", "Walk summaries · GPS routes stay private", .05f, .01f, .70f, .06f, 23);
         Set(panel, "status", Label(safe, name, "Social status", "Sign in to follow walkers.", .05f, .55f, .95f, .588f, 26));
@@ -157,14 +180,23 @@ public static class SocialSceneSetup
         UnityEngine.Object.DestroyImmediate(image); UnityEngine.Object.DestroyImmediate(rt); UnityEngine.Object.DestroyImmediate(go);
     }
     private static T Add<T>(GameObject go) where T : Component => go.GetComponent<T>() ?? go.AddComponent<T>();
-    private static void Set(object obj, string field, object value) => obj.GetType().GetField(field, BindingFlags.Instance | BindingFlags.NonPublic).SetValue(obj, value);
+    private static void Set(object obj, string field, object value)
+    {
+        if (obj == null) return;
+        var f = obj.GetType().GetField(field, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+        if (f != null) f.SetValue(obj, value);
+    }
     private static void Place(Transform transform, float x, float y, float x2, float y2)
     {
-        var rect = (RectTransform)transform; rect.localScale = Vector3.one;
+        if (transform == null) return;
+        var rect = transform as RectTransform;
+        if (rect == null) return;
+        rect.localScale = Vector3.one;
         rect.anchorMin = new Vector2(x, y); rect.anchorMax = new Vector2(x2, y2); rect.offsetMin = rect.offsetMax = Vector2.zero;
     }
     private static void Style(TMP_Text text, float max)
     {
+        if (text == null) return;
         text.margin = Vector4.zero; text.enableAutoSizing = true; text.fontSizeMin = 18; text.fontSizeMax = max;
         text.richText = false; text.raycastTarget = false; text.alignment = TextAlignmentOptions.MidlineLeft;
     }
@@ -172,19 +204,29 @@ public static class SocialSceneSetup
     {
         var label = parent.Find(name)?.GetComponent<TMP_Text>();
         if (label == null) { label = new GameObject(name, typeof(RectTransform), typeof(TextMeshProUGUI)).GetComponent<TMP_Text>(); label.transform.SetParent(parent, false); }
-        label.font = source.font; label.color = source.color; label.text = value; Style(label, size); Place(label.transform, x, y, x2, y2);
+        if (source != null) { label.font = source.font; label.color = source.color; }
+        label.text = value; Style(label, size); Place(label.transform, x, y, x2, y2);
         return label;
     }
     private static Button Button(Transform parent, Button source, string name, string label, float x, float y, float x2, float y2)
     {
         var button = parent.Find(name)?.GetComponent<Button>() ?? UnityEngine.Object.Instantiate(source, parent);
-        button.name = name; ConfigureButton(button, label, x, y, x2, y2); return button;
+        button.name = name; ConfigureButton(button, label, x, y, x2, y2, source != null ? source.GetComponentInChildren<TMP_Text>(true)?.font : null); return button;
     }
-    private static void ConfigureButton(Button button, string label, float x, float y, float x2, float y2)
+    private static void ConfigureButton(Button button, string label, float x, float y, float x2, float y2, TMP_FontAsset font = null)
     {
+        if (button == null) return;
         button.onClick = new Button.ButtonClickedEvent(); button.interactable = true;
         Place(button.transform, x, y, x2, y2);
-        var text = button.GetComponentInChildren<TMP_Text>(true); text.text = label; Style(text, 29);
+        var text = button.GetComponentInChildren<TMP_Text>(true);
+        if (text == null)
+        {
+            var textGo = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
+            textGo.transform.SetParent(button.transform, false);
+            text = textGo.GetComponent<TMP_Text>();
+            if (font != null) text.font = font;
+        }
+        text.text = label; Style(text, 29);
         text.alignment = TextAlignmentOptions.Center; Place(text.transform, .035f, .05f, .965f, .95f);
     }
 }

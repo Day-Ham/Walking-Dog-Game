@@ -16,6 +16,8 @@ namespace WalkingDog.Leaderboards
         [SerializeField] private ProfilePhotoUI photo;
         [SerializeField] private Button activity, discover, following, followers, refresh, sharing, search, copy, back;
         [SerializeField] private TMP_InputField codeInput;
+        [SerializeField] private TMP_InputField nickname;
+        [SerializeField] private Button saveNickname;
         [SerializeField] private RectTransform content;
         [SerializeField] private ScrollRect scroll;
         [SerializeField] private SocialCardUI template;
@@ -50,6 +52,8 @@ namespace WalkingDog.Leaderboards
             search.onClick.AddListener(Search);
             copy.onClick.AddListener(CopyCode);
             back.onClick.AddListener(Back);
+            if (saveNickname != null) saveNickname.onClick.AddListener(OnSaveNickname);
+            else Debug.LogWarning("Assign Save Nickname on SocialPanelUI in the Inspector.");
         }
 
         private void OnEnable()
@@ -103,6 +107,42 @@ namespace WalkingDog.Leaderboards
         private void ChangeFollow(SocialPlayer player)
         {
             if (!busy) _ = RefreshAsync(token => service.SetFollowingAsync(player.Id, !player.Following, token));
+        }
+        public void OnSaveNickname() { _ = SaveNicknameAsync(); }
+        private async Task SaveNicknameAsync()
+        {
+            if (busy || nickname == null) return;
+            var name = nickname.text.Trim();
+            if (!LeaderboardNames.IsValid(name))
+            { status.text = "Use 3–24 letters, numbers, spaces, _ or -. Start with a letter or number."; return; }
+            Cancel();
+            int request = generation;
+            pending = new CancellationTokenSource();
+            var token = pending.Token;
+            busy = true;
+            status.text = "Saving nickname…";
+            SetButtons();
+            try
+            {
+                ILeaderboardService svc = (service as ILeaderboardService)
+                    ?? (ServiceFactory != null ? (await ServiceFactory()) as ILeaderboardService : null)
+                    ?? (owner != null ? await owner.GetServiceAsync() : null);
+                if (!Current(request)) return;
+                if (svc == null) throw new InvalidOperationException("Leaderboard service unavailable.");
+                await svc.SaveDisplayNameAsync(name, token);
+                if (Current(request))
+                {
+                    profileName.text = name;
+                    status.text = "Nickname saved.";
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception exception)
+            {
+                if (Current(request)) status.text = "Couldn't save nickname. Check your connection and try again.";
+                Debug.LogWarning("Profile nickname save failed: " + exception.GetType().Name);
+            }
+            finally { if (Current(request)) { busy = false; SetButtons(); } }
         }
 
         internal async Task RefreshAsync(Func<CancellationToken, Task> mutation = null)
@@ -158,6 +198,7 @@ namespace WalkingDog.Leaderboards
             followerCount.text = $"{data.FollowerCount:N0} followers";
             code.text = data.Code;
             sharing.GetComponentInChildren<TMP_Text>().text = sharesActivity ? "Walk sharing: ON" : "Walk sharing: OFF";
+            if (nickname != null && !nickname.isFocused) nickname.SetTextWithoutNotify(data.Me.Name);
             if (tab == SocialTab.Profile && data.Profile != null)
             {
                 // Use the resolved UID for subsequent refreshes (codes may be ambiguous with IDs).
@@ -276,6 +317,8 @@ namespace WalkingDog.Leaderboards
             refresh.interactable = !busy;
             search.interactable = codeInput.interactable = !busy && signedIn;
             sharing.interactable = copy.interactable = !busy && signedIn && hasSnapshot;
+            if (nickname != null) nickname.interactable = !busy && signedIn;
+            if (saveNickname != null) saveNickname.interactable = !busy && signedIn;
         }
         private bool Current(int request) => this != null && isActiveAndEnabled && request == generation;
         private void Cancel() { generation++; pending?.Cancel(); pending?.Dispose(); pending = null; busy = false; }
@@ -284,6 +327,7 @@ namespace WalkingDog.Leaderboards
             hasSnapshot = false; sharesActivity = false; profileName.text = "Your circle";
             followerCount.text = followingCount.text = code.text = ""; codeInput.SetTextWithoutNotify("");
             sharing.GetComponentInChildren<TMP_Text>().text = "Walk sharing: OFF";
+            if (nickname != null) nickname.SetTextWithoutNotify("");
             photo.Bind("", "You", "", profileName.font);
         }
         private void ClearRows()

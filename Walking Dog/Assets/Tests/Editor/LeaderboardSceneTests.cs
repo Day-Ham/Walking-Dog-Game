@@ -119,7 +119,6 @@ public sealed class LeaderboardSceneTests
         await task;
         Assert.That(panel.VisibleCardCount, Is.Zero);
         Assert.That(Field<TMP_Text>("personalTotals").text, Is.Empty);
-        Assert.That(Field<TMP_InputField>("nickname").text, Is.Empty);
     }
 
     [Test]
@@ -133,7 +132,6 @@ public sealed class LeaderboardSceneTests
         await panel.RefreshAsync();
         Assert.That(panel.StatusText, Does.Contain("Sign in"));
         Assert.That(panel.VisibleCardCount, Is.Zero);
-        Assert.That(Field<Button>("saveNickname").interactable, Is.False);
     }
 
     private T Field<T>(string name) => (T)typeof(LeaderboardPanelUI).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(panel);
