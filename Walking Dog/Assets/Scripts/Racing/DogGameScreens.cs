@@ -46,6 +46,10 @@ namespace WalkingDog.Racing
         private IRaceLobbyService lobbyService;
         private RaceRoom currentRoom;
         private IDisposable roomSubscription;
+        private CancellationTokenSource lobbyPending;
+        private int lobbyCommandVersion, roomRevision;
+        private bool destroyed;
+        internal TimeSpan LobbyTimeout = TimeSpan.FromSeconds(30);
         private PendingTraining pendingTraining;
         private string owner = "";
         private bool busy, initialized;
@@ -63,7 +67,8 @@ namespace WalkingDog.Racing
         internal bool IsBusy => busy;
         private FirebaseWalkBootstrap Bootstrap => StepCountAndGpsManager.Instance?.GetComponent<FirebaseWalkBootstrap>();
         private string CurrentOwner => OwnerReader != null ? OwnerReader() : Bootstrap?.Wallet?.Owner ?? "";
-        private string CurrentPlayerName => FirebaseAuth.DefaultInstance?.CurrentUser?.DisplayName is string name && !string.IsNullOrWhiteSpace(name) ? name : "Your Dog";
+        private string CurrentPlayerName => OwnerReader != null ? "Your Dog"
+            : FirebaseAuth.DefaultInstance?.CurrentUser?.DisplayName is string name && !string.IsNullOrWhiteSpace(name) ? name : "Your Dog";
         private string CurrentEquippedItemId => PlayerPrefs.GetString(CollarInventoryStore.EquippedItemIdKey, "");
 
         private void Update()
@@ -84,8 +89,9 @@ namespace WalkingDog.Racing
         public void OpenTraining() => ShowScreen(ScreenMode.Training);
         public void OpenRace() => ShowScreen(ScreenMode.Race);
         public void OpenLobby() => ShowScreen(ScreenMode.Lobby);
-        private void ShowScreen(ScreenMode mode)
+        private void ShowScreen(ScreenMode mode, bool fromLobby = false)
         {
+            if (mode != ScreenMode.Lobby && !fromLobby) LeaveRoomInternal();
             if (!Visible)
             {
                 foreach (var map in FindObjectsByType<OpenFreeMapWebViewMap>(FindObjectsSortMode.None))
@@ -97,8 +103,9 @@ namespace WalkingDog.Racing
             if (lobbyScreen != null) lobbyScreen.SetActive(mode == ScreenMode.Lobby);
             var active = mode == ScreenMode.Training ? trainingScreen : mode == ScreenMode.Race ? raceScreen : lobbyScreen;
             if (active != null) active.transform.SetAsLastSibling();
+            if (mode == ScreenMode.Lobby) SetLobbyMessage("Loading your dog…");
             RenderRace(); RenderStats(); RenderLobby();
-            _ = RefreshAsync();
+            if (!fromLobby) _ = RefreshAsync();
         }
 
         public void Close()
@@ -118,6 +125,7 @@ namespace WalkingDog.Racing
             busy = false; race = null; snapshot = null; pendingTraining = null;
             LeaveRoomInternal();
             owner = CurrentOwner; initialized = true;
+            SetLobbyMessage(string.IsNullOrEmpty(owner) ? "Sign in to create or join a race room." : "Loading your dog…");
             if (Application.isPlaying && !string.IsNullOrEmpty(owner))
             {
                 try { pendingTraining = JsonUtility.FromJson<PendingTraining>(PlayerPrefs.GetString(PendingKey, "")); }
@@ -144,7 +152,7 @@ namespace WalkingDog.Racing
             busy = true;
             int request = generation;
             var token = lifetime.Token;
-            trainingStatus.text = "Loading your dog…"; RenderStats();
+            trainingStatus.text = "Loading your dog…"; RenderStats(); RenderLobby();
             try
             {
                 if (StoreFactory == null)
@@ -159,6 +167,7 @@ namespace WalkingDog.Racing
                 {
                     snapshot = new DogStats();
                     trainingStatus.text = "Sign in to save your dog and train with wallet points. You can try a practice race.";
+                    SetLobbyMessage("Sign in to create or join a race room. Practice racing is available without signing in.");
                     return;
                 }
                 if (store == null) store = StoreFactory != null ? await StoreFactory()
@@ -171,6 +180,7 @@ namespace WalkingDog.Racing
                 if (!Current(request)) return;
                 snapshot = loaded.Copy(); pendingTraining = null; SavePending();
                 trainingStatus.text = "Choose a training session. Each costs 20 points and adds 5 to one stat.";
+                if (currentRoom == null) SetLobbyMessage("Create a room or enter a friend's five-character room code.");
                 if (StoreFactory == null)
                 {
                     await Bootstrap.Wallet.RefreshAsync();
@@ -179,7 +189,7 @@ namespace WalkingDog.Racing
             }
             catch (InvalidOperationException error)
             {
-                if (Current(request)) { pendingTraining = null; SavePending(); trainingStatus.text = error.Message; }
+                if (Current(request)) { pendingTraining = null; SavePending(); trainingStatus.text = error.Message; SetLobbyMessage("Couldn't load your dog. Check your connection and reopen the lobby."); }
             }
             catch (OperationCanceledException) { }
             catch (Exception error)
@@ -188,8 +198,9 @@ namespace WalkingDog.Racing
                     ? "Training is awaiting confirmation. Tap Refresh to check it; the same session won't charge twice."
                     : "Couldn't load your dog. Check your connection and tap Refresh.";
                 Debug.LogWarning("Dog loading pending: " + error.GetType().Name);
+                if (Current(request)) SetLobbyMessage("Couldn't load your dog. Check your connection and reopen the lobby.");
             }
-            finally { if (Current(request)) { busy = false; RenderStats(); RenderRace(); } }
+            finally { if (Current(request)) { busy = false; RenderStats(); RenderRace(); RenderLobby(); } }
         }
 
         public void TrainSpeed() { _ = TrainAsync(DogStat.Speed); }
@@ -243,7 +254,7 @@ namespace WalkingDog.Racing
 
         public void CreateRoom() { _ = CreateRoomAsync(); }
         public void JoinRoom() { _ = JoinRoomAsync(); }
-        public void LeaveRoom() { LeaveRoomInternal(); RenderLobby(); }
+        public void LeaveRoom() { LeaveRoomInternal(); SetLobbyMessage("You left the room. Create or join another race."); RenderLobby(); RenderStats(); RenderRace(); }
         public void StartLobbyRace() { _ = StartLobbyRaceAsync(); }
 
         private async Task EnsureLobbyServiceAsync()
@@ -254,138 +265,139 @@ namespace WalkingDog.Racing
                 : new FirebaseRaceLobbyService(FirebaseFirestore.DefaultInstance);
         }
 
-        internal async Task CreateRoomAsync()
+        private void SetLobbyMessage(string message)
         {
-            if (busy || string.IsNullOrEmpty(owner)) return;
-            busy = true;
-            if (lobbyStatus != null) lobbyStatus.text = "Creating room…";
-            RenderLobby();
-            try
-            {
-                await EnsureLobbyServiceAsync();
-                var created = await lobbyService.CreateRoomAsync(owner, CurrentPlayerName, snapshot ?? new DogStats(), CurrentEquippedItemId, lifetime.Token);
-                SubscribeToRoom(created);
-                if (lobbyStatus != null) lobbyStatus.text = "Room created! Share the code to invite friends.";
-            }
-            catch (Exception ex)
-            {
-                if (lobbyStatus != null) lobbyStatus.text = "Couldn't create room: " + ex.Message;
-                Debug.LogWarning("Create room error: " + ex.Message);
-            }
-            finally
-            {
-                busy = false;
-                RenderLobby();
-            }
+            if (lobbyStatus != null) lobbyStatus.text = message;
         }
 
-        internal async Task JoinRoomAsync()
+        internal Task CreateRoomAsync() => RunLobbyAsync("Creating room…", async (uid, token, current) =>
         {
-            if (busy || string.IsNullOrEmpty(owner)) return;
-            string code = roomCodeInput != null ? roomCodeInput.text : "";
-            string norm = RaceRoomCodes.Normalize(code);
-            if (string.IsNullOrEmpty(norm))
+            var created = await lobbyService.CreateRoomAsync(uid, CurrentPlayerName, snapshot, CurrentEquippedItemId, token);
+            if (!current()) { Observe(LeaveLateRoomAsync(created, uid)); return; }
+            SubscribeToRoom(created);
+            SetLobbyMessage("Room created! Share the code to invite friends.");
+        });
+
+        internal Task JoinRoomAsync()
+        {
+            string code = RaceRoomCodes.Normalize(roomCodeInput != null ? roomCodeInput.text : "");
+            if (string.IsNullOrEmpty(code))
+            { SetLobbyMessage("Enter a valid five-character room code."); return Task.CompletedTask; }
+            return RunLobbyAsync("Joining room " + RaceRoomCodes.Format(code) + "…", async (uid, token, current) =>
             {
-                if (lobbyStatus != null) lobbyStatus.text = "Please enter a valid room code.";
-                return;
-            }
-            busy = true;
-            if (lobbyStatus != null) lobbyStatus.text = "Joining room " + RaceRoomCodes.Format(norm) + "…";
-            RenderLobby();
-            try
-            {
-                await EnsureLobbyServiceAsync();
-                var joined = await lobbyService.JoinRoomAsync(norm, owner, CurrentPlayerName, snapshot ?? new DogStats(), CurrentEquippedItemId, lifetime.Token);
+                var joined = await lobbyService.JoinRoomAsync(code, uid, CurrentPlayerName, snapshot, CurrentEquippedItemId, token);
+                if (!current()) { Observe(LeaveLateRoomAsync(joined, uid)); return; }
                 SubscribeToRoom(joined);
-                if (lobbyStatus != null) lobbyStatus.text = "Joined room!";
-            }
-            catch (Exception ex)
+                SetLobbyMessage("Joined room. Waiting for the host to start.");
+            });
+        }
+
+        private Task LeaveLateRoomAsync(RaceRoom room, string uid)
+            => this != null && owner == uid && CurrentOwner == uid && lobbyService != null
+                ? lobbyService.LeaveRoomAsync(room.RoomCode, uid, CancellationToken.None) : Task.CompletedTask;
+
+        private async Task RunLobbyAsync(string progress, Func<string, CancellationToken, Func<bool>, Task> operation)
+        {
+            if (busy) return;
+            if (string.IsNullOrEmpty(owner) || owner != CurrentOwner)
+            { SetLobbyMessage("Sign in to create or join a race room."); RenderLobby(); return; }
+            if (snapshot == null)
+            { SetLobbyMessage("Load your dog first. Check your connection and reopen the lobby."); RenderLobby(); return; }
+            int request = generation, command = ++lobbyCommandVersion;
+            string uid = owner;
+            var work = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+            lobbyPending = work; work.CancelAfter(LobbyTimeout);
+            bool CurrentCommand() => Current(request) && command == lobbyCommandVersion && owner == uid;
+            busy = true; SetLobbyMessage(progress); RenderLobby(); RenderStats(); RenderRace();
+            try
             {
-                if (lobbyStatus != null) lobbyStatus.text = ex.Message;
-                Debug.LogWarning("Join room error: " + ex.Message);
+                await WaitAsync(AsResult(EnsureLobbyServiceAsync()), work.Token);
+                if (!CurrentCommand() || work.IsCancellationRequested) return;
+                await WaitAsync(AsResult(operation(uid, work.Token, () => CurrentCommand() && !work.IsCancellationRequested)), work.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                if (CurrentCommand()) SetLobbyMessage("The room request timed out. Check your connection and try again.");
+            }
+            catch (Exception error)
+            {
+                if (CurrentCommand()) SetLobbyMessage(LobbyError(error));
+                Debug.LogWarning("Race room request failed: " + error.GetType().Name);
             }
             finally
             {
-                busy = false;
-                RenderLobby();
+                if (ReferenceEquals(lobbyPending, work)) lobbyPending = null;
+                work.Cancel();
+                if (CurrentCommand())
+                { busy = false; RenderLobby(); RenderStats(); RenderRace(); }
+                work.Dispose();
             }
         }
+        private static async Task<bool> AsResult(Task operation) { await operation; return true; }
+        private static string LobbyError(Exception error)
+        {
+            if (error is TimeoutException) return "The room request timed out. Check your connection and try again.";
+            if (error is Firebase.FirebaseException firebase && firebase.ErrorCode == (int)FirestoreError.PermissionDenied)
+                return "Room access was denied. Check that you're signed in, then try again.";
+            if (error is InvalidOperationException || error is ArgumentException) return error.Message;
+            return "Couldn't update the race room. Check your connection and try again.";
+        }
 
+        private void StopRoomSubscription()
+        {
+            roomRevision++;
+            var old = roomSubscription; roomSubscription = null; old?.Dispose();
+        }
         private void SubscribeToRoom(RaceRoom room)
         {
-            roomSubscription?.Dispose();
-            currentRoom = room;
-            RenderLobby();
-            try
-            {
-                roomSubscription = lobbyService.ListenRoom(room.RoomCode, OnRoomUpdated, OnRoomError);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning("Listen room error: " + ex.Message);
-            }
+            StopRoomSubscription(); currentRoom = room; RenderLobby();
+            int request = generation, revision = roomRevision;
+            string uid = owner, code = room.RoomCode;
+            bool CurrentRoomRequest() => Current(request) && owner == uid && revision == roomRevision && currentRoom?.RoomCode == code;
+            var subscription = lobbyService.ListenRoom(code,
+                update => { if (CurrentRoomRequest()) OnRoomUpdated(update); },
+                error => { if (CurrentRoomRequest()) SetLobbyMessage(LobbyError(error)); });
+            if (CurrentRoomRequest()) roomSubscription = subscription;
+            else subscription.Dispose(); // The initial callback may already have started the race.
         }
 
         private void OnRoomUpdated(RaceRoom updated)
         {
             if (updated == null || updated.IsClosed)
             {
-                LeaveRoomInternal();
-                if (lobbyStatus != null) lobbyStatus.text = "The room was closed.";
-                RenderLobby();
-                return;
+                LeaveRoomInternal(false); SetLobbyMessage("The room was closed."); RenderLobby(); return;
             }
-
             currentRoom = updated;
             if (updated.IsRacing)
             {
-                roomSubscription?.Dispose();
-                roomSubscription = null;
-                var field = updated.BuildSimulationField();
-                race = new DogRaceSimulation(field, updated.Seed, updated.TrackLength);
-                ShowScreen(ScreenMode.Race);
+                StopRoomSubscription(); busy = false;
+                race = new DogRaceSimulation(updated.BuildSimulationField(), updated.Seed, updated.TrackLength);
+                ShowScreen(ScreenMode.Race, true);
                 return;
             }
-
             RenderLobby();
         }
 
-        private void OnRoomError(Exception ex)
+        private void LeaveRoomInternal(bool notifyServer = true)
         {
-            Debug.LogWarning("Room subscription error: " + ex?.Message);
+            ++lobbyCommandVersion;
+            var pending = lobbyPending; lobbyPending = null;
+            if (pending != null) { busy = false; pending.Cancel(); }
+            StopRoomSubscription();
+            var old = currentRoom; currentRoom = null;
+            if (notifyServer && old != null && lobbyService != null && !string.IsNullOrEmpty(owner))
+                Observe(lobbyService.LeaveRoomAsync(old.RoomCode, owner, CancellationToken.None));
         }
 
-        private void LeaveRoomInternal()
+        internal Task StartLobbyRaceAsync()
         {
-            roomSubscription?.Dispose();
-            roomSubscription = null;
-            if (currentRoom != null && lobbyService != null && !string.IsNullOrEmpty(owner))
+            if (currentRoom == null || !currentRoom.CanStart(owner)) return Task.CompletedTask;
+            string code = currentRoom.RoomCode;
+            return RunLobbyAsync("Starting race…", async (uid, token, current) =>
             {
-                var code = currentRoom.RoomCode;
-                _ = lobbyService.LeaveRoomAsync(code, owner, CancellationToken.None);
-            }
-            currentRoom = null;
-        }
-
-        internal async Task StartLobbyRaceAsync()
-        {
-            if (busy || currentRoom == null || !currentRoom.CanStart(owner)) return;
-            busy = true;
-            if (lobbyStatus != null) lobbyStatus.text = "Starting race…";
-            RenderLobby();
-            try
-            {
-                await EnsureLobbyServiceAsync();
-                int seed = UnityEngine.Random.Range(1000, 999999);
-                await lobbyService.StartRaceAsync(currentRoom.RoomCode, owner, seed, lifetime.Token);
-            }
-            catch (Exception ex)
-            {
-                if (lobbyStatus != null) lobbyStatus.text = "Couldn't start race: " + ex.Message;
-                Debug.LogWarning("Start race error: " + ex.Message);
-                busy = false;
-                RenderLobby();
-            }
+                await lobbyService.StartRaceAsync(code, uid, UnityEngine.Random.Range(1000, 999999), token);
+                if (current()) SetLobbyMessage("Race started. Waiting for the room update…");
+            });
         }
 
         internal void RenderLobby()
@@ -394,51 +406,31 @@ namespace WalkingDog.Racing
             bool inRoom = currentRoom != null;
             if (lobbyFindSection != null) lobbyFindSection.SetActive(!inRoom);
             if (lobbyRoomSection != null) lobbyRoomSection.SetActive(inRoom);
-
-            if (!inRoom)
+            // Never replace request/error text here: rendering after a failed
+            // request used to erase the reason Create Room appeared to do nothing.
+            bool ready = !busy && !string.IsNullOrEmpty(owner) && owner == CurrentOwner && snapshot != null;
+            if (createRoomButton != null) createRoomButton.interactable = ready && !inRoom;
+            if (joinRoomButton != null) joinRoomButton.interactable = ready && !inRoom;
+            if (practiceRaceButton != null) practiceRaceButton.interactable = !busy;
+            if (!inRoom) return;
+            if (lobbyRoomCodeText != null) lobbyRoomCodeText.text = "Room  " + RaceRoomCodes.Format(currentRoom.RoomCode);
+            if (lobbyEntrantRows != null)
             {
-                if (lobbyStatus != null && !busy)
+                for (int i = 0; i < lobbyEntrantRows.Length; i++)
                 {
-                    lobbyStatus.text = string.IsNullOrEmpty(owner)
-                        ? "Sign in to create or join multiplayer races."
-                        : "Enter a room code or create a new room to race with friends.";
+                    if (i >= currentRoom.Entrants.Count) { lobbyEntrantRows[i].text = (i + 1) + ".  [Open slot — AI runner fills lane]"; continue; }
+                    var entrant = currentRoom.Entrants[i];
+                    string role = entrant.IsHost ? " (Host)" : "", you = entrant.PlayerId == owner ? " [You]" : "";
+                    lobbyEntrantRows[i].text = $"{i + 1}.  {entrant.DisplayName}{you}{role}\n     Speed {entrant.Stats.speed} · Stamina {entrant.Stats.stamina} · Accel {entrant.Stats.acceleration}";
                 }
-                if (createRoomButton != null) createRoomButton.interactable = !busy && !string.IsNullOrEmpty(owner);
-                if (joinRoomButton != null) joinRoomButton.interactable = !busy && !string.IsNullOrEmpty(owner);
-                if (practiceRaceButton != null) practiceRaceButton.interactable = !busy;
             }
-            else
+            if (startLobbyRaceButton != null)
             {
-                if (lobbyRoomCodeText != null)
-                    lobbyRoomCodeText.text = "Room  " + RaceRoomCodes.Format(currentRoom.RoomCode);
-
-                if (lobbyEntrantRows != null)
-                {
-                    for (int i = 0; i < lobbyEntrantRows.Length; i++)
-                    {
-                        if (i < currentRoom.Entrants.Count)
-                        {
-                            var entrant = currentRoom.Entrants[i];
-                            string role = entrant.IsHost ? " (Host)" : "";
-                            string you = entrant.PlayerId == owner ? " [You]" : "";
-                            lobbyEntrantRows[i].text = $"{i + 1}.  {entrant.DisplayName}{you}{role}\n     Speed {entrant.Stats.speed} · Stamina {entrant.Stats.stamina} · Accel {entrant.Stats.acceleration}";
-                        }
-                        else
-                        {
-                            lobbyEntrantRows[i].text = $"{i + 1}.  [Open slot — AI runner fills lane]";
-                        }
-                    }
-                }
-
-                if (startLobbyRaceButton != null)
-                {
-                    bool isHost = currentRoom.HostUid == owner;
-                    startLobbyRaceButton.interactable = !busy && isHost;
-                    var label = startLobbyRaceButton.GetComponentInChildren<TMP_Text>();
-                    if (label != null) label.text = isHost ? "Start Race" : "Waiting for Host…";
-                }
-                if (leaveRoomButton != null) leaveRoomButton.interactable = !busy;
+                bool host = currentRoom.HostUid == owner;
+                startLobbyRaceButton.interactable = ready && host && currentRoom.IsWaiting;
+                startLobbyRaceButton.GetComponentInChildren<TMP_Text>().text = host ? "Start Race" : "Waiting for Host…";
             }
+            if (leaveRoomButton != null) leaveRoomButton.interactable = !busy;
         }
 
         internal static GachaItem ResolveGachaItem(string itemId)
@@ -508,7 +500,7 @@ namespace WalkingDog.Racing
                 : race.Completed ? string.Join("\n", race.Standings().Select((runner, index) => $"{index + 1}.  {runner.Entry.Name}  ·  {runner.FinishTime:0.00}s"))
                 : "Leading: " + race.Standings()[0].Entry.Name;
         }
-        private bool Current(int request) => this != null && request == generation && owner == CurrentOwner;
+        private bool Current(int request) => this != null && !destroyed && request == generation && owner == CurrentOwner;
         private static async Task<T> WaitAsync<T>(Task<T> operation, CancellationToken token)
         {
             using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(token))
@@ -522,6 +514,9 @@ namespace WalkingDog.Racing
         private static async void Observe(Task operation) { try { await operation; } catch (Exception) { } }
         private void OnDestroy()
         {
+            if (destroyed) return;
+            destroyed = true;
+            LeaveRoomInternal();
             generation++; lifetime.Cancel(); lifetime.Dispose();
             foreach (var map in maps) if (map != null) map.Resume(this);
             maps.Clear();

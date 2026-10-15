@@ -366,7 +366,7 @@ public sealed class SocialSceneTests
         if (nick != null && save != null)
         {
             Assert.That(nick.text, Is.EqualTo("My Walker"));
-            nick.text = "Bad";
+            nick.text = "Ba";
             save.onClick.Invoke();
             Assert.That(panel.StatusText, Does.Contain("3–24"));
             nick.text = "New Name";

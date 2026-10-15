@@ -22,7 +22,7 @@ namespace WalkingDog.Racing
         {
             if (string.IsNullOrWhiteSpace(input)) return "";
             var cleaned = input.Trim().Replace("-", "").Replace(" ", "").ToUpperInvariant();
-            return cleaned.All(c => Alphabet.Contains(c)) ? cleaned : "";
+            return cleaned.Length == 5 && cleaned.All(c => Alphabet.Contains(c)) ? cleaned : "";
         }
 
         public static string Format(string code)
@@ -72,10 +72,10 @@ namespace WalkingDog.Racing
             string equipped = data.TryGetValue("equippedItem", out var eqVal) ? eqVal?.ToString() : "";
             bool host = data.TryGetValue("isHost", out var hostVal) && hostVal is bool b && b;
 
-            int ReadStat(string key, int fallback = 40)
+            int ReadStat(string key)
             {
-                if (data.TryGetValue(key, out var val) && val is long num) return (int)num;
-                return fallback;
+                if (data.TryGetValue(key, out var val) && val is long num && num >= 1 && num <= 100) return (int)num;
+                throw new InvalidOperationException("The race room contains invalid dog stats.");
             }
 
             var stats = new DogStats
@@ -117,8 +117,14 @@ namespace WalkingDog.Racing
             HostName = hostName ?? "Host";
             Status = string.IsNullOrWhiteSpace(status) ? "waiting" : status;
             Seed = seed;
-            TrackLength = trackLength > 0 ? trackLength : DefaultLength;
+            TrackLength = trackLength;
             Entrants = entrants?.ToList().AsReadOnly() ?? new List<RaceEntrant>().AsReadOnly();
+            if (string.IsNullOrWhiteSpace(HostUid) || (Status != "waiting" && Status != "racing" && Status != "closed")
+                || TrackLength != DefaultLength || Entrants.Count < 1 || Entrants.Count > MaxEntrants
+                || Seed < 0 || (Status == "waiting" && Seed != 0) || (Status == "racing" && Seed == 0)
+                || Entrants.Select(e => e.PlayerId).Distinct(StringComparer.Ordinal).Count() != Entrants.Count
+                || Entrants[0].PlayerId != HostUid || !Entrants[0].IsHost || Entrants.Skip(1).Any(e => e.IsHost))
+                throw new InvalidOperationException("The race room could not be verified.");
         }
 
         public bool CanStart(string requesterUid) =>
@@ -156,9 +162,9 @@ namespace WalkingDog.Racing
                 {
                     if (item is IDictionary<string, object> entrantData)
                     {
-                        try { entrants.Add(RaceEntrant.Parse(entrantData)); }
-                        catch { /* ignore malformed entrant entry */ }
+                        entrants.Add(RaceEntrant.Parse(entrantData));
                     }
+                    else throw new InvalidOperationException("The race room contains an invalid player.");
                 }
             }
 

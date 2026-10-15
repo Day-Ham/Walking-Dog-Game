@@ -966,3 +966,114 @@ test("public photos are owner controlled, bounded, and preserved by nickname mer
   await assertSucceeds(setDoc(ref, { photoUrl: "", updatedAt: serverTimestamp() }, { merge: true }));
   await assertFails(setDoc(ref, { totalSteps: 123, updatedAt: serverTimestamp() }, { merge: true }));
 });
+
+async function raceAccount(uid) {
+  const client = environment.authenticatedContext(uid).firestore();
+  await db.doc('users/' + uid + '/dog/main').set({ ...dogFields(), updatedAt: new Date() });
+  return client;
+}
+async function ownRacer(tx, client, uid, host) {
+  const dog = (await tx.get(doc(client, 'users/' + uid + '/dog/main'))).data();
+  const inventory = await tx.get(doc(client, 'users/' + uid + '/inventory/main'));
+  return { id: uid, name: uid, speed: dog.speed, stamina: dog.stamina, acceleration: dog.acceleration,
+    equippedItem: inventory.exists() ? inventory.data().equippedItemId || '' : '', isHost: host };
+}
+async function createRaceRoom(client, uid, code='K9742') {
+  return runTransaction(client, async tx => {
+    const reference=doc(client,'raceRooms/'+code);
+    if ((await tx.get(reference)).exists()) throw new Error('code already used');
+    const host=await ownRacer(tx,client,uid,true);
+    tx.set(reference,{code,hostUid:uid,hostName:uid,status:'waiting',seed:0,length:200,
+      entrants:[host],createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+  });
+}
+async function joinRaceRoom(client, uid, code='K9742') {
+  for(let attempt=0;;attempt++) {
+    try { return await runTransaction(client,async tx=>{
+      const reference=doc(client,'raceRooms/'+code), before=(await tx.get(reference)).data();
+      if(before.status!=='waiting') throw new Error('not waiting');
+      const racer=await ownRacer(tx,client,uid,uid===before.hostUid);
+      const entrants=[...before.entrants],index=entrants.findIndex(e=>e.id===uid);
+      if(index<0) { if(entrants.length>=4) throw new Error('full'); entrants.push(racer); }
+      else entrants[index]=racer;
+      tx.update(reference,{entrants,updatedAt:serverTimestamp()});
+    }); } catch(error) {
+      if(error.code!=='permission-denied'||attempt>=2) throw error;
+      await new Promise(resolve=>setTimeout(resolve,100*(attempt+1)));
+    }
+  }
+}
+const roomPatch=(client,patch,code='K9742')=>setDoc(doc(client,'raceRooms/'+code),{...patch,updatedAt:serverTimestamp()},{merge:true});
+
+test('race rooms: signed-in players can create a missing code, join, start and observe the same frozen field',async()=>{
+  const alice=await raceAccount('alice'), bob=await raceAccount('bob');
+  const before=doc(alice,'raceRooms/K9742');
+  assert.equal((await assertSucceeds(getDoc(before))).exists(),false);
+  await assertSucceeds(createRaceRoom(alice,'alice'));
+  const created=(await getDoc(before)).data().createdAt;
+  await assertSucceeds(joinRaceRoom(bob,'bob'));
+  const joined=(await getDoc(doc(bob,'raceRooms/K9742'))).data();
+  assert.equal(joined.createdAt.isEqual(created),true); assert.equal(joined.entrants.length,2);
+  await assertSucceeds(roomPatch(alice,{status:'racing',seed:12345}));
+  const a=(await getDoc(before)).data(), b=(await getDoc(doc(bob,'raceRooms/K9742'))).data();
+  assert.deepEqual(a.entrants,b.entrants); assert.equal(a.seed,b.seed);
+  await assert.rejects(joinRaceRoom(bob,'bob'), /not waiting/);
+  await assertFails(roomPatch(bob,{entrants:[a.entrants[0]]}));
+  assert.equal((await db.doc(walletPath('alice')).get()).exists,false,'Rooms must not debit or create wallets');
+});
+test('race rooms: unauthenticated access, browsing and forged host actions are denied',async()=>{
+  const alice=await raceAccount('alice'),bob=await raceAccount('bob');
+  const guest=environment.unauthenticatedContext().firestore();
+  await assertFails(getDoc(doc(guest,'raceRooms/K9742')));
+  await createRaceRoom(alice,'alice');
+  await assertFails(getDocs(collection(bob,'raceRooms')));
+  await assertFails(roomPatch(bob,{status:'racing',seed:3}));
+  await assertFails(roomPatch(bob,{status:'closed'}));
+  await assertFails(roomPatch(bob,{hostUid:'bob'}));
+  await assertFails(deleteDoc(doc(alice,'raceRooms/K9742')));
+  await assertFails(setDoc(doc(bob,'raceRooms/AB234'),{...(await getDoc(doc(alice,'raceRooms/K9742'))).data(),code:'AB234',createdAt:serverTimestamp(),updatedAt:serverTimestamp()}));
+});
+test('race rooms: entrants must use their saved stats and equipment and cannot alter anyone else',async()=>{
+  const alice=await raceAccount('alice'),bob=await raceAccount('bob');
+  await createRaceRoom(alice,'alice'); await joinRaceRoom(bob,'bob');
+  const room=(await getDoc(doc(alice,'raceRooms/K9742'))).data();
+  await assertFails(roomPatch(alice,{entrants:[room.entrants[0],{...room.entrants[1],speed:100}]}));
+  await assertFails(roomPatch(bob,{entrants:[room.entrants[0],{...room.entrants[1],speed:100}]}));
+  await assertFails(roomPatch(bob,{entrants:[room.entrants[0],{...room.entrants[1],equippedItem:'unowned'}]}));
+  await assertFails(roomPatch(bob,{entrants:[{...room.entrants[0],name:'Impersonated'},room.entrants[1]]}));
+  await assertFails(roomPatch(bob,{entrants:[room.entrants[0],{...room.entrants[1],isHost:true}]}));
+  await db.doc('users/bob/dog/main').update({speed:45});
+  await db.doc('users/bob/inventory/main').set({equippedItemId:'collar_blue'});
+  await assertSucceeds(joinRaceRoom(bob,'bob'));
+  const updated=(await getDoc(doc(alice,'raceRooms/K9742'))).data();
+  assert.equal(updated.entrants[1].speed,45); assert.equal(updated.entrants[1].equippedItem,'collar_blue');
+});
+test('race rooms: guests can leave waiting rooms, hosts can close them, and closure is final',async()=>{
+  const alice=await raceAccount('alice'),bob=await raceAccount('bob');
+  await createRaceRoom(alice,'alice'); await joinRaceRoom(bob,'bob');
+  const old=(await getDoc(doc(alice,'raceRooms/K9742'))).data();
+  await assertSucceeds(roomPatch(bob,{entrants:[old.entrants[0]]}));
+  await joinRaceRoom(bob,'bob');
+  await assertFails(roomPatch(bob,{entrants:[old.entrants[1]]}));
+  await assertFails(roomPatch(bob,{entrants:[old.entrants[1],old.entrants[0]]}));
+  await assertSucceeds(roomPatch(alice,{status:'closed'}));
+  await assertFails(roomPatch(alice,{status:'waiting'}));
+  await assert.rejects(joinRaceRoom(bob,'bob'), /not waiting/);
+});
+test('race rooms: concurrent joins admit exactly three guests and reject a fifth racer',async()=>{
+  const alice=await raceAccount('alice'); await createRaceRoom(alice,'alice');
+  const names=['bob','carol','dave','eve'], clients=await Promise.all(names.map(raceAccount));
+  const results=await Promise.allSettled(clients.map((client,index)=>joinRaceRoom(client,names[index])));
+  assert.equal(results.filter(r=>r.status==='fulfilled').length,3);
+  const room=(await getDoc(doc(alice,'raceRooms/K9742'))).data();
+  assert.equal(room.entrants.length,4); assert.equal(new Set(room.entrants.map(e=>e.id)).size,4);
+});
+test('race rooms: reject invalid envelopes and changing race configuration or creation time',async()=>{
+  const alice=await raceAccount('alice'); await createRaceRoom(alice,'alice');
+  for(const patch of [{length:10000},{code:'AB234'},{seed:5},{hostName:'other'},
+    {createdAt:serverTimestamp()},{unknown:true},{status:'racing',seed:0},{status:'racing',seed:2147483648}])
+    await assertFails(roomPatch(alice,patch));
+  await assertSucceeds(roomPatch(alice,{status:'racing',seed:77}));
+  await assertFails(roomPatch(alice,{seed:78}));
+  await assertSucceeds(roomPatch(alice,{status:'closed'}));
+});

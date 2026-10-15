@@ -9,6 +9,7 @@ using NUnit.Framework;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.TestTools;
 using WalkingDog.Racing;
 
 public sealed class DogRacingTests
@@ -129,7 +130,8 @@ public sealed class DogRacingSceneTests
     }
     [Test] public void MenuButtonsUseTheSavedScreenControllerAndStatsHaveThreeTrainingChoices()
     {
-        var buttons = screens.GetComponentsInChildren<Button>(true).Where(b => b.name == "Race Button" || b.name == "Training Button").ToList();
+        var menu = screens.GetComponentsInChildren<Transform>(true).Single(t => t.name == "SideArea").Find("Buttons");
+        var buttons = menu.GetComponentsInChildren<Button>(true).Where(b => b.name == "Race Button" || b.name == "Training Button").ToList();
         Assert.That(buttons.Count, Is.EqualTo(2));
         Assert.That(buttons.All(b => b.onClick.GetPersistentTarget(0) == screens), Is.True);
         Assert.That(Field<DogGameScreens.StatRow[]>("stats").Select(r => r.stat).Distinct().Count(), Is.EqualTo(3));
@@ -155,22 +157,107 @@ public sealed class DogRacingSceneTests
 
         // Start race
         await screens.StartLobbyRaceAsync();
+        Assert.That(screens.IsBusy, Is.False, "A successful host start must release the controls.");
         fakeLobby.TriggerUpdate();
         Assert.That(screens.Race, Is.Not.Null);
         Assert.That(screens.Race.Runners.Count, Is.EqualTo(4));
         Assert.That(Field<GameObject>("raceScreen").activeSelf, Is.True);
+        screens.Race.Advance(60);
+        screens.RenderRace();
+        Assert.That(Field<Button>("startRace").interactable, Is.True);
         screens.Close();
+    }
+
+    [Test] public async Task CreateRoomFailureStaysVisibleAndButtonsRecover()
+    {
+        var lobby = new FakeRaceLobbyService { CreateError = new InvalidOperationException("Room access was denied.") };
+        screens.LobbyServiceFactory = () => Task.FromResult<IRaceLobbyService>(lobby);
+        screens.OpenLobby(); await screens.RefreshAsync();
+        LogAssert.Expect(LogType.Warning, "Race room request failed: InvalidOperationException");
+        await screens.CreateRoomAsync();
+        screens.RenderLobby();
+        Assert.That(screens.LobbyStatus, Does.Contain("access was denied"));
+        Assert.That(screens.CurrentRoom, Is.Null);
+        Assert.That(screens.IsBusy, Is.False);
+        Assert.That(Field<Button>("createRoomButton").interactable, Is.True);
+    }
+
+    [Test] public async Task TimedOutCreationRecoversAndLateSuccessCannotReopenTheRoom()
+    {
+        var lobby = new FakeRaceLobbyService { PendingCreate = new TaskCompletionSource<RaceRoom>() };
+        screens.LobbyServiceFactory = () => Task.FromResult<IRaceLobbyService>(lobby);
+        screens.LobbyTimeout = TimeSpan.FromMilliseconds(15);
+        screens.OpenLobby(); await screens.RefreshAsync();
+        await screens.CreateRoomAsync();
+        Assert.That(screens.LobbyStatus, Does.Contain("timed out"));
+        Assert.That(screens.IsBusy, Is.False);
+        Assert.That(Field<Button>("createRoomButton").interactable, Is.True);
+        lobby.PendingCreate.SetResult(lobby.Room);
+        await Task.Yield();
+        Assert.That(screens.CurrentRoom, Is.Null);
+        Assert.That(lobby.Leaves, Is.EqualTo(1));
+    }
+
+    [Test] public async Task ClosingDuringCreateAndSwitchingAccountsDiscardLateResults()
+    {
+        var lobby = new FakeRaceLobbyService { PendingCreate = new TaskCompletionSource<RaceRoom>() };
+        screens.LobbyServiceFactory = () => Task.FromResult<IRaceLobbyService>(lobby);
+        screens.OpenLobby(); await screens.RefreshAsync();
+        var creating = screens.CreateRoomAsync();
+        screens.Close(); owner = "bob"; screens.OpenLobby(); await screens.RefreshAsync();
+        lobby.PendingCreate.SetResult(lobby.Room);
+        await creating; await Task.Yield();
+        Assert.That(screens.CurrentRoom, Is.Null);
+        Assert.That(screens.Snapshot.speed, Is.EqualTo(40));
+        Assert.That(lobby.Subscriptions, Is.Zero);
+        Assert.That(screens.IsBusy, Is.False);
+    }
+
+    [Test] public async Task ClosedAndDestroyedScreensIgnoreQueuedRoomCallbacks()
+    {
+        var lobby = new FakeRaceLobbyService();
+        screens.LobbyServiceFactory = () => Task.FromResult<IRaceLobbyService>(lobby);
+        screens.OpenLobby(); await screens.RefreshAsync(); await screens.CreateRoomAsync();
+        var racing = new RaceRoom("K9742", "alice", "Alice", "racing", 91, 200, lobby.Room.Entrants);
+        screens.Close(); lobby.Trigger(racing);
+        Assert.That(Field<GameObject>("raceScreen").activeSelf, Is.False);
+        Assert.That(screens.CurrentRoom, Is.Null);
+        Assert.That(lobby.Disposals, Is.EqualTo(1));
+        screens.OpenLobby(); await screens.RefreshAsync(); await screens.CreateRoomAsync();
+        // EditMode does not run the normal Play-mode destruction lifecycle.
+        typeof(DogGameScreens).GetMethod("OnDestroy", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(screens, null);
+        UnityEngine.Object.DestroyImmediate(screens);
+        Assert.That(lobby.Disposals, Is.EqualTo(2));
+        Assert.DoesNotThrow(() => lobby.Trigger(racing));
+    }
+
+    [Test] public async Task MissingAccountAndInvalidRoomCodeExplainTheProblemWithoutSendingRequests()
+    {
+        var lobby = new FakeRaceLobbyService();
+        screens.LobbyServiceFactory = () => Task.FromResult<IRaceLobbyService>(lobby);
+        owner = ""; screens.OpenLobby(); await screens.RefreshAsync(); await screens.CreateRoomAsync();
+        Assert.That(screens.LobbyStatus, Does.Contain("Sign in"));
+        Assert.That(Field<Button>("createRoomButton").interactable, Is.False);
+        owner = "alice"; screens.Close(); screens.OpenLobby(); await screens.RefreshAsync();
+        Field<TMPro.TMP_InputField>("roomCodeInput").text = "ABC";
+        await screens.JoinRoomAsync();
+        Assert.That(screens.LobbyStatus, Does.Contain("five-character"));
+        Assert.That(lobby.Subscriptions, Is.Zero);
     }
     private sealed class FakeRaceLobbyService : IRaceLobbyService
     {
         public RaceRoom Room;
+        public Exception CreateError;
+        public TaskCompletionSource<RaceRoom> PendingCreate;
+        public int Leaves, Subscriptions, Disposals;
         private Action<RaceRoom> onUpdate;
 
         public Task<RaceRoom> CreateRoomAsync(string hostUid, string hostName, DogStats stats, string equippedItemId, CancellationToken token)
         {
             var host = new RaceEntrant(hostUid, hostName, stats, equippedItemId, isHost: true);
             Room = new RaceRoom("K9742", hostUid, hostName, "waiting", 0, 200, new[] { host });
-            return Task.FromResult(Room);
+            if (CreateError != null) return Task.FromException<RaceRoom>(CreateError);
+            return PendingCreate != null ? PendingCreate.Task : Task.FromResult(Room);
         }
         public Task<RaceRoom> JoinRoomAsync(string roomCode, string playerUid, string playerName, DogStats stats, string equippedItemId, CancellationToken token)
         {
@@ -181,8 +268,9 @@ public sealed class DogRacingSceneTests
         }
         public Task LeaveRoomAsync(string roomCode, string playerUid, CancellationToken token)
         {
-            var list = Room.Entrants.Where(e => e.PlayerId != playerUid).ToList();
-            Room = new RaceRoom(roomCode, Room.HostUid, Room.HostName, Room.Status, Room.Seed, Room.TrackLength, list);
+            Leaves++;
+            var list = Room.HostUid == playerUid ? Room.Entrants.ToList() : Room.Entrants.Where(e => e.PlayerId != playerUid).ToList();
+            Room = new RaceRoom(roomCode, Room.HostUid, Room.HostName, Room.HostUid == playerUid ? "closed" : Room.Status, Room.Seed, Room.TrackLength, list);
             return Task.CompletedTask;
         }
         public Task StartRaceAsync(string roomCode, string hostUid, int seed, CancellationToken token)
@@ -193,10 +281,17 @@ public sealed class DogRacingSceneTests
         public IDisposable ListenRoom(string roomCode, Action<RaceRoom> onUpdate, Action<Exception> onError)
         {
             this.onUpdate = onUpdate;
-            return new DummySub();
+            Subscriptions++;
+            return new DummySub(() => Disposals++);
         }
         public void TriggerUpdate() => onUpdate?.Invoke(Room);
-        private sealed class DummySub : IDisposable { public void Dispose() { } }
+        public void Trigger(RaceRoom room) => onUpdate?.Invoke(room); // Deliberately model an already queued callback after Dispose.
+        private sealed class DummySub : IDisposable
+        {
+            private Action disposed;
+            public DummySub(Action disposed) { this.disposed = disposed; }
+            public void Dispose() { var action = disposed; disposed = null; action?.Invoke(); }
+        }
     }
     private T Field<T>(string field) => (T)typeof(DogGameScreens).GetField(field,BindingFlags.Instance|BindingFlags.NonPublic).GetValue(screens);
     private sealed class FakeStore : IDogTrainingStore

@@ -497,6 +497,73 @@ service cloud.firestore {
       allow delete: if participant() && !existsAfter(mirror());
     }
 
+    // Room codes are invitations, not a public room directory. Anyone signed
+    // in with the code can read it (including a missing candidate at creation).
+    match /raceRooms/{code} {
+      function validCode() { return code.matches('[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}'); }
+      function validEntrant(e, host) {
+        return e is map && e.keys().hasAll(['id','name','speed','stamina','acceleration','equippedItem','isHost'])
+          && e.keys().hasOnly(['id','name','speed','stamina','acceleration','equippedItem','isHost'])
+          && e.id is string && e.id.size() > 0 && e.id.size() <= 128
+          && e.name is string && e.name.size() > 0 && e.name.size() <= 64
+          && e.speed is int && e.speed >= 40 && e.speed <= 100
+          && e.stamina is int && e.stamina >= 40 && e.stamina <= 100
+          && e.acceleration is int && e.acceleration >= 40 && e.acceleration <= 100
+          && e.equippedItem is string && e.equippedItem.size() <= 128
+          && e.isHost is bool && e.isHost == (e.id == host);
+      }
+      function validRoom(d) {
+        return d.keys().hasAll(['code','hostUid','hostName','status','seed','length','entrants','createdAt','updatedAt'])
+          && d.keys().hasOnly(['code','hostUid','hostName','status','seed','length','entrants','createdAt','updatedAt'])
+          && d.code == code && d.hostUid is string && d.hostUid.size() > 0 && d.hostUid.size() <= 128
+          && d.hostName is string && d.hostName.size() > 0 && d.hostName.size() <= 64
+          && d.status in ['waiting','racing','closed'] && d.seed is int && d.seed >= 0 && d.seed <= 2147483647
+          && d.length == 200 && d.createdAt is timestamp && d.updatedAt == request.time
+          && d.entrants is list && d.entrants.size() >= 1 && d.entrants.size() <= 4
+          && d.entrants[0].id == d.hostUid && d.entrants[0].isHost == true;
+      }
+      function ownEntrant(e) {
+        let dog = get(/databases/$(database)/documents/users/$(request.auth.uid)/dog/main).data;
+        let inventory = /databases/$(database)/documents/users/$(request.auth.uid)/inventory/main;
+        let item = exists(inventory) ? get(inventory).data.get('equippedItemId','') : '';
+        return e.id == request.auth.uid && e.speed == dog.speed && e.stamina == dog.stamina
+          && e.acceleration == dog.acceleration && e.equippedItem == item;
+      }
+      function ownIndex(list) {
+        return list[0].id == request.auth.uid ? 0
+          : list.size() > 1 && list[1].id == request.auth.uid ? 1
+          : list.size() > 2 && list[2].id == request.auth.uid ? 2
+          : list.size() > 3 && list[3].id == request.auth.uid ? 3 : -1;
+      }
+      function changesOwnEntry(old, next) {
+        let index = ownIndex(old);
+        return (index == -1 && old.size() < 4 && next.size() == old.size() + 1
+            && next == old.concat([next[old.size()]])
+            && validEntrant(next[old.size()],resource.data.hostUid) && ownEntrant(next[old.size()]))
+          || (index >= 0 && next.size() == old.size()
+            && validEntrant(next[index],resource.data.hostUid) && ownEntrant(next[index])
+            && next.removeAll([next[index]]) == old.removeAll([old[index]]))
+          || (index > 0 && next.size() == old.size() - 1 && next == old.removeAll([old[index]]));
+      }
+      allow get: if request.auth != null && validCode();
+      allow list: if false;
+      allow create: if request.auth != null && validCode() && validRoom(request.resource.data)
+        && request.resource.data.hostUid == request.auth.uid && request.resource.data.entrants.size() == 1
+        && validEntrant(request.resource.data.entrants[0],request.auth.uid)
+        && ownEntrant(request.resource.data.entrants[0]) && request.resource.data.status == 'waiting'
+        && request.resource.data.seed == 0 && request.resource.data.createdAt == request.time;
+      allow update: if request.auth != null && validCode() && validRoom(request.resource.data)
+        && resource.data.status != 'closed'
+        && ((request.auth.uid == resource.data.hostUid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','seed','updatedAt'])
+            && ((resource.data.status == 'waiting' && request.resource.data.status == 'racing' && request.resource.data.seed > 0)
+              || (request.resource.data.status == 'closed' && request.resource.data.seed == resource.data.seed)))
+          || (resource.data.status == 'waiting' && request.resource.data.status == 'waiting'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['entrants','updatedAt'])
+            && changesOwnEntry(resource.data.entrants,request.resource.data.entrants)));
+      allow delete: if false;
+    }
+
     // All paths without an explicit permission above remain private.
     match /{document=**} {
       allow read, write: if false;
