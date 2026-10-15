@@ -186,7 +186,9 @@ public class GPSUIController : MonoBehaviour
 
     private static void SetText(TextMeshProUGUI text, string value)
     {
-        if (text != null)
+        // Reassigning TMP text dirties its mesh and the parent Canvas. Avoid doing
+        // that on every frame when the displayed value has not changed.
+        if (text != null && text.text != value)
         {
             text.text = value;
         }
@@ -201,9 +203,13 @@ public class GPSUIController : MonoBehaviour
 
         if (walkingSessionButtonText != null)
         {
-            walkingSessionButtonText.text = manager != null && manager.IsWalkingSessionActive
+            var label = manager != null && manager.IsWalkingSessionActive
                 ? "Finish Territory Walk"
                 : manager != null && !manager.HasFreshLocation ? "Waiting for GPS" : "Start Territory Walk";
+            if (walkingSessionButtonText.text != label)
+            {
+                walkingSessionButtonText.text = label;
+            }
         }
     }
 

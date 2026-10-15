@@ -48,7 +48,12 @@ public class GachaManager : MonoBehaviour
         var manager = StepCountAndGpsManager.Instance;
         var bootstrap = manager == null ? null : manager.GetComponent<FirebaseWalkBootstrap>();
         if (currentPointsText != null && bootstrap != null && bootstrap.Wallet != null)
-            currentPointsText.text = "Points: " + bootstrap.Wallet.DisplayText;
+        {
+            var pointsLabel = "Points: " + bootstrap.Wallet.DisplayText;
+            // TMP text updates rebuild its geometry and can make UI transitions hitch.
+            if (currentPointsText.text != pointsLabel)
+                currentPointsText.text = pointsLabel;
+        }
 
         if (milestoneButton != null)
         {
