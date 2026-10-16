@@ -39,6 +39,7 @@ public sealed class LocalTerritoryRepository
     public int Revision => claims.Count;
     public string FilePath => filePath;
 
+    // Loads or creates the persistent territory ledger file for a specific player owner.
     public LocalTerritoryRepository(string directory, string owner, Func<string, StepCountAndGpsManager.SavedWalkSession> findWalk = null)
     {
         if (string.IsNullOrWhiteSpace(owner)) throw new ArgumentException("Territories require an authenticated owner.");
@@ -61,8 +62,10 @@ public sealed class LocalTerritoryRepository
         }
     }
 
+    // Retrieves an existing territory claim for a given walk ID if already processed.
     public Claim Find(string walkId) => walkId != null && claims.TryGetValue(walkId, out var claim) ? claim : null;
 
+    // Evaluates a completed walk, computes non-overlapping new territory area, and atomically commits the claim.
     public Claim Apply(StepCountAndGpsManager.SavedWalkSession savedWalk)
     {
         if (savedWalk == null || savedWalk.ownerUserId != owner || string.IsNullOrWhiteSpace(savedWalk.id)
@@ -83,10 +86,12 @@ public sealed class LocalTerritoryRepository
         return claim;
     }
 
+    // Formats a user-facing success or overlap message based on newly captured square meters.
     private static string AreaMessage(double area) => area < 0.5
         ? "Loop completed! You already own the area inside this route."
         : "+" + area.ToString("N0") + " m² of new territory claimed!";
 
+    // Migrates legacy V1 tile-based claims to V2 polygon geometry.
     private void Migrate(Func<string, StepCountAndGpsManager.SavedWalkSession> findWalk)
     {
         var accumulated = new List<TerritoryGeometry.Polygon>();
@@ -110,6 +115,7 @@ public sealed class LocalTerritoryRepository
         ledger = next;
     }
 
+    // Reads and validates ledger JSON from disk, enforcing data and geometry constraints.
     private Ledger Read(string path)
     {
         var data = JsonUtility.FromJson<Ledger>(File.ReadAllText(path));
@@ -137,6 +143,7 @@ public sealed class LocalTerritoryRepository
         return data;
     }
 
+    // Atomically writes ledger JSON using a temporary file and rotating backups.
     private void Write(Ledger data)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(filePath));

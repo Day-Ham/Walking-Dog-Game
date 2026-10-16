@@ -42,6 +42,7 @@ namespace WalkingDog.Leaderboards
         internal int VisibleCardCount => cards.Count;
         internal string StatusText => status.text;
 
+        // Caches UI elements, hides card template, and registers button click listeners.
         private void Awake()
         {
             // DELETE this call after Global, Friends, and Manage Friends are scene objects.
@@ -60,6 +61,7 @@ namespace WalkingDog.Leaderboards
             if (ownPhoto == null) Debug.LogWarning("Assign Own Photo on LeaderboardPanelUI in the Inspector.");
         }
 
+        // Suspends active map webviews and triggers an initial leaderboard refresh when displayed.
         private void OnEnable()
         {
             if (!Application.isPlaying) return;
@@ -68,6 +70,7 @@ namespace WalkingDog.Leaderboards
             OnRefresh();
         }
 
+        // Handles escape key back navigation and detects auth user changes to reload rankings.
         private void Update()
         {
             if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
@@ -83,19 +86,28 @@ namespace WalkingDog.Leaderboards
 
         #region KEEP — CONNECT THESE METHODS TO INSPECTOR BUTTON EVENTS
 
-        // Refresh button -> OnRefresh
+        // Refreshes the leaderboard view asynchronously.
         public void OnRefresh() { _ = RefreshAsync(); }
-        // Distance button -> ShowDistance
+
+        // Switches ranking metric to distance and refreshes the leaderboard.
         public void ShowDistance() { metric = LeaderboardMetric.Distance; OnRefresh(); }
-        // Steps button -> ShowSteps
+
+        // Switches ranking metric to steps and refreshes the leaderboard.
         public void ShowSteps() { metric = LeaderboardMetric.Steps; OnRefresh(); }
-        // Global tab -> ShowGlobal
+
+        // Switches leaderboard scope to global rankings and refreshes.
         public void ShowGlobal() { scope = LeaderboardScope.Global; OnRefresh(); }
-        // Friends tab -> ShowFriends
+
+        // Switches leaderboard scope to friends rankings and refreshes.
         public void ShowFriends() { scope = LeaderboardScope.Friends; OnRefresh(); }
+
+        // Initiates selecting and uploading a custom profile photo.
         public void UploadProfilePhoto() { _ = ChangePhotoAsync(true); }
+
+        // Clears any custom profile photo and reverts to the Google account photo.
         public void UseGooglePhoto() { _ = ChangePhotoAsync(false); }
-        // Manage friends button -> OpenFriendsPanel
+
+        // Opens the friends management modal overlay.
         public void OpenFriendsPanel()
         {
             if (friendsPanel == null)
@@ -112,6 +124,7 @@ namespace WalkingDog.Leaderboards
 
        
 
+        // Retrieves or asynchronously initializes the leaderboard service instance.
         internal async Task<ILeaderboardService> GetServiceAsync()
         {
             if (service != null) return service;
@@ -123,6 +136,7 @@ namespace WalkingDog.Leaderboards
             return service;
         }
 
+        // Creates a concrete Firebase leaderboard service using the Firebase walk bootstrap.
         private static async Task<ILeaderboardService> CreateServiceAsync()
         {
             var manager = StepCountAndGpsManager.Instance;
@@ -130,6 +144,7 @@ namespace WalkingDog.Leaderboards
             return await FirebaseLeaderboardService.CreateAsync(manager.GetComponent<FirebaseWalkBootstrap>());
         }
 
+        // Prepares a new cancellation token source and updates status text for an outgoing request.
         private int BeginRequest(string message)
         {
             CancelRequest();
@@ -140,8 +155,10 @@ namespace WalkingDog.Leaderboards
             return generation;
         }
 
+        // Checks whether a request matches the active generation and the UI is still mounted.
         private bool IsCurrent(int request) => !destroyed && isActiveAndEnabled && request == generation;
 
+        // Loads the latest rankings from the leaderboard service and renders the card list.
         public async Task RefreshAsync()
         {
             if (!isActiveAndEnabled || destroyed) return;
@@ -173,14 +190,13 @@ namespace WalkingDog.Leaderboards
             finally { if (IsCurrent(request)) { busy = false; SetButtons(); } }
         }
 
-       
-    
+        // Instantiates and binds card UI instances for all entries in the snapshot.
         internal void Render(LeaderboardSnapshot data)
         {
-            ClearCards(); //clear previous garbage card before rendering new data
-            for (int i = 0; i < data.Entries.Count; i++) // check all entries
+            ClearCards();
+            for (int i = 0; i < data.Entries.Count; i++)
             {
-                var card = Instantiate(cardTemplate, content); // create the card game object
+                var card = Instantiate(cardTemplate, content);
                 card.name = "Player " + (i + 1);
                 card.Bind(data.Entries[i], i + 1, data.Entries[i].PlayerId == data.CurrentPlayerId, data.Metric);
                 card.gameObject.SetActive(true);
@@ -204,6 +220,7 @@ namespace WalkingDog.Leaderboards
                 : $"You · {own.TotalDistanceMeters / 1000d:N2} km · {own.TotalSteps:N0} steps\n{own.CompletedWalkCount:N0} completed walks";
         }
 
+        // Handles photo picking or reverting and updates the player's profile photo in the service.
         private async Task ChangePhotoAsync(bool upload)
         {
             if (busy || destroyed || !isActiveAndEnabled) return;
@@ -235,7 +252,8 @@ namespace WalkingDog.Leaderboards
             finally { if (IsCurrent(request)) { busy = false; SetButtons(); } }
         }
 
-        private void SetButtons() // set buttons 
+        // Updates the interactable status of metric switches, scope tabs, and action buttons.
+        private void SetButtons()
         {
             refresh.interactable = !busy;
             distance.interactable = metric != LeaderboardMetric.Distance;
@@ -247,6 +265,7 @@ namespace WalkingDog.Leaderboards
             if (friendsTab != null) friendsTab.interactable = scope != LeaderboardScope.Friends;
         }
 
+        // Destroys all currently instantiated leaderboard card GameObjects.
         private void ClearCards()
         {
             if (ownPhoto != null) ownPhoto.gameObject.SetActive(false);
@@ -259,6 +278,7 @@ namespace WalkingDog.Leaderboards
             cards.Clear();
         }
 
+        // Cancels pending network operations and resets busy state.
         private void CancelRequest()
         {
             generation++;
@@ -268,6 +288,7 @@ namespace WalkingDog.Leaderboards
             busy = false;
         }
 
+        // Cleans up active requests, clears UI cards, and resumes suspended map webviews.
         private void OnDisable()
         {
             if (friendsPanel != null) friendsPanel.gameObject.SetActive(false);
@@ -280,24 +301,7 @@ namespace WalkingDog.Leaderboards
             hiddenMaps.Clear();
         }
 
-
-
-
-        /* internal void EnsureFriendControls()
-        {
-            if (globalTab != null) return;
-            var parent = refresh.transform.parent;
-            globalTab = FriendsPanelUI.MakeButton(parent, refresh, "Global rankings", "Global", .10f, .695f, .48f, .745f);
-            friendsTab = FriendsPanelUI.MakeButton(parent, refresh, "Friends rankings", "Friends", .52f, .695f, .90f, .745f);
-            manageFriends = FriendsPanelUI.MakeButton(parent, refresh, "Manage friends", "Manage friends", .53f, .025f, .90f, .077f);
-            FriendsPanelUI.Place(scroll.transform, .10f, .30f, .90f, .68f);
-            globalTab.onClick.AddListener(ShowGlobal);
-            friendsTab.onClick.AddListener(ShowFriends);
-            manageFriends.onClick.AddListener(OpenFriendsPanel);
-        }
-
-        #endregion
-       */
+        // Disposes service resources and unbinds registered button listeners upon destruction.
         private void OnDestroy()
         {
             destroyed = true;

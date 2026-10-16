@@ -8,7 +8,7 @@ using WalkingDog.Leaderboards;
 internal static class FirebaseContinuousStepsStore
 {
     // Stream cursor, aggregate, wallet and leaderboard commit together. Absolute
-    // cursors make offline retries and out-of-order acknowledgements harmless.
+    // Atomically updates step stream, activity totals, wallet points, and leaderboard documents in a Firestore transaction.
     internal static Task UploadAsync(FirebaseFirestore db, ContinuousSteps.Record record, CancellationToken token)
     {
         return FirebasePointsWalletStore.RetryContentionAsync(() => db.RunTransactionAsync(async tx =>

@@ -87,17 +87,18 @@ public sealed class WalkHistoryUI : MonoBehaviour
     }
 
 
-    IEnumerator CloseAniPlay( )
+    // Coroutine that triggers the menu close animation trigger and waits before closing the panel.
+    IEnumerator CloseAniPlay()
     {
         walkhistoryAnimator.SetTrigger("CloseMenu");
         yield return new WaitForSeconds(1f);
         this.Close();
-
     }
+
+    // Public method triggering the animated close sequence.
     public void CloseAni()
     {
         StartCoroutine(CloseAniPlay());
-
     }
 
 
@@ -281,11 +282,13 @@ public sealed class WalkHistoryUI : MonoBehaviour
         }
     }
 
+    // Closes the panel and releases other map suspensions when disabled.
     private void OnDisable()
     {
         Close();
     }
 
+    // Marks component destroyed and disposes of the active history session.
     private void OnDestroy()
     {
         destroyed = true;
@@ -293,11 +296,13 @@ public sealed class WalkHistoryUI : MonoBehaviour
         session?.Dispose();
     }
 
+    // Button event callback that triggers history list refresh.
     public void OnRefreshClicked()
     {
         RefreshHistory();
     }
 
+    // Button event callback that triggers loading the next page of historical walks.
     public void OnLoadMoreClicked()
     {
         LoadMore();

@@ -14,6 +14,7 @@ public class WalkDataTab : MonoBehaviour
     [Tooltip("The whole row button that opens the recorded route.")]
     [SerializeField] private Button selectButton;
 
+    // Binds the date string, measurement metrics, and selection callback to the walk entry UI row.
     public void SetData(string date, string measurements, UnityAction onSelected)
     {
         dateText.text = date;

@@ -7,12 +7,14 @@ public class MapSignalOverlay : MonoBehaviour
     private CanvasGroup canvasGroup;
     private MapSuspender mapSuspender;
 
+    // Caches CanvasGroup and MapSuspender component references.
     private void Awake()
     {
         canvasGroup = GetComponent<CanvasGroup>();
         mapSuspender = GetComponent<MapSuspender>();
     }
 
+    // Monitors GPS freshness each frame and toggles the signal overlay canvas and map suspension.
     private void Update()
     {
         var manager = StepCountAndGpsManager.Instance;

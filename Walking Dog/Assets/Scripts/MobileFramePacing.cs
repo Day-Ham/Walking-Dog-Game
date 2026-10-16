@@ -1,12 +1,11 @@
 using UnityEngine;
 
-/// <summary>
-/// Establishes consistent frame pacing before the first scene is displayed.
-/// Android does not use QualitySettings.vSyncCount; without this explicit cap,
-/// devices can render at an unstable rate and animate unevenly as they heat up.
-/// </summary>
+// Establishes consistent frame pacing before the first scene is displayed.
+// Android does not use QualitySettings.vSyncCount; without this explicit cap,
+// devices can render at an unstable rate and animate unevenly as they heat up.
 public static class MobileFramePacing
 {
+    // Sets target frame rate to 60 FPS on Android prior to loading the first scene.
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void Configure()
     {

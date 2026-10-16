@@ -17,19 +17,24 @@ namespace WalkingDog.Racing
     {
         private readonly FirebaseAuth auth;
         private readonly FirebaseFirestore db;
+        // Initializes dog training store with Firebase Auth and Firestore instances.
         internal FirebaseDogTrainingStore(FirebaseAuth auth, FirebaseFirestore db) { this.auth = auth; this.db = db; }
+
+        // Validates active user identity and cancellation state before accessing Firestore.
         private void Check(string owner, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             if (string.IsNullOrEmpty(owner) || auth.CurrentUser?.UserId != owner) throw new OperationCanceledException();
         }
 
+        // Builds dictionary payload representing dog stats and training transaction ID for Firestore.
         internal static Dictionary<string, object> Fields(DogStats stats, string receiptId) => new Dictionary<string, object> {
             ["schemaVersion"] = 1, ["speed"] = stats.speed, ["stamina"] = stats.stamina,
             ["acceleration"] = stats.acceleration, ["trainingCount"] = stats.trainingCount,
             ["lastTrainingId"] = receiptId, ["updatedAt"] = FieldValue.ServerTimestamp
         };
 
+        // Loads existing dog stats from Firestore or initializes a baseline dog profile.
         public async Task<DogStats> LoadAsync(string owner, CancellationToken token)
         {
             Check(owner, token);
@@ -44,6 +49,7 @@ namespace WalkingDog.Racing
             });
         }
 
+        // Atomically upgrades a dog attribute, spends wallet points, and logs training receipt in Firestore.
         public async Task<DogStats> TrainAsync(string owner, DogStat stat, string receiptId, CancellationToken token)
         {
             Check(owner, token);
@@ -74,6 +80,7 @@ namespace WalkingDog.Racing
             }), token);
         }
 
+        // Executes a transactional operation with backoff retries when encountering contention errors.
         private static async Task<T> RetryAsync<T>(Func<Task<T>> operation, CancellationToken token)
         {
             for (int attempt = 0; ; attempt++)

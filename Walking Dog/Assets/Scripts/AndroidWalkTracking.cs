@@ -16,8 +16,10 @@ internal sealed class AndroidWalkTracking
 #if UNITY_ANDROID && !UNITY_EDITOR
     private static bool notificationPermissionRequested;
 #endif
+    // Initializes native tracking coordinator bound to the StepCountAndGpsManager instance.
     internal AndroidWalkTracking(StepCountAndGpsManager manager) { this.manager = manager; }
 
+    // Requests fine location permissions and starts the native Android background location service.
     public void Start(string id, string walkDirectory, bool canClaimTerritory, float startLatitude,
         float startLongitude, float distanceAlreadyWalked, float territoryClosureMeters)
     {
@@ -56,6 +58,7 @@ internal sealed class AndroidWalkTracking
 #endif
     }
 
+    // Periodically drains buffered location batches from the background native service.
     public void Pump()
     {
         if (!requested || Time.realtimeSinceStartup < nextPoll) return;
@@ -64,6 +67,7 @@ internal sealed class AndroidWalkTracking
         Read(true);
     }
 
+    // Stops the native background location tracking service and reads final sample batches.
     public void Stop()
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -78,6 +82,7 @@ internal sealed class AndroidWalkTracking
         requested = IsRunning = false;
     }
 
+    // Recovers buffered native samples recorded during an interrupted walk session.
     public void Recover(StepCountAndGpsManager.SavedWalkSession saved)
     {
         walkId = saved.id;
@@ -85,6 +90,7 @@ internal sealed class AndroidWalkTracking
         Read(true, LocalWalkRepository.ParseUtc(saved.endedAtUtc).ToUnixTimeMilliseconds() / 1000d);
     }
 
+    // Reads batches of GPS samples from the native journal file and applies them to the walk manager.
     private void Read(bool all, double recoveryTime = 0)
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -118,6 +124,7 @@ internal sealed class AndroidWalkTracking
 #endif
     }
 
+    // Handles native tracking failure exceptions, disabling tracking and alerting the manager.
     private void Fail(Exception e)
     {
         requested = IsRunning = false;

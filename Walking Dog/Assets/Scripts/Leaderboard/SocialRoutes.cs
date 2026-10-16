@@ -29,6 +29,7 @@ namespace WalkingDog.Leaderboards
         [Serializable] private sealed class Payload { public List<Sample> points = new List<Sample>(); }
         [Serializable] private sealed class Sample { public float lat, lng; public bool gap; }
 
+        // Downsamples and serializes GPS route points into compact JSON preserving segment boundaries.
         internal static string Encode(IReadOnlyList<Point> source)
         {
             if (source == null || source.Count == 0) throw new InvalidOperationException("This walk has no saved GPS route.");
@@ -58,6 +59,7 @@ namespace WalkingDog.Leaderboards
             return json;
         }
 
+        // Deserializes a route JSON string into a list of verified GPS route points.
         internal static List<Point> Decode(string json)
         {
             if (string.IsNullOrEmpty(json) || json.Length > MaxJsonLength) throw new FormatException("Invalid shared route.");
@@ -73,6 +75,7 @@ namespace WalkingDog.Leaderboards
             return points;
         }
 
+        // Validates latitude and longitude coordinates are finite and within Earth bounds.
         private static void Validate(Point point)
         {
             if (point == null || float.IsNaN(point.latitude) || float.IsNaN(point.longitude)
@@ -81,6 +84,7 @@ namespace WalkingDog.Leaderboards
                 throw new FormatException("This route contains unsupported GPS coordinates.");
         }
 
+        // Reads and clones local route points belonging to the owner from the local walk repository.
         internal static List<Point> OwnedLocalRoute(LocalWalkRepository repository, string owner, string walkId)
         {
             var walk = repository?.Find(walkId);

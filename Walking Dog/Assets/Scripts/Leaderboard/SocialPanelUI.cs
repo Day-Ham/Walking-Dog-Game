@@ -40,6 +40,7 @@ namespace WalkingDog.Leaderboards
         internal string StatusText => status.text;
         internal int VisibleCardCount => rows.Count;
 
+        // Deactivates template card and wires all button event listeners.
         private void Awake()
         {
             template.gameObject.SetActive(false);
@@ -56,6 +57,7 @@ namespace WalkingDog.Leaderboards
             else Debug.LogWarning("Assign Save Nickname on SocialPanelUI in the Inspector.");
         }
 
+        // Suspends active map webviews, clears identity state, and displays the activity feed.
         private void OnEnable()
         {
             if (!Application.isPlaying) return;
@@ -65,6 +67,7 @@ namespace WalkingDog.Leaderboards
             ShowActivity();
         }
 
+        // Handles escape key back navigation and refreshes data when the authenticated user changes.
         private void Update()
         {
             if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) { Back(); return; }
@@ -76,39 +79,64 @@ namespace WalkingDog.Leaderboards
             }
         }
 
+        // Navigates to the recent activity feed tab.
         public void ShowActivity() => Navigate(SocialTab.Activity);
+
+        // Navigates to the discover walkers tab.
         public void ShowDiscover() => Navigate(SocialTab.Discover);
+
+        // Navigates to the list of followed players tab.
         public void ShowFollowing() => Navigate(SocialTab.Following);
+
+        // Navigates to the list of followers tab.
         public void ShowFollowers() => Navigate(SocialTab.Followers);
+
+        // Asynchronously refreshes the social snapshot.
         public void Refresh() { _ = RefreshAsync(); }
+
+        // Handles back navigation, closing walk details if open or exiting the social panel.
         public void Back()
         {
             if (walkDetails != null && walkDetails.gameObject.activeSelf) { CloseWalkDetails(); return; }
             if (tab == SocialTab.Profile) ShowActivity();
             else gameObject.SetActive(false);
         }
+
+        // Searches for a player profile using the entered player code.
         public void Search()
         {
             if (!busy && !string.IsNullOrWhiteSpace(codeInput.text)) Navigate(SocialTab.Profile, codeInput.text.Trim());
         }
+
+        // Copies the current player's friend/social code to the system clipboard.
         private void CopyCode()
         {
             if (!busy && !string.IsNullOrEmpty(code.text)) { GUIUtility.systemCopyBuffer = code.text; status.text = "Player code copied."; }
         }
+
+        // Switches the current social tab and optional target player ID, then refreshes.
         private void Navigate(SocialTab next, string player = null)
         {
             if (busy) return;
             tab = next; target = player; Refresh();
         }
+
+        // Toggles activity sharing on or off for the authenticated player.
         private void ToggleSharing()
         {
             if (!busy && hasSnapshot) _ = RefreshAsync(token => service.SetActivitySharingAsync(!sharesActivity, token));
         }
+
+        // Follows or unfollows the specified player.
         private void ChangeFollow(SocialPlayer player)
         {
             if (!busy) _ = RefreshAsync(token => service.SetFollowingAsync(player.Id, !player.Following, token));
         }
+
+        // Dispatches saving the entered nickname to the leaderboard service.
         public void OnSaveNickname() { _ = SaveNicknameAsync(); }
+
+        // Validates and saves the new player display name to Firestore.
         private async Task SaveNicknameAsync()
         {
             if (busy || nickname == null) return;
@@ -145,6 +173,7 @@ namespace WalkingDog.Leaderboards
             finally { if (Current(request)) { busy = false; SetButtons(); } }
         }
 
+        // Loads social snapshot data, optionally executing a mutation task like follow or privacy toggle first.
         internal async Task RefreshAsync(Func<CancellationToken, Task> mutation = null)
         {
             string mutationUser = mutation == null ? null : service?.AuthenticatedUserId;
@@ -189,6 +218,7 @@ namespace WalkingDog.Leaderboards
             finally { if (Current(request)) { busy = false; SetButtons(); } }
         }
 
+        // Renders the profile header and instantiates card rows for players and recent activities.
         internal void Render(SocialSnapshot data)
         {
             ClearRows(); hasSnapshot = true; sharesActivity = data.Me.SharesActivity;
@@ -223,6 +253,7 @@ namespace WalkingDog.Leaderboards
             scroll.StopMovement(); scroll.verticalNormalizedPosition = 1;
         }
 
+        // Instantiates and binds a social card for a player or walk activity.
         private void AddCard(SocialPlayer player, string viewer, SocialActivity item = null)
         {
             var card = Instantiate(template, content);
@@ -233,6 +264,7 @@ namespace WalkingDog.Leaderboards
             rows.Add(card.gameObject);
         }
 
+        // Opens the walk details popup and starts fetching GPS route coordinates.
         private void ShowWalkDetails(SocialActivity item)
         {
             if (busy || item == null || (service != null && service.AuthenticatedUserId != observedUser)) return;
@@ -253,12 +285,14 @@ namespace WalkingDog.Leaderboards
             _ = LoadWalkRouteAsync(item);
         }
 
+        // Toggles sharing of the selected walk route between public and private.
         private void ToggleRouteSharing()
         {
             if (selectedWalk != null && selectedRoute != null && selectedRoute.IsOwner)
                 _ = LoadWalkRouteAsync(selectedWalk, !selectedRoute.IsShared);
         }
 
+        // Asynchronously loads route points for a walk activity from local device storage or Firestore.
         private async Task LoadWalkRouteAsync(SocialActivity item, bool? share = null)
         {
             routePending?.Cancel(); routePending?.Dispose();
@@ -295,10 +329,12 @@ namespace WalkingDog.Leaderboards
             }
         }
 
+        // Checks whether a route request generation matches the currently displayed popup.
         private bool RouteCurrent(int request, string viewer) => this != null && isActiveAndEnabled
             && request == routeGeneration && walkDetails != null && walkDetails.gameObject.activeSelf
             && service != null && service.AuthenticatedUserId == viewer;
 
+        // Dismisses the walk details popup and re-enables background UI interactions.
         private void CloseWalkDetails()
         {
             routeGeneration++; routePending?.Cancel(); routePending?.Dispose(); routePending = null;
@@ -307,6 +343,8 @@ namespace WalkingDog.Leaderboards
             if (backgroundControls != null) backgroundControls.interactable = backgroundWasInteractable;
             walkDetails.Close();
         }
+
+        // Updates button interactability based on active tab and authentication state.
         private void SetButtons()
         {
             bool signedIn = service != null && !string.IsNullOrEmpty(service.AuthenticatedUserId);
@@ -320,8 +358,14 @@ namespace WalkingDog.Leaderboards
             if (nickname != null) nickname.interactable = !busy && signedIn;
             if (saveNickname != null) saveNickname.interactable = !busy && signedIn;
         }
+
+        // Verifies whether an asynchronous operation corresponds to the current UI generation.
         private bool Current(int request) => this != null && isActiveAndEnabled && request == generation;
+
+        // Cancels any in-flight asynchronous operations.
         private void Cancel() { generation++; pending?.Cancel(); pending?.Dispose(); pending = null; busy = false; }
+
+        // Resets user identity labels and photo display to defaults.
         private void ClearIdentity()
         {
             hasSnapshot = false; sharesActivity = false; profileName.text = "Your circle";
@@ -330,6 +374,8 @@ namespace WalkingDog.Leaderboards
             if (nickname != null) nickname.SetTextWithoutNotify("");
             photo.Bind("", "You", "", profileName.font);
         }
+
+        // Closes popup and clears instantiated card GameObjects.
         private void ClearRows()
         {
             CloseWalkDetails();
@@ -337,6 +383,8 @@ namespace WalkingDog.Leaderboards
             { row.SetActive(false); if (Application.isPlaying) Destroy(row); else DestroyImmediate(row); }
             rows.Clear();
         }
+
+        // Cancels operations, clears instantiated rows, and resumes suspended map webviews.
         private void OnDisable()
         {
             Cancel(); ClearRows(); ClearIdentity();

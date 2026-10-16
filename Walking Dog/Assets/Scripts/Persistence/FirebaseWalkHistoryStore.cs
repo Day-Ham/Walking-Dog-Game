@@ -14,9 +14,11 @@ internal sealed class FirebaseWalkHistoryStore : IWalkHistoryStore
     private readonly TimeSpan timeout;
     public string AuthenticatedUserId => currentUser() ?? "";
 
+    // Constructs walk history store connected to Firebase Auth and Firestore.
     public FirebaseWalkHistoryStore(FirebaseAuth auth, FirebaseFirestore firestore)
         : this(() => auth.CurrentUser?.UserId, (owner, cursor) => FetchAsync(firestore, owner, cursor)) { }
 
+    // Internal constructor supporting custom user resolver, fetch delegate, and timeout duration.
     internal FirebaseWalkHistoryStore(Func<string> currentUser,
         Func<string, WalkHistoryCursor, Task<WalkHistoryPage>> fetch, TimeSpan? timeout = null)
     {
@@ -25,6 +27,7 @@ internal sealed class FirebaseWalkHistoryStore : IWalkHistoryStore
         this.timeout = timeout ?? TimeSpan.FromSeconds(20);
     }
 
+    // Queries a page of past walk entries from Firestore with timeout and cancellation enforcement.
     public async Task<WalkHistoryPage> ReadAsync(string owner, WalkHistoryCursor cursor, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -48,12 +51,14 @@ internal sealed class FirebaseWalkHistoryStore : IWalkHistoryStore
         }
     }
 
+    // Validates that the requested owner ID matches the currently signed-in user.
     private void CheckOwner(string owner)
     {
         if (string.IsNullOrWhiteSpace(owner) || owner != AuthenticatedUserId || owner.Contains("/") || owner == "." || owner == "..")
             throw new InvalidOperationException("Sign in to view your walks.");
     }
 
+    // Executes a Firestore query ordering walks by start timestamp descending and parses documents.
     private static async Task<WalkHistoryPage> FetchAsync(FirebaseFirestore firestore, string owner, WalkHistoryCursor cursor)
     {
         // A single-field order uses Firestore's standard index. DocumentSnapshot
@@ -70,6 +75,7 @@ internal sealed class FirebaseWalkHistoryStore : IWalkHistoryStore
         return new WalkHistoryPage(entries, next, documents.Count - entries.Count);
     }
 
+    // Discards exceptions from overdue Firestore read tasks without failing the caller.
     private static async void ObserveCompletion(Task task)
     {
         try { await task; }

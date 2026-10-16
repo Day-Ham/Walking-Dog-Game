@@ -14,29 +14,34 @@ public class GPSUIController : MonoBehaviour
     private Color? defaultAccuracyColor;
     private WalkRecoveryUI recoveryUI;
 
+    // Finds UI references and ensures the walk recovery UI component exists.
     private void Awake()
     {
         AssignMissingReferences();
         recoveryUI = GetComponent<WalkRecoveryUI>() ?? gameObject.AddComponent<WalkRecoveryUI>();
     }
 
+    // Connects button click listeners when the UI object becomes active.
     private void OnEnable()
     {
         AssignMissingReferences();
         RegisterButtonListener();
     }
 
+    // Resolves references and wires up button clicks on start.
     private void Start()
     {
         AssignMissingReferences();
         RegisterButtonListener();
     }
 
+    // Detaches button click listeners when the UI object is disabled.
     private void OnDisable()
     {
         UnregisterButtonListener();
     }
 
+    // Refreshes step count, distance, duration, and GPS accuracy status every frame.
     private void Update()
     {
         if (HasMissingUiReference())
@@ -83,6 +88,7 @@ public class GPSUIController : MonoBehaviour
         UpdateWalkingSessionButton(manager);
     }
 
+    // Starts or ends a walking session and presents the summary popup on completion.
     public void ToggleWalkingSession()
     {
         var manager = StepCountAndGpsManager.Instance;
@@ -106,6 +112,7 @@ public class GPSUIController : MonoBehaviour
         UpdateWalkingSessionButton(manager);
     }
 
+    // Tints the accuracy text according to the territory capture eligibility flag.
     private void UpdateTerritoryColor(StepCountAndGpsManager manager)
     {
         if (accuracyText == null) return;
@@ -115,6 +122,7 @@ public class GPSUIController : MonoBehaviour
         accuracyText.color = flag == 2 ? Color.green : flag == 1 ? Color.yellow : defaultAccuracyColor.Value;
     }
 
+    // Finds scene UI elements by expected name if unassigned in inspector.
     private void AssignMissingReferences()
     {
         if (statsText == null)
@@ -138,6 +146,7 @@ public class GPSUIController : MonoBehaviour
         }
     }
 
+    // Checks whether any required UI element reference is currently missing.
     private bool HasMissingUiReference()
     {
         return statsText == null ||
@@ -146,6 +155,7 @@ public class GPSUIController : MonoBehaviour
             walkingSessionButtonText == null;
     }
 
+    // Hooks up the session button onClick listener once.
     private void RegisterButtonListener()
     {
         if (buttonListenerRegistered || walkingSessionButton == null)
@@ -157,6 +167,7 @@ public class GPSUIController : MonoBehaviour
         buttonListenerRegistered = true;
     }
 
+    // Removes the session button onClick listener.
     private void UnregisterButtonListener()
     {
         if (!buttonListenerRegistered)
@@ -172,18 +183,21 @@ public class GPSUIController : MonoBehaviour
         buttonListenerRegistered = false;
     }
 
+    // Helper to find a TextMeshProUGUI component on a named game object.
     private static TextMeshProUGUI FindText(string objectName)
     {
         var gameObject = GameObject.Find(objectName);
         return gameObject == null ? null : gameObject.GetComponent<TextMeshProUGUI>();
     }
 
+    // Helper to find a Button component on a named game object.
     private static Button FindButton(string objectName)
     {
         var gameObject = GameObject.Find(objectName);
         return gameObject == null ? null : gameObject.GetComponent<Button>();
     }
 
+    // Updates text content only when changed to minimize canvas and mesh rebuilds.
     private static void SetText(TextMeshProUGUI text, string value)
     {
         // Reassigning TMP text dirties its mesh and the parent Canvas. Avoid doing
@@ -194,6 +208,7 @@ public class GPSUIController : MonoBehaviour
         }
     }
 
+    // Updates session button label and interactability based on GPS and session state.
     private void UpdateWalkingSessionButton(StepCountAndGpsManager manager)
     {
         if (walkingSessionButton != null)
@@ -213,6 +228,7 @@ public class GPSUIController : MonoBehaviour
         }
     }
 
+    // Builds a concise display string summarizing step, GPS, and territory status.
     private static string BuildTrackingStatus(StepCountAndGpsManager manager)
     {
         if (!string.IsNullOrEmpty(manager.StepTrackingStatus)) return manager.StepTrackingStatus;
@@ -237,6 +253,7 @@ public class GPSUIController : MonoBehaviour
         return tracking == "Recording" && manager.HasTrackingGaps ? "Recording • route has gaps" : tracking;
     }
 
+    // Returns a display-ready state string for the most recent saved walk.
     private static string GetSavedSessionState(StepCountAndGpsManager manager)
     {
         if (!manager.HasWalkingSession)
@@ -247,6 +264,7 @@ public class GPSUIController : MonoBehaviour
         return manager.LastWalkSaveState;
     }
 
+    // Formats raw distance in meters into human-readable meters or kilometers.
     private static string FormatDistance(float meters)
     {
         meters = Mathf.Max(0f, meters);

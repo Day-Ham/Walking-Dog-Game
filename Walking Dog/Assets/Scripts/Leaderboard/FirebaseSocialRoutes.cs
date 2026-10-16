@@ -11,6 +11,7 @@ namespace WalkingDog.Leaderboards
         internal Func<string, string, List<StepCountAndGpsManager.WalkRoutePoint>> LocalRouteReader;
         internal Func<string, string, CancellationToken, Task<SocialRoute>> SharedRouteReader;
 
+        // Loads route data for a walk, prioritizing local GPS coordinates and falling back to or merging cloud shared routes.
         public async Task<SocialRoute> LoadRouteAsync(string owner, string walkId, CancellationToken token)
         {
             var uid = RequireUser(token);
@@ -43,10 +44,12 @@ namespace WalkingDog.Leaderboards
             return result;
         }
 
+        // Reads the route points recorded locally on this device for the specified walk ID.
         private List<StepCountAndGpsManager.WalkRoutePoint> ReadLocalRoute(string owner, string walkId)
             => LocalRouteReader != null ? LocalRouteReader(owner, walkId)
                 : SocialRouteCodec.OwnedLocalRoute(StepCountAndGpsManager.Instance?.LocalWalks, owner, walkId);
 
+        // Fetches a shared walk route and the owner's sharing permissions from Firestore.
         private Task<SocialRoute> LoadSharedRouteAsync(string owner, string walkId, CancellationToken token)
             => FriendOperationAsync(async (uid, revision, work) =>
             {
@@ -65,6 +68,7 @@ namespace WalkingDog.Leaderboards
                 return result;
             }, token);
 
+        // Uploads or deletes the shared route document in Firestore based on the sharing toggle.
         public Task SetRouteSharedAsync(string owner, string walkId, bool shared, CancellationToken token)
             => FriendOperationAsync(async (uid, revision, work) =>
             {

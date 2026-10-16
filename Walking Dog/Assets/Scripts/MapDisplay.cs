@@ -21,11 +21,13 @@ public class MapDisplay : MonoBehaviour
     [SerializeField] private float longitude = 120.9842f;
     [SerializeField] private int zoom = 15;
 
+    // Starts map tile download coroutine on initialization.
     private IEnumerator Start()
     {
         yield return DownloadMap();
     }
 
+    // Requests Stadia raster map tile texture for configured coordinates and assigns it to RawImage.
     private IEnumerator DownloadMap()
     {
         // Convert GPS coordinates into Stadia tile coordinates.
@@ -73,6 +75,7 @@ public class MapDisplay : MonoBehaviour
         Debug.Log("Stadia map assigned to RawImage.");
     }
 
+    // Projects geographic latitude/longitude into Web Mercator slippy map tile coordinates.
     private static Vector2 GPSToTile(
         float latitude,
         float longitude,

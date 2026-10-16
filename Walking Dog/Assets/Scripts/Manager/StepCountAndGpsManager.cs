@@ -5,6 +5,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 
+
+
 public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackReceiver
 {
     //variables
@@ -29,6 +31,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     private string StepOwner => cloudStore?.AuthenticatedUserId ?? "";
     public long TotalTrackedSteps { get { try { return ActivitySteps.Get(StepOwner).total; } catch { return 0; } } }
     public string StepTrackingStatus => ActivitySteps.Error;
+    // Initializes continuous step counting sensor source from local storage.
     public void BeginStepSensorSource() => ActivitySteps.BeginSensorSource();
     private TerritoryService territoryService;
     private float nextTerritoryRetry;
@@ -271,6 +274,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         EnsureCollections();
     }
 
+    // Updates cumulative step count, checks milestone alerts, and updates active walk progress.
     public void SetStep(int steps)
     {
         ActivitySteps.Observe(StepOwner, steps, walkingSessionActive && sessionStepAccountingVersion == 0);
@@ -286,10 +290,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         }
     }
 
-    /// <summary>
-    /// Sends a local notification once when the phone reaches a milestone. A new milestone always
-    /// adds at least one roll, so this can alert promptly before the wallet has finished syncing.
-    /// </summary>
+    // Sends a local notification once when total steps reach an unalerted 10,000-step milestone.
     private void NotifyLocalMilestoneFromSteps()
     {
         var owner = StepOwner;
@@ -302,11 +303,13 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
             Math.Max(1, totalFreeRolls - claimed));
     }
 
+    // Returns the current counted steps.
     public int GetSteps()
     {
         return stepsCounted;
     }
 
+    // Resets the in-memory counted step count to zero.
     public void ResetSteps()
     {
         stepsCounted = 0;
@@ -318,11 +321,13 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         }
     }
 
+    // Records GPS location using current UTC time.
     public void SetGpsLocation(float latitude, float longitude, float accuracyMeters)
     {
         SetGpsLocation(latitude, longitude, accuracyMeters, UtcSeconds, UtcSeconds);
     }
 
+    // Ingests a new GPS fix and observation timestamp from an external tracker or background service.
     public void SetGpsLocation(float latitude, float longitude, float accuracyMeters, double timestamp, double observedAt)
     {
         // Native service owns active route samples, including those recorded with the screen off.
@@ -330,6 +335,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         ApplyGpsSample(latitude, longitude, accuracyMeters, timestamp, observedAt);
     }
 
+    // Validates GPS accuracy and appends coordinate to the active route if valid.
     internal void ApplyGpsSample(float latitude, float longitude, float accuracyMeters, double timestamp, double observedAt)
     {
         if (!IsUsableGpsFix(latitude, longitude, accuracyMeters))
@@ -364,6 +370,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         if (recordRoutePoints) gpsFilter.Interrupt("Weak GPS — move to an open area");
     }
 
+    // Invalidates current GPS fix and sets tracking interruption status reason.
     public void InterruptTracking(string reason)
     {
         hasLocation = false;
@@ -371,11 +378,13 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         if (recordRoutePoints) gpsFilter.Interrupt(reason);
     }
 
+    // Updates user-facing GPS accuracy status text.
     public void SetGpsStatus(string status)
     {
         accuracyStatus = string.IsNullOrWhiteSpace(status) ? "No GPS status." : status;
     }
 
+    // Starts a new walking session, begins route recording, and starts background tracking.
     public void BeginWalkingSession(bool clearExistingRoute = true)
     {
         if (walkingSessionActive) return;
@@ -418,6 +427,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         StartBackgroundTracking();
     }
 
+    // Concludes the active walking session, saves it to disk, and updates status.
     public void EndWalkingSession()
     {
         if (!walkingSessionActive)
@@ -439,6 +449,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
             : $"Walk saved on device: {WalkingSessionSteps} steps, {sessionDistanceMeters:0}m.";
     }
 
+    // Toggles between starting and ending a walking session.
     public void ToggleWalkingSession()
     {
         if (walkingSessionActive)
@@ -450,6 +461,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         BeginWalkingSession();
     }
 
+    // Enables collection of GPS route breadcrumb points.
     public void StartRouteRecording(bool clearExistingRoute = false)
     {
         if (clearExistingRoute)
@@ -460,11 +472,13 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         recordRoutePoints = true;
     }
 
+    // Stops recording route points.
     public void StopRouteRecording()
     {
         recordRoutePoints = false;
     }
 
+    // Clears recorded route points and resets session distance.
     public void ClearRoute()
     {
         EnsureCollections();
@@ -474,12 +488,14 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         lastRoutePointTime = -1f;
     }
 
+    // Returns a copy of the recorded route coordinates.
     public List<Vector2> GetRoutePointsSnapshot()
     {
         EnsureCollections();
         return new List<Vector2>(routePoints);
     }
 
+    // Returns a deep copy of route point samples with timestamps and accuracy.
     public List<WalkRoutePoint> GetRoutePointSamplesSnapshot()
     {
         EnsureCollections();
@@ -493,6 +509,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         return snapshot;
     }
 
+    // Saves completed walk to disk, clears checkpoints, and triggers cloud sync.
     public string SaveCurrentWalkingSession()
     {
         if (!hasWalkingSession || walkingSessionActive)
@@ -526,23 +543,26 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         }
     }
 
+    // Returns file paths of all saved walk sessions in local storage.
     public List<string> GetSavedWalkFilePaths()
     {
         return LocalWalks.GetFilePaths();
     }
 
+    // Loads all saved walk sessions from local disk.
     public List<SavedWalkSession> LoadSavedWalks()
     {
         return LocalWalks.LoadAll();
     }
 
+    // Attempts to load a specific walk session file from disk.
     public bool TryLoadSavedWalk(string filePath, out SavedWalkSession savedWalk)
     {
         return LocalWalks.TryLoad(filePath, out savedWalk);
     }
 
     // FirebaseWalkBootstrap supplies the authenticated adapter here when attached.
-    // There is intentionally no fake adapter or automatic sign-in in the app.
+    // Configures cloud sync provider and kicks off pending walk synchronization.
     public void ConfigureCloudSync(IWalkCloudStore store)
     {
         if (walkSync != null && walkSync.IsRunning)
@@ -552,6 +572,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         RequestWalkSync();
     }
 
+    // Assigns an anonymous local walk file to the current authenticated user ID.
     public void AssignLocalWalkToCurrentAccount(string walkId)
     {
         var owner = cloudStore?.AuthenticatedUserId;
@@ -561,6 +582,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         RequestWalkSync();
     }
 
+    // Asynchronously uploads unsynced local walks to cloud storage.
     public Task SyncPendingWalksAsync(CancellationToken cancellationToken = default)
     {
         return walkSync == null ? Task.CompletedTask : walkSync.SyncPendingAsync(cancellationToken);
@@ -604,6 +626,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         if (walkingSessionActive) SaveCheckpoint();
     }
 
+    // Saves an active walk snapshot to disk for crash recovery.
     public void SaveCheckpoint()
     {
         if (!walkingSessionActive) return;
@@ -616,12 +639,14 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         }
     }
 
+    // Cleans up a temporary checkpoint file once walk is successfully finalized.
     private void ClearCheckpoint(string id)
     {
         try { Checkpoints.RemoveCheckpoint(id); }
         catch (Exception e) { Debug.LogWarning("Completed walk saved; checkpoint cleanup deferred: " + e.GetType().Name); }
     }
 
+    // Restores an interrupted walk session from an active disk checkpoint.
     public bool RecoverWalk(bool continueWalking)
     {
         if (walkingSessionActive) return false;
@@ -666,6 +691,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         return true;
     }
 
+    // Starts native Android foreground tracking service for screen-off location logging.
     private void StartBackgroundTracking()
     {
         backgroundTracking = backgroundTracking ?? new AndroidWalkTracking(this);
@@ -678,7 +704,9 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
     }
 
     internal long NativeSequence => nativeSequence;
+    // Adjusts session start time to account for background elapsed duration.
     internal void ExtendRecoveredDuration(float seconds) { sessionStartTime -= Mathf.Max(0, seconds); }
+    // Applies GPS sample received from the Android background tracking service.
     internal void ApplyNativeSample(AndroidWalkTracking.Sample sample)
     {
         if (!walkingSessionActive || sample.sequence <= nativeSequence) return;
@@ -687,6 +715,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         nativeSequence = sample.sequence;
     }
 
+    // Initiates background cloud walk sync if cooldown timer has elapsed.
     private async void RequestWalkSync()
     {
         nextSyncTime = Time.realtimeSinceStartup + 15f;
@@ -703,6 +732,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         }
     }
 
+    // Updates UI state string indicating whether walk is saved locally or synced to cloud.
     private void RefreshLastWalkSaveState()
     {
         if (walkingSessionActive || string.IsNullOrEmpty(lastSavedWalkFilePath)) return;
@@ -718,6 +748,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
                 : "Saved on device";
     }
 
+    // Validates and adds GPS coordinate to active route, accumulating total distance.
     private void AddRoutePoint(float latitude, float longitude, double timestamp, double observedAt)
     {
         EnsureCollections();
@@ -735,6 +766,8 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         });
         lastRoutePointTime = Time.realtimeSinceStartup;
     }
+
+    // Constructs a serializable walk session record from current session data.
     private SavedWalkSession CreateSavedWalkSession()
     {
         EnsureCollections();
@@ -769,6 +802,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         return record;
     }
 
+    // Validates that coordinates and accuracy are within valid physical limits.
     private static bool IsUsableGpsFix(float latitude, float longitude, float accuracyMeters)
     {
         if (!WalkGpsFilter.Finite(latitude) || !WalkGpsFilter.Finite(longitude)
@@ -785,6 +819,7 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         return true;
     }
 
+    // Ensures route point collection lists are initialized.
     private void EnsureCollections()
     {
         if (routePoints == null)
@@ -798,11 +833,13 @@ public class StepCountAndGpsManager : MonoBehaviour, ISerializationCallbackRecei
         }
     }
 
+    // Overload calculating distance between two Vector2 coordinates in meters.
     public static float CalculateDistanceMeters(Vector2 from, Vector2 to)
     {
         return CalculateDistanceMeters(from.x, from.y, to.x, to.y);
     }
 
+    // Calculates great-circle distance between two GPS coordinates using Haversine formula.
     public static float CalculateDistanceMeters(float fromLatitude, float fromLongitude, float toLatitude, float toLongitude)
     {
         var fromLatitudeRadians = fromLatitude * Mathf.Deg2Rad;

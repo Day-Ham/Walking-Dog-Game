@@ -3,7 +3,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-/// <summary>References on the item-card prefab generated inside the inventory Content object.</summary>
+// References on the item-card prefab generated inside the inventory Content object.
 public class GachaInventoryCardUI : MonoBehaviour
 {
     public Button button;
@@ -12,6 +12,7 @@ public class GachaInventoryCardUI : MonoBehaviour
     public TMP_Text tierText;
     public GameObject lockedOverlay;
 
+    // Binds gacha item data, unlock state, and selection callback to the card UI elements.
     public void Bind(GachaItem item, bool unlocked, Action<GachaItem> onSelected)
     {
         // All visual data comes from the catalog asset, never from Firebase.

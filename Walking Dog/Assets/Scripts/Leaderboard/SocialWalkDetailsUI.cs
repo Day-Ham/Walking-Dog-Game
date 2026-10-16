@@ -20,6 +20,7 @@ namespace WalkingDog.Leaderboards
         private GameObject mapArea;
         private GameObject previousSelection;
 
+        // Programmatically constructs the modal walk details dialog overlay and embedded map component.
         internal static SocialWalkDetailsUI Create(Transform parent, Button buttonSource,
             TMP_FontAsset font, Action onClose, Action onShareRoute)
         {
@@ -71,6 +72,7 @@ namespace WalkingDog.Leaderboards
             return popup;
         }
 
+        // Populates the dialog labels and photo from the specified activity record and activates the popup.
         internal void Show(SocialActivity item)
         {
             previousSelection = EventSystem.current != null ? EventSystem.current.currentSelectedGameObject : null;
@@ -85,6 +87,7 @@ namespace WalkingDog.Leaderboards
             if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(close.gameObject);
         }
 
+        // Displays a loading progress message and hides the map area.
         internal void SetRouteLoading(string message)
         {
             HideMap();
@@ -92,12 +95,14 @@ namespace WalkingDog.Leaderboards
             shareRoute.interactable = false;
         }
 
+        // Displays an error message when route coordinates could not be retrieved.
         internal void SetRouteError(string message)
         {
             HideMap(); routeStatus.text = message;
             shareRoute.gameObject.SetActive(false);
         }
 
+        // Feeds the route points into the embedded OpenFreeMap webview and forces a redraw.
         internal void ShowRoute(string key, SocialRoute route)
         {
             HideMap();
@@ -116,6 +121,7 @@ namespace WalkingDog.Leaderboards
             map.ForceSync(); // Immediately redraw the selected shared route.
         }
 
+        // Disables the webview map and clears cached route points.
         private void HideMap()
         {
             map.enabled = false;
@@ -123,6 +129,7 @@ namespace WalkingDog.Leaderboards
             mapArea.SetActive(false);
         }
 
+        // Hides the popup dialog, clears labels, and restores previous UI focus.
         internal void Close()
         {
             HideMap(); routeStatus.text = ""; shareRoute.gameObject.SetActive(false);
@@ -134,6 +141,7 @@ namespace WalkingDog.Leaderboards
             previousSelection = null;
         }
 
+        // Helper creating a styled TextMeshProUGUI text label within a rectangular anchor region.
         private static TMP_Text Label(Transform parent, TMP_FontAsset font, string name, string value,
             float left, float bottom, float right, float top, float size)
         {

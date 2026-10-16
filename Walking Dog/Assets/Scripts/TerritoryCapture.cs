@@ -20,9 +20,13 @@ public static class TerritoryCapture
     public struct Tile : IEquatable<Tile>
     {
         public int x, y;
+        // Constructs a grid tile coordinate.
         public Tile(int x, int y) { this.x = x; this.y = y; }
+        // Compares two tile coordinates for equality.
         public bool Equals(Tile other) => x == other.x && y == other.y;
+        // Checks equality with another object.
         public override bool Equals(object obj) => obj is Tile other && Equals(other);
+        // Computes hash code from tile x and y coordinates.
         public override int GetHashCode() => unchecked(x * 397 ^ y);
     }
 
@@ -37,10 +41,14 @@ public static class TerritoryCapture
     private struct Point
     {
         public double x, y;
+        // Constructs a projected 2D point.
         public Point(double x, double y) { this.x = x; this.y = y; }
     }
 
+    // Evaluates a recorded walk session to claim full loops and trail ribbons.
     public static Result EvaluateLoop(StepCountAndGpsManager.SavedWalkSession walk) => Evaluate(walk, true);
+
+    // Validates GPS points and computes claimed polygon geometries or legacy grid tiles.
     public static Result Evaluate(StepCountAndGpsManager.SavedWalkSession walk, bool fullLoop = false)
     {
         var result = new Result();
@@ -172,23 +180,38 @@ public static class TerritoryCapture
         return result;
     }
 
+    // Sets a rejection reason message and returns the result object.
     private static Result Reject(Result result, string message) { result.message = message; return result; }
+
+    // Checks whether a floating-point value is neither NaN nor infinite.
     private static bool Finite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
+
+    // Projects latitude and longitude coordinates into Web Mercator metric space.
     private static Point Project(double lat, double lng) => new Point(Radius * lng * Math.PI / 180, Radius * Math.Log(Math.Tan(Math.PI / 4 + lat * Math.PI / 360)));
+
+    // Computes Euclidean distance between two 2D metric points.
     private static double Length(Point a, Point b) => Math.Sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y));
+
+    // Computes great-circle distance between two GPS coordinates using the Haversine formula.
     private static double Distance(StepCountAndGpsManager.WalkRoutePoint a, StepCountAndGpsManager.WalkRoutePoint b)
     {
         double lat = (b.latitude - a.latitude) * Math.PI / 180, lng = (b.longitude - a.longitude) * Math.PI / 180;
         double h = Math.Sin(lat / 2) * Math.Sin(lat / 2) + Math.Cos(a.latitude * Math.PI / 180) * Math.Cos(b.latitude * Math.PI / 180) * Math.Sin(lng / 2) * Math.Sin(lng / 2);
         return 6371000 * 2 * Math.Asin(Math.Sqrt(Math.Min(1, h)));
     }
+
+    // Calculates the 2D cross product of vectors (b - a) and (c - a) to determine orientation.
     private static double Cross(Point a, Point b, Point c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+
+    // Determines if line segment ab intersects line segment cd using bounding-box and cross-product tests.
     private static bool Intersects(Point a, Point b, Point c, Point d)
     {
         if (Math.Max(a.x, b.x) < Math.Min(c.x, d.x) || Math.Max(c.x, d.x) < Math.Min(a.x, b.x)
             || Math.Max(a.y, b.y) < Math.Min(c.y, d.y) || Math.Max(c.y, d.y) < Math.Min(a.y, b.y)) return false;
         return Cross(a, b, c) * Cross(a, b, d) <= 0 && Cross(c, d, a) * Cross(c, d, b) <= 0;
     }
+
+    // Tests whether a given 2D point lies within a polygon using the ray-casting algorithm.
     private static bool Contains(List<Point> polygon, Point p)
     {
         bool inside = false;

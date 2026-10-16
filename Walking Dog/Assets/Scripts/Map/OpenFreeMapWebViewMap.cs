@@ -62,7 +62,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
 
     public bool IsMapVisible => isActiveAndEnabled && !paused && visibilityBlockers.Count == 0;
 
-    // Each overlay owns its own block. Repeated opens and overlapping dialogs are safe.
+    // Suspends and hides the native WebView when an overlay modal or screen is active.
     public void Suspend(UnityEngine.Object owner)
     {
         if (owner == null) return;
@@ -71,6 +71,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         SetWebViewVisible(false);
     }
 
+    // Releases overlay suspension lock and restores native WebView visibility.
     public void Resume(UnityEngine.Object owner)
     {
         visibilityBlockers.Remove(owner);
@@ -185,18 +186,21 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
 #endif
     }
 
+    // Forces immediate layout refresh and state synchronization to WebView.
     public void ForceSync()
     {
         nextMapSyncTime = 0f;
         nextLayoutSyncTime = 0f;
     }
 
+    // Sets map zoom level clamped between 1 and 20.
     public void SetZoom(int newZoom)
     {
         zoom = Mathf.Clamp(newZoom, 1, 20);
         ForceSync();
     }
 
+    // Instantiates and attaches the native Android WebView on the UI thread.
     private void CreateOrShowWebView()
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -259,6 +263,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
     }
 
 #if UNITY_ANDROID && !UNITY_EDITOR
+    // Retrieves the active Android activity via UnityPlayer JNI.
     private AndroidJavaObject GetUnityActivity()
     {
         try
@@ -275,6 +280,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         }
     }
 
+    // Configures WebSettings, clients, and interaction flags for the native WebView.
     private void ConfigureWebView(AndroidJavaObject targetWebView)
     {
         var settings = targetWebView.Call<AndroidJavaObject>("getSettings");
@@ -314,6 +320,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         targetWebView.Call("setClickable", allowMapGestures);
     }
 
+    // Clears cached web resources and navigation history.
     private void ClearWebViewCache(AndroidJavaObject targetWebView)
     {
         try
@@ -327,6 +334,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         }
     }
 
+    // Loads the map HTML file from Android app assets into the WebView.
     private void LoadMapHtmlFromAssets(AndroidJavaObject targetWebView, string safeHtmlFileName)
     {
         try
@@ -346,6 +354,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         targetWebView.Call("loadUrl", $"file:///android_asset/{safeHtmlFileName}");
     }
 
+    // Reads raw UTF-8 string content of an Android asset file.
     private string ReadAndroidAssetText(string fileName)
     {
         AndroidJavaObject assets = null;
@@ -373,6 +382,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         }
     }
 
+    // Appends game identifier to WebView HTTP user-agent header.
     private void AppendAppNameToUserAgent(AndroidJavaObject settings)
     {
         try
@@ -389,6 +399,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         }
     }
 
+    // Enables Chrome remote debugging for development builds.
     private void EnableWebViewDebuggingForDevelopmentBuilds()
     {
         if (!developmentBuild)
@@ -409,6 +420,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         }
     }
 
+    // Creates Android FrameLayout layout parameters matching screen pixel bounds.
     private AndroidJavaObject CreateLayoutParams(RectInt rect)
     {
         var parameters = new AndroidJavaObject(
@@ -426,6 +438,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         return parameters;
     }
 
+    // Adjusts Android WebView position, size, and z-order to match Unity RectTransform.
     private void UpdateWebViewLayoutIfNeeded()
     {
         if (webView == null || layoutParams == null)
@@ -465,6 +478,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         });
     }
 
+    // Serializes current walk/territory state to JSON and calls JS update function.
     private void SyncMapStateToWebView()
     {
         if (webView == null)
@@ -478,6 +492,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         SetStatus(state.hasLocation ? "OpenFreeMap tracking GPS." : "OpenFreeMap preview location.");
     }
 
+    // Evaluates a JavaScript snippet inside the native WebView on Android UI thread.
     private void EvaluateJavaScript(string script)
     {
         RunOnAndroidUiThread(() =>
@@ -491,12 +506,14 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         });
     }
 
+    // Sets WebView visibility flag with a revision token to ignore stale callbacks.
     private void SetWebViewVisible(bool isVisible)
     {
         var revision = ++webViewVisibilityRevision; // Give this show/hide request a newer version number.
         RunOnAndroidUiThread(() => SetWebViewVisibleOnUiThread(isVisible, revision));
     }
 
+    // Executes visibility change (VISIBLE vs GONE) on Android UI thread.
     private void SetWebViewVisibleOnUiThread(bool isVisible, int revision)
     {
         if (revision != webViewVisibilityRevision) // Ignore an older request after the map has reopened.
@@ -515,6 +532,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         webViewVisible = isVisible;
     }
 
+    // Safely removes, stops, and destroys the native Android WebView instance.
     private void DestroyWebView()
     {
         if (webView == null)
@@ -549,6 +567,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         });
     }
 
+    // Dispatches an Action to Android's main UI thread.
     private void RunOnAndroidUiThread(Action action)
     {
         if (activity == null)
@@ -583,6 +602,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
     public bool ShowHistoricalTerritories { get; set; } = true;
     public string HistoricalRouteKey { get; set; } = "";
 
+    // Constructs serializable map state combining GPS location, route, and territories.
     private OpenFreeMapState BuildMapState()
     {
         string colorHex = PlayerPrefs.GetString("EquippedCollarColor", "#ee2b35");
@@ -659,6 +679,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         return state;
     }
 
+    // Appends claimed territory polygon geometry to the map state.
     private static void AddTerritoryState(OpenFreeMapState state)
     {
         var manager = StepCountAndGpsManager.Instance;
@@ -668,6 +689,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         state.territoryMessage = GetTerritoryMessage(territories);
     }
 
+    // Refreshes territory guidance and area text on the HUD.
     private void UpdateTerritoryClaimText()
     {
         // Polygon area calculation should follow map refreshes, not every rendered frame.
@@ -688,6 +710,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         lastTerritoryClaimMessage = message;
     }
 
+    // Formats territory area in square meters or returns status error string.
     private static string GetTerritoryMessage(TerritoryService territories)
     {
         return territories == null || string.IsNullOrWhiteSpace(territories.Owner)
@@ -696,6 +719,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
             : "Your territory · " + territories.AreaSquareMeters.ToString("N0") + " m²";
     }
 
+    // Decimates and adds route coordinate breadcrumbs to the transfer payload.
     private void AddRoutePoints(IReadOnlyList<Vector2> sourceRoutePoints, List<OpenFreeMapRoutePoint> destination)
     {
         if (sourceRoutePoints == null || sourceRoutePoints.Count == 0)
@@ -720,6 +744,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         }
     }
 
+    // Formats route point samples preserving segment discontinuity flags.
     private void AddRouteSamples(IReadOnlyList<StepCountAndGpsManager.WalkRoutePoint> samples, List<OpenFreeMapRoutePoint> destination)
     {
         // Preserve both sides of every break when reducing display detail.
@@ -733,6 +758,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         }
     }
 
+    // Converts Unity RectTransform canvas corners into Android top-left screen pixel bounds.
     private RectInt CalculateAndroidRect()
     {
         if (mapArea == null)
@@ -779,11 +805,13 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         return new RectInt(left, top, width, height);
     }
 
+    // Returns the configured HTML filename or fallback default.
     private string GetSafeHtmlFileName()
     {
         return string.IsNullOrWhiteSpace(htmlFileName) ? DefaultHtmlFileName : htmlFileName;
     }
 
+    // Updates the map status label.
     private void SetStatus(string message)
     {
         if (statusText != null)
@@ -792,6 +820,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         }
     }
 
+    // Converts a Vector2 latitude/longitude into an OpenFreeMapRoutePoint.
     private static OpenFreeMapRoutePoint ToRoutePoint(Vector2 latitudeLongitude)
     {
         return new OpenFreeMapRoutePoint
@@ -801,6 +830,7 @@ public class OpenFreeMapWebViewMap : MonoBehaviour
         };
     }
 
+    // Maps enum map style to OpenFreeMap style ID string.
     private static string GetStyleId(OpenFreeMapStyle style)
     {
         switch (style)

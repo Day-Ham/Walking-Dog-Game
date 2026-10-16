@@ -9,6 +9,7 @@ namespace WalkingDog.Leaderboards
 {
     public sealed partial class FirebaseLeaderboardService
     {
+        // Retrieves or generates an immutable, unique 5-character friend code for the authenticated user.
         public Task<string> GetFriendCodeAsync(CancellationToken token)
             => FriendOperationAsync(async (uid, revision, work) =>
             {
@@ -33,6 +34,7 @@ namespace WalkingDog.Leaderboards
                 throw new FriendRequestException("Couldn't create a friend code. Please try again.");
             }, token);
 
+        // Fetches all incoming, outgoing, and accepted friend connections and display profiles.
         public Task<IReadOnlyList<FriendEntry>> LoadFriendsAsync(CancellationToken token)
             => FriendOperationAsync<IReadOnlyList<FriendEntry>>(async (uid, revision, work) =>
             {
@@ -55,6 +57,7 @@ namespace WalkingDog.Leaderboards
                     .ThenBy(f => f.DisplayName, StringComparer.OrdinalIgnoreCase).ThenBy(f => f.PlayerId, StringComparer.Ordinal).ToList().AsReadOnly();
             }, token);
 
+        // Sends a friend request, accepts an existing request, or removes a friend in Firestore transactions.
         public async Task ChangeFriendAsync(string friendCode, FriendAction action, CancellationToken token)
         {
             if (string.IsNullOrWhiteSpace(friendCode) || friendCode.Length > 128 || friendCode.Contains("/")
@@ -103,6 +106,7 @@ namespace WalkingDog.Leaderboards
             }, token);
         }
 
+        // Wraps friend network requests with authentication verification, timeout, and cancellation handling.
         private async Task<T> FriendOperationAsync<T>(Func<string, int, CancellationToken, Task<T>> operation, CancellationToken token)
         {
             var uid = RequireUser(token);
@@ -119,6 +123,7 @@ namespace WalkingDog.Leaderboards
             }
         }
 
+        // Ensures a public friend code profile exists with current display name and avatar photo.
         private Task RegisterCodeAsync(string uid, int revision, CancellationToken token)
             => firestore.RunTransactionAsync(async transaction =>
             {
@@ -135,6 +140,7 @@ namespace WalkingDog.Leaderboards
                     }, SetOptions.MergeAll);
             });
 
+        // Updates user's base64 thumbnail profile photo in their public friend profile document.
         public Task SaveProfilePhotoAsync(string uploadedPhoto, CancellationToken token)
             => FriendOperationAsync(async (uid, revision, work) =>
             {
@@ -149,9 +155,11 @@ namespace WalkingDog.Leaderboards
                 return true;
             }, token);
 
+        // Reads and normalizes photo URL or base64 data string from a document snapshot.
         private static string ReadPhoto(DocumentSnapshot profile)
             => profile.Exists && profile.TryGetValue<string>("photoUrl", out var photo) ? ProfilePhotos.Normalize(photo) : "";
 
+        // Enriches leaderboard entries with profile photos fetched concurrently from friend documents.
         private async Task<LeaderboardSnapshot> WithPhotosAsync(LeaderboardSnapshot board, CancellationToken token)
         {
             var players = board.Entries.Select(p => p.PlayerId).Concat(new[] { board.CurrentPlayerId }).Distinct().ToList();
@@ -168,6 +176,7 @@ namespace WalkingDog.Leaderboards
             return new LeaderboardSnapshot(board.Metric, board.CurrentPlayerId, board.Entries.Select(Decorate).ToList().AsReadOnly(), Decorate(board.CurrentPlayer), board.Scope, photos[board.CurrentPlayerId]);
         }
 
+        // Reads all friend link documents paginated from the user's friend subcollection.
         private async Task<List<DocumentSnapshot>> ReadLinksAsync(string uid, CancellationToken token)
         {
             var result = new List<DocumentSnapshot>();
@@ -184,6 +193,7 @@ namespace WalkingDog.Leaderboards
             }
         }
 
+        // Queries accepted friends and ranks them alongside the current user for the friends-only leaderboard.
         private async Task<LeaderboardSnapshot> FetchFriendsBoardAsync(string uid, LeaderboardMetric metric, CancellationToken token)
         {
             var revision = authRevision;
@@ -205,6 +215,7 @@ namespace WalkingDog.Leaderboards
             return FriendsRanking.Build(uid, metric, ids, players);
         }
 
+        // Helper that splits a list into chunks of a maximum size.
         private static IEnumerable<List<T>> Chunk<T>(List<T> source, int size)
         {
             for (int i = 0; i < source.Count; i += size) yield return source.GetRange(i, Math.Min(size, source.Count - i));

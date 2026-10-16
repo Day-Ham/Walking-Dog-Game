@@ -10,6 +10,7 @@ public sealed class WalkScreenSafeArea : MonoBehaviour
     private Rect lastSafeArea;
     private Vector2Int lastScreen;
 
+    // Caches RectTransform and initializes screen tracking state on enable.
     private void OnEnable()
     {
         rectTransform = GetComponent<RectTransform>();
@@ -17,6 +18,7 @@ public sealed class WalkScreenSafeArea : MonoBehaviour
         Update();
     }
 
+    // Adjusts anchors to match Screen.safeArea whenever screen dimensions or cutouts change.
     private void Update()
     {
         var dimensions = new Vector2Int(Screen.width, Screen.height);

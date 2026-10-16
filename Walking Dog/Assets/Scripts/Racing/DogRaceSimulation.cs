@@ -10,6 +10,7 @@ namespace WalkingDog.Racing
         public string Name { get; }
         public DogStats Stats { get; }
         public string EquippedItemId { get; }
+        // Constructs a contestant entry for a race with unique ID, name, stats, and collar equipment.
         public DogRaceEntry(string id, string name, DogStats stats, string equippedItemId = "")
         {
             if (string.IsNullOrEmpty(id) || stats == null) throw new ArgumentException("A racer needs an ID and stats.");
@@ -25,6 +26,7 @@ namespace WalkingDog.Racing
         public double FinishTime { get; internal set; } = double.PositiveInfinity;
         public bool Finished => !double.IsPositiveInfinity(FinishTime);
         internal readonly double Form;
+        // Constructs an active racer instance with a randomized form multiplier.
         internal DogRaceRunner(DogRaceEntry entry, double form)
         { Entry = new DogRaceEntry(entry.Id, entry.Name, entry.Stats, entry.EquippedItemId); Form = form; }
     }
@@ -40,6 +42,7 @@ namespace WalkingDog.Racing
         public IReadOnlyList<DogRaceRunner> Runners { get; }
         public bool Completed => Runners.All(r => r.Finished);
 
+        // Initializes a deterministic race simulation with seeded form values and track length.
         public DogRaceSimulation(IEnumerable<DogRaceEntry> entries, int seed, double length = DefaultLength)
         {
             if (double.IsNaN(length) || double.IsInfinity(length) || length <= 0 || length > 10000)
@@ -53,6 +56,7 @@ namespace WalkingDog.Racing
             Length = length;
         }
 
+        // Advances race physics by fixed time increments, calculating acceleration, stamina decay, and finish times.
         public void Advance(double seconds)
         {
             if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0 || seconds > 60)
@@ -81,9 +85,11 @@ namespace WalkingDog.Racing
             }
         }
 
+        // Returns all runners sorted by finish time, distance covered, and unique ID.
         public List<DogRaceRunner> Standings() => Runners.OrderBy(r => r.FinishTime)
             .ThenByDescending(r => r.Distance).ThenBy(r => r.Entry.Id, StringComparer.Ordinal).ToList();
 
+        // Generates an offline practice lineup containing the player's dog and three balanced AI opponents.
         public static List<DogRaceEntry> PracticeField(DogStats player, string equippedItemId = "") => new List<DogRaceEntry> {
             new DogRaceEntry("player", "Your dog", player, equippedItemId),
             new DogRaceEntry("dash", "Dash", new DogStats { speed = 48, stamina = 30, acceleration = 35 }),

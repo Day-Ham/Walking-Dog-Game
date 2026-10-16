@@ -43,6 +43,7 @@ namespace WalkingDog.Leaderboards
 
     internal static class SocialFeed
     {
+        // Deduplicates activities by player and ID and sorts them in reverse chronological order up to 100 entries.
         internal static List<SocialActivity> Recent(IEnumerable<SocialActivity> activities) => activities
             .GroupBy(a => (a.Player.Id, a.Id)).Select(g => g.First())
             .OrderByDescending(a => a.EndedUtc).ThenBy(a => a.Player.Id, StringComparer.Ordinal)

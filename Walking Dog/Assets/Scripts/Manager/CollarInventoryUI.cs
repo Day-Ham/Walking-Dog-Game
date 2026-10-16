@@ -20,6 +20,7 @@ public class CollarInventoryUI : MonoBehaviour
 
     private readonly List<GachaInventoryCardUI> spawnedCards = new List<GachaInventoryCardUI>();
 
+    // Loads cached inventory and kicks off cloud synchronization when enabled.
     private async void OnEnable()
     {
         RestoreEquippedMarkerAppearance();
@@ -27,6 +28,7 @@ public class CollarInventoryUI : MonoBehaviour
         await SyncWithCloudAsync();
     }
 
+    // Instantiates UI cards for each catalog item reflecting unlock and equipped status.
     public void RefreshInventory()
     {
         var unlockedIds = CollarInventoryStore.GetLocalUnlockedItemIds();
@@ -51,6 +53,7 @@ public class CollarInventoryUI : MonoBehaviour
         if (statusText != null) statusText.text = "Select an unlocked collar to equip it.";
     }
 
+    // Synchronizes inventory and equipped state with Firestore cloud data.
     private async System.Threading.Tasks.Task SyncWithCloudAsync()
     {
         var manager = StepCountAndGpsManager.Instance;
@@ -73,6 +76,7 @@ public class CollarInventoryUI : MonoBehaviour
         }
     }
 
+    // Equips the selected collar, persists choice locally, and syncs to Firestore.
     private void EquipItem(GachaItem item)
     {
         // Update the cached colour immediately so the map reflects the equipment without waiting for Firebase.
@@ -91,6 +95,7 @@ public class CollarInventoryUI : MonoBehaviour
             _ = new CollarInventoryStore(FirebaseFirestore.DefaultInstance).EquipItemAsync(bootstrap.Wallet.Owner, item);
     }
 
+    // Equips the default red collar and resets icon customization.
     public void EquipDefault() // function allows icon to switch to default color upon selection
     {
         PlayerPrefs.SetString("EquippedCollarColor", "#ee2b35");
@@ -104,11 +109,14 @@ public class CollarInventoryUI : MonoBehaviour
         if (map != null) map.ForceSync();
     }
 
-    // Kept for the old scene buttons while the runtime card prefab replaces them.
+    // Equips the legacy bronze tier collar.
     public void EquipBronze() => EquipItemById("Collar_Bronze");
+    // Equips the legacy silver tier collar.
     public void EquipSilver() => EquipItemById("Collar_Silver");
+    // Equips the legacy gold tier collar.
     public void EquipGold() => EquipItemById("Collar_Gold");
 
+    // Finds a catalog item by ID and equips it.
     public void EquipItemById(string itemId)
     {
         foreach (var item in itemCatalog ?? System.Array.Empty<GachaItem>())
@@ -122,9 +130,7 @@ public class CollarInventoryUI : MonoBehaviour
         Debug.LogWarning("No catalog item exists with ID '" + itemId + "'.", this);
     }
 
-    // Firebase stores only the item ID. Resolve it through the local catalog whenever
-    // inventory is restored, so a fresh device can recreate the WebView-safe icon.
-
+    // Resolves equipped collar ID against catalog and updates map marker assets.
     private void RestoreEquippedMarkerAppearance()
     {
         var equippedItemId = PlayerPrefs.GetString(CollarInventoryStore.EquippedItemIdKey, "");
@@ -151,6 +157,7 @@ public class CollarInventoryUI : MonoBehaviour
         EquippedGachaMarkerIcon.Clear();
     }
 
+    // Cleans up all spawned inventory card game objects.
     private void ClearGeneratedCards()
     {
         foreach (var card in spawnedCards)

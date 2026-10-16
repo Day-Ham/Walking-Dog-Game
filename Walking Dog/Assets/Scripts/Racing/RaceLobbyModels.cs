@@ -10,6 +10,7 @@ namespace WalkingDog.Racing
         // 32-character alphabet omitting easily confused glyphs (0, O, 1, I, L).
         private const string Alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
+        // Generates a cryptographically random human-friendly room code using an unambiguous alphabet.
         public static string Create(int length = 5)
         {
             if (length < 3 || length > 12) throw new ArgumentOutOfRangeException(nameof(length));
@@ -18,6 +19,7 @@ namespace WalkingDog.Racing
             return new string(bytes.Select(b => Alphabet[b % Alphabet.Length]).ToArray());
         }
 
+        // Strips spaces and dashes, converts to uppercase, and verifies length and character set.
         public static string Normalize(string input)
         {
             if (string.IsNullOrWhiteSpace(input)) return "";
@@ -25,6 +27,7 @@ namespace WalkingDog.Racing
             return cleaned.Length == 5 && cleaned.All(c => Alphabet.Contains(c)) ? cleaned : "";
         }
 
+        // Formats a normalized room code with a central hyphen for readability.
         public static string Format(string code)
         {
             var norm = Normalize(code);
@@ -41,6 +44,7 @@ namespace WalkingDog.Racing
         public string EquippedItemId { get; }
         public bool IsHost { get; }
 
+        // Constructs a race entrant representing a joined player and their dog stats.
         public RaceEntrant(string playerId, string displayName, DogStats stats, string equippedItemId = "", bool isHost = false)
         {
             if (string.IsNullOrWhiteSpace(playerId)) throw new ArgumentException("Entrant needs a player ID.", nameof(playerId));
@@ -53,6 +57,7 @@ namespace WalkingDog.Racing
             IsHost = isHost;
         }
 
+        // Serializes entrant properties to a Firestore dictionary payload.
         public Dictionary<string, object> ToDictionary() => new Dictionary<string, object>
         {
             ["id"] = PlayerId,
@@ -64,6 +69,7 @@ namespace WalkingDog.Racing
             ["isHost"] = IsHost
         };
 
+        // Deserializes and validates an entrant from a Firestore document dictionary.
         public static RaceEntrant Parse(IDictionary<string, object> data)
         {
             if (data == null) throw new ArgumentNullException(nameof(data));
@@ -108,6 +114,7 @@ namespace WalkingDog.Racing
         public bool IsRacing => Status == "racing";
         public bool IsClosed => Status == "closed";
 
+        // Constructs and validates a multiplayer race lobby room with entrants and track settings.
         public RaceRoom(string roomCode, string hostUid, string hostName, string status, int seed,
             double trackLength, IEnumerable<RaceEntrant> entrants)
         {
@@ -127,9 +134,11 @@ namespace WalkingDog.Racing
                 throw new InvalidOperationException("The race room could not be verified.");
         }
 
+        // Checks whether the requesting user is the host and the room is ready to start.
         public bool CanStart(string requesterUid) =>
             IsWaiting && HostUid == requesterUid && Entrants.Count >= 1;
 
+        // Converts room properties and entrant list to a Firestore dictionary payload.
         public Dictionary<string, object> ToDictionary()
         {
             var dict = new Dictionary<string, object>
@@ -145,6 +154,7 @@ namespace WalkingDog.Racing
             return dict;
         }
 
+        // Deserializes and validates a race room document from Firestore data.
         public static RaceRoom Parse(string code, IDictionary<string, object> data)
         {
             if (data == null) throw new ArgumentNullException(nameof(data));
@@ -171,10 +181,7 @@ namespace WalkingDog.Racing
             return new RaceRoom(code, hostUid, hostName, status, seed, length, entrants);
         }
 
-        /// <summary>
-        /// Converts the room's entrants into DogRaceEntry objects for DogRaceSimulation,
-        /// filling any empty lanes up to 4 with practice AI dogs.
-        /// </summary>
+        // Converts the room's entrants into simulation entries, filling empty lanes up to 4 with practice AI dogs.
         public List<DogRaceEntry> BuildSimulationField()
         {
             var field = new List<DogRaceEntry>();

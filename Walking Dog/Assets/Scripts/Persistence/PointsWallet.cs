@@ -15,6 +15,7 @@ public sealed class PointsWalletSnapshot
     public long MilestoneRollsClaimed { get; }
     public bool IsReconciling { get; }
 
+    // Constructs an immutable snapshot of points balance, earnings, spendings, and milestone claims.
     public PointsWalletSnapshot(long balance, long earned, long spent, long milestoneRollsClaimed = 0, bool reconciling = false)
     {
         if (balance < 0 || earned < 0 || spent < 0 || earned > Maximum || spent > earned || balance != earned - spent)
@@ -27,26 +28,28 @@ public sealed class PointsWalletSnapshot
         Balance = balance; TotalEarned = earned; TotalSpent = spent; MilestoneRollsClaimed = milestoneRollsClaimed; IsReconciling = reconciling;
     }
 
+    // Converts physical step count to points at a 10 steps = 1 point ratio.
     public static long RewardForSteps(long steps)
     {
         if (steps < 0 || steps > int.MaxValue) throw new ArgumentOutOfRangeException(nameof(steps));
         return steps / 10;
     }
 
-    /// <summary>Calculates the number of free rolls earned from physical steps.</summary>
+    // Calculates the number of free rolls earned from physical steps.
     public static long MilestoneRollsForSteps(long steps)
     {
         if (steps < 0) throw new ArgumentOutOfRangeException(nameof(steps));
         return steps / StepsPerMilestoneRoll;
     }
 
-    /// <summary>Calculates free rolls from wallet points, where one point represents ten steps.</summary>
+    // Calculates free rolls from wallet points, where one point represents ten steps.
     public static long MilestoneRollsForEarnedPoints(long earned)
     {
         if (earned < 0) throw new ArgumentOutOfRangeException(nameof(earned));
         return checked(earned * 10) / StepsPerMilestoneRoll;
     }
 
+    // Unboxes and parses integer or long object fields into a 64-bit integer.
     private static long ParseLong(object obj)
     {
         if (obj is long l) return l;
@@ -54,6 +57,7 @@ public sealed class PointsWalletSnapshot
         throw new InvalidOperationException("Wallet fields must be integers.");
     }
 
+    // Deserializes and validates a wallet snapshot dictionary from Firestore.
     internal static PointsWalletSnapshot Parse(IDictionary<string, object> data, bool reconciling = false)
     {
         if (data == null) throw new InvalidOperationException("Wallet data is null.");
@@ -95,9 +99,11 @@ public sealed class PointsWalletSession : IDisposable
     public bool NeedsSync { get; private set; }
     public bool HasPendingWalks { get; internal set; }
 
+    // Creates a new points wallet session bound to an account and underlying store.
     internal PointsWalletSession(IPointsWalletStore store, TimeSpan? timeout = null)
     { this.store = store; this.timeout = timeout ?? TimeSpan.FromSeconds(25); SynchronizeAccount(); }
 
+    // Re-checks current authenticated user ID and resets state if the owner changed.
     public bool SynchronizeAccount()
     {
         if (disposed || Owner == (store.AuthenticatedUserId ?? "")) return false;
@@ -105,6 +111,7 @@ public sealed class PointsWalletSession : IDisposable
         return true;
     }
 
+    // Cancels in-flight requests, clears cached snapshots, and resets session state.
     internal void Reset()
     {
         if (disposed) return;
@@ -131,6 +138,7 @@ public sealed class PointsWalletSession : IDisposable
         }
     }
 
+    // Fetches the latest wallet balance snapshot from Firestore with cancellation and timeout handling.
     public async Task RefreshAsync()
     {
         SynchronizeAccount();
@@ -170,6 +178,7 @@ public sealed class PointsWalletSession : IDisposable
         }
     }
 
+    // Atomically spends points in Firestore using an idempotent receipt ID and refreshes the balance.
     public async Task SpendPointsAsync(long amount, string receiptId)
     {
         SynchronizeAccount();
@@ -184,6 +193,7 @@ public sealed class PointsWalletSession : IDisposable
         await RefreshAsync();
     }
 
+    // Atomically claims a milestone free roll in Firestore and refreshes the local balance snapshot.
     public async Task ClaimMilestoneRollAsync(string receiptId)
     {
         SynchronizeAccount();
@@ -200,7 +210,10 @@ public sealed class PointsWalletSession : IDisposable
         await RefreshAsync();
     }
 
+    // Suppresses unhandled task exceptions from timed-out operations.
     private static async void Observe(Task task) { try { await task; } catch (Exception) { } }
+
+    // Disposes the session, cancels any pending network operations, and frees resources.
     public void Dispose()
     {
         disposed = true; generation++; pending?.Cancel(); pending?.Dispose(); pending = null;

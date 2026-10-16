@@ -15,12 +15,14 @@ internal sealed class WalkGpsFilter
     public string Status { get; private set; } = "Waiting for GPS";
     public double LastFixTimestamp => lastFix;
 
+    // Flags an interruption in GPS tracking, causing the next recorded fix to begin a new disconnected segment.
     public void Interrupt(string reason)
     {
         if (hasAnchor) { HasGaps = true; breakPending = true; }
         Status = reason;
     }
 
+    // Evaluates a GPS coordinate sample for validity, accuracy, freshness, and maximum speed bounds.
     public bool Accept(double latitude, double longitude, double accuracy, double timestamp,
         double observedAt, out bool startsSegment)
     {
@@ -58,6 +60,7 @@ internal sealed class WalkGpsFilter
         return true;
     }
 
+    // Restores filter state following a walk recovery, inserting a gap before subsequent coordinates.
     public void Restore(bool hadPoints, bool hadGaps)
     {
         hasAnchor = hadPoints;
@@ -66,7 +69,10 @@ internal sealed class WalkGpsFilter
         Status = "Waiting for GPS after recovery";
     }
 
+    // Checks that a floating-point value is neither NaN nor infinite.
     internal static bool Finite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
+
+    // Calculates great-circle distance between two geographic coordinates using Haversine formula.
     internal static double Distance(double lat1, double lon1, double lat2, double lon2)
     {
         const double radians = Math.PI / 180;

@@ -10,6 +10,7 @@ namespace WalkingDog.Leaderboards
 {
     public sealed partial class FirebaseLeaderboardService : ISocialService
     {
+        // Updates the follow status between the authenticated user and another player in Firestore.
         public Task SetFollowingAsync(string target, bool following, CancellationToken token)
             => FriendOperationAsync(async (uid, revision, work) =>
             {
@@ -33,6 +34,7 @@ namespace WalkingDog.Leaderboards
                 return true;
             }, token);
 
+        // Updates whether the player shares their walk activity with followers and triggers route sharing sync.
         public Task SetActivitySharingAsync(bool sharing, CancellationToken token)
             => FriendOperationAsync(async (uid, revision, work) =>
             {
@@ -45,6 +47,7 @@ namespace WalkingDog.Leaderboards
                 return true;
             }, token);
 
+        // Loads social data including friends, followers, following, or recent activity feed for a given tab.
         public Task<SocialSnapshot> LoadSocialAsync(SocialTab tab, string target, CancellationToken token)
             => FriendOperationAsync(async (uid, revision, work) =>
             {
@@ -102,6 +105,7 @@ namespace WalkingDog.Leaderboards
                 return result;
             }, token);
 
+        // Fetches document IDs for following or followers collections in 50-document pages.
         private async Task<HashSet<string>> SocialLinksAsync(string uid, string direction, CancellationToken token)
         {
             var ids = new HashSet<string>(StringComparer.Ordinal);
@@ -118,6 +122,7 @@ namespace WalkingDog.Leaderboards
             }
         }
 
+        // Resolves display name, profile photo, follow relationship, and privacy settings for a player.
         private async Task<SocialPlayer> SocialPlayerAsync(string id, HashSet<string> following,
             HashSet<string> followers, CancellationToken token)
         {
@@ -140,6 +145,7 @@ namespace WalkingDog.Leaderboards
                 SharesActivity = settings.Exists && settings.TryGetValue("shareActivity", out bool shareActivity) && shareActivity };
         }
 
+        // Fetches recent walk records for a player to populate the activity feed.
         private async Task<List<SocialActivity>> SocialWalksAsync(SocialPlayer player, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
@@ -169,6 +175,7 @@ namespace WalkingDog.Leaderboards
             return activities;
         }
 
+        // Validates that a social user or document ID has a valid format and length.
         private static void ValidateSocialId(string id)
         {
             if (string.IsNullOrWhiteSpace(id) || id.Length > 128 || id.Contains("/") || id.Any(char.IsWhiteSpace)

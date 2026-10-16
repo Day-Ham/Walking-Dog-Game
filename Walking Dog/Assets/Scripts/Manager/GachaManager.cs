@@ -27,6 +27,7 @@ public class GachaManager : MonoBehaviour
 
     private bool isPulling;
 
+    // Subscribes button click listeners for gacha and milestone pulls.
     private void Start()
     {
         if (gachaButton != null)
@@ -35,6 +36,7 @@ public class GachaManager : MonoBehaviour
             milestoneButton.onClick.AddListener(OnMilestoneButtonClicked);
     }
 
+    // Unsubscribes button click listeners on destroy.
     private void OnDestroy()
     {
         if (gachaButton != null)
@@ -43,6 +45,7 @@ public class GachaManager : MonoBehaviour
             milestoneButton.onClick.RemoveListener(OnMilestoneButtonClicked);
     }
 
+    // Updates points balance text and milestone button visibility every frame.
     private void Update()
     {
         var manager = StepCountAndGpsManager.Instance;
@@ -70,6 +73,7 @@ public class GachaManager : MonoBehaviour
         }
     }
 
+    // Deducts points from wallet and awards a random gacha item on click.
     public async void OnGachaButtonClicked()
     {
         if (isPulling) return;
@@ -127,6 +131,7 @@ public class GachaManager : MonoBehaviour
         }
     }
 
+    // Claims an earned free milestone roll and unlocks a gacha item without spending points.
     public async void OnMilestoneButtonClicked()
     {
         if (isPulling) return;
@@ -190,6 +195,7 @@ public class GachaManager : MonoBehaviour
         }
     }
 
+    // Picks a random item from catalog based on configured tier probabilities.
     private GachaItem RollItem()
     {
         // First choose the rarity tier. Multiple items in a tier share that tier's rate equally.
@@ -213,6 +219,7 @@ public class GachaManager : MonoBehaviour
         return candidates[UnityEngine.Random.Range(0, candidates.Count)];
     }
 
+    // Persists the newly won collar to Firestore and triggers a map view sync.
     private async Task GrantRolledItemAsync(string uid, GachaItem item)
     {
         // Firebase receives only item.ItemId. Icon, name, tier, and colour stay in the local asset.
@@ -224,6 +231,7 @@ public class GachaManager : MonoBehaviour
         if (map != null) map.ForceSync();
     }
 
+    // Helper to log and display status messages on the gacha screen.
     private void SetResultText(string message)
     {
         if (resultText != null) resultText.text = message;

@@ -26,6 +26,7 @@ namespace WalkingDog.Leaderboards
         private int generation;
         private bool busy;
 
+        // Programmatically constructs the friends management panel hierarchy and UI elements.
         internal static FriendsPanelUI Create(Transform parent, LeaderboardPanelUI owner, Button source, TMP_Text text, TMP_InputField inputSource)
         {
             var root = new GameObject("Friends manager", typeof(RectTransform), typeof(Image));
@@ -83,6 +84,7 @@ namespace WalkingDog.Leaderboards
             return panel;
         }
 
+        // Binds button events and caches reference to parent leaderboard controller.
         internal void Initialize(LeaderboardPanelUI controller)
         {
             owner = controller;
@@ -91,7 +93,7 @@ namespace WalkingDog.Leaderboards
             BindButton(copy, CopyFriendCode);
         }
 
-        // Keep Inspector events and dynamically created controls working without duplicate calls.
+        // Binds a UnityAction listener to a button without creating duplicate listener registrations.
         private void BindButton(Button button, UnityEngine.Events.UnityAction action)
         {
             if (button == null) return;
@@ -103,11 +105,16 @@ namespace WalkingDog.Leaderboards
             button.onClick.AddListener(action);
         }
 
+        // Refreshes the list of friends and pending requests from the cloud.
         public void RefreshFriends() { _ = RunAsync(); }
+
+        // Reads the input field code and dispatches an outgoing friend request.
         public void SendFriendRequest()
         {
             if (input != null && !busy) _ = RunAsync(input.text.Trim(), FriendAction.Send);
         }
+
+        // Copies the player's own friend code to the system clipboard.
         public void CopyFriendCode()
         {
             if (busy || code == null || string.IsNullOrEmpty(code.text)) return;
@@ -115,11 +122,14 @@ namespace WalkingDog.Leaderboards
             message.text = "Friend code copied.";
         }
 
+        // Rebinds button listeners and triggers an initial friends refresh on enable.
         private void OnEnable()
         {
             Initialize(owner);
             if (Application.isPlaying) RefreshFriends();
         }
+
+        // Detects authenticated user switches and resets the friends panel view.
         private void Update()
         {
             if (service != null && service.AuthenticatedUserId != observedUser)
@@ -130,6 +140,7 @@ namespace WalkingDog.Leaderboards
             }
         }
 
+        // Asynchronously performs friend operations such as loading, sending, accepting, or removing friend requests.
         private async Task RunAsync(string target = null, FriendAction action = FriendAction.Send)
         {
             if (owner == null || message == null || code == null || input == null || list == null
@@ -180,6 +191,7 @@ namespace WalkingDog.Leaderboards
             finally { if (Current(request)) { busy = false; SetButtons(); } }
         }
 
+        // Instantiates UI rows for each friend and pending request in the scroll view.
         private void Render(IReadOnlyList<FriendEntry> entries)
         {
             ClearRows();
@@ -211,6 +223,7 @@ namespace WalkingDog.Leaderboards
             scroll.verticalNormalizedPosition = 1;
         }
 
+        // Updates the interactability states of buttons and input fields based on busy and auth status.
         private void SetButtons()
         {
             bool signedIn = service != null && !string.IsNullOrEmpty(service.AuthenticatedUserId);
@@ -218,21 +231,32 @@ namespace WalkingDog.Leaderboards
             input.interactable = send.interactable = !busy && signedIn;
             copy.interactable = !busy && signedIn && !string.IsNullOrEmpty(code.text);
         }
+
+        // Verifies whether an asynchronous operation corresponds to the latest UI request generation.
         private bool Current(int request) => this != null && isActiveAndEnabled && request == generation;
+
+        // Cancels any in-flight asynchronous operations and increments generation counter.
         private void Cancel() { generation++; pending?.Cancel(); pending?.Dispose(); pending = null; busy = false; }
+
+        // Destroys all currently instantiated friend row GameObjects.
         private void ClearRows()
         {
             foreach (var row in rows) if (row != null) { row.SetActive(false); if (Application.isPlaying) Destroy(row); else DestroyImmediate(row); }
             rows.Clear();
         }
+
+        // Cancels operations, clears instantiated rows, and empties inputs when disabled.
         private void OnDisable() { Cancel(); ClearRows(); if (code != null) code.text = ""; if (input != null) input.SetTextWithoutNotify(""); }
 
+        // Positions a RectTransform with normalized anchor bounds.
         internal static void Place(Transform transform, float left, float bottom, float right, float top)
         {
             var rect = (RectTransform)transform;
             rect.anchorMin = new Vector2(left, bottom); rect.anchorMax = new Vector2(right, top);
             rect.offsetMin = rect.offsetMax = Vector2.zero;
         }
+
+        // Instantiates and configures a styled UI button from a source template.
         internal static Button MakeButton(Transform parent, Button source, string name, string label, float left, float bottom, float right, float top)
         {
             var button = Instantiate(source, parent);
@@ -244,6 +268,8 @@ namespace WalkingDog.Leaderboards
             text.text = label; text.enableAutoSizing = true; text.fontSizeMin = 20; text.fontSizeMax = 34;
             return button;
         }
+
+        // Instantiates and configures a styled TextMeshProUGUI element.
         private static TMP_Text MakeText(Transform parent, TMP_Text source, string name, string value, float left, float bottom, float right, float top, float size)
         {
             var label = new GameObject(name, typeof(RectTransform), typeof(TextMeshProUGUI)).GetComponent<TMP_Text>();

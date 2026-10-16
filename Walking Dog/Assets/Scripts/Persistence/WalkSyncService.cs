@@ -11,6 +11,7 @@ public sealed class WalkSyncService
 
     public bool IsRunning => running;
 
+    // Constructs walk sync service coordinating local walk repository with cloud uploads.
     public WalkSyncService(LocalWalkRepository repository, IWalkCloudStore cloud,
         Func<DateTimeOffset> utcNow = null)
     {
@@ -19,8 +20,7 @@ public sealed class WalkSyncService
         this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
     }
 
-    // Run on the Unity main thread; await keeps its synchronization context.
-    // Called on startup, resume, walk completion, and periodically by the manager.
+    // Iterates through unsynced local walks and uploads their summaries to the cloud with exponential backoff.
     public async Task SyncPendingAsync(CancellationToken cancellationToken = default)
     {
         if (running || string.IsNullOrWhiteSpace(cloud.AuthenticatedUserId)) return;

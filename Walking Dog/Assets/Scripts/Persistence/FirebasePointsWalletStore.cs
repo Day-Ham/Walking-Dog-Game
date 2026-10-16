@@ -13,19 +13,27 @@ internal sealed class FirebasePointsWalletStore : IPointsWalletStore
     private Scan scan;
     private sealed class Scan { public DocumentSnapshot Cursor; public bool Complete; }
     public string AuthenticatedUserId => auth.CurrentUser?.UserId ?? "";
+
+    // Initializes points wallet store with Firebase Auth and Firestore references.
     internal FirebasePointsWalletStore(FirebaseAuth auth, FirebaseFirestore db) { this.auth = auth; this.db = db; }
+
+    // Resets back-fill pagination scan state for account switching.
     public void Reset() { scanOwner = null; scan = null; }
+
+    // Returns Firestore path for a user's wallet document.
     internal static string WalletPath(string uid) => $"users/{uid}/wallet/main";
+
+    // Returns Firestore path for a walk point award receipt.
     internal static string ReceiptPath(string uid, string id) => $"users/{uid}/pointReceipts/{id}";
 
+    // Constructs the dictionary payload representing wallet state for Firestore writes.
     internal static Dictionary<string, object> Fields(long earned, long spent, string walkId, long milestoneRollsClaimed) => new Dictionary<string, object>
     {
         ["schemaVersion"] = 1, ["balance"] = earned - spent, ["totalEarned"] = earned,
         ["totalSpent"] = spent, ["lastWalkId"] = walkId, ["milestoneRollsClaimed"] = milestoneRollsClaimed, ["updatedAt"] = FieldValue.ServerTimestamp
     };
 
-    // Rules require this exact saved-walk delta and its immutable receipt together.
-    // No balance setter or spending permission is exposed to the client.
+    // Atomically awards points for a completed walk session and creates an immutable receipt.
     internal static Task AwardAsync(FirebaseFirestore db, string uid, string walkId,
         CancellationToken token = default)
     {
@@ -52,9 +60,7 @@ internal sealed class FirebasePointsWalletStore : IPointsWalletStore
         }), token);
     }
 
-    // A concurrent client commit can make an exact-delta rules check fail before
-    // the SDK reports a transaction conflict. Retry from fresh reads; persistent
-    // denials still surface to the durable sync queue. Rules are never relaxed.
+    // Retries Firestore operations on transient permission denied errors caused by race conditions.
     internal static async Task RetryContentionAsync(Func<Task> operation, CancellationToken token)
     {
         for (int attempt = 0; ; attempt++)
@@ -66,6 +72,7 @@ internal sealed class FirebasePointsWalletStore : IPointsWalletStore
         }
     }
 
+    // Fetches the user's wallet document from Firestore, back-filling missing point awards from past walks.
     public async Task<PointsWalletSnapshot> LoadAsync(string owner, CancellationToken token)
     {
         Check(owner, token);
@@ -103,6 +110,7 @@ internal sealed class FirebasePointsWalletStore : IPointsWalletStore
         return PointsWalletSnapshot.Parse(saved.ToDictionary(), !current.Complete);
     }
 
+    // Deducts points in Firestore and records an idempotent spend receipt in a transaction.
     public Task SpendAsync(string owner, long amount, string receiptId, CancellationToken token)
     {
         Check(owner, token);
@@ -133,6 +141,7 @@ internal sealed class FirebasePointsWalletStore : IPointsWalletStore
         }), token);
     }
 
+    // Increments claimed milestone rolls count and writes an idempotent milestone receipt in Firestore.
     public Task ClaimMilestoneRollAsync(string owner, string receiptId, CancellationToken token)
     {
         Check(owner, token);
@@ -163,6 +172,7 @@ internal sealed class FirebasePointsWalletStore : IPointsWalletStore
         }), token);
     }
 
+    // Validates authentication status and cancellation token prior to store operations.
     private void Check(string owner, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();

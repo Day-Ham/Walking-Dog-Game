@@ -33,6 +33,7 @@ public sealed class WalkSummary
     public float distanceMeters;
     public float durationSeconds;
 
+    // Creates a lightweight cloud-ready walk summary DTO from a full saved walk session.
     public static WalkSummary FromWalk(Walk walk)
     {
         return new WalkSummary

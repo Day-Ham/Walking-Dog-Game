@@ -24,9 +24,13 @@ public sealed class ContinuousSteps
     private int highWater;
     private string lastOwner;
     public string Error { get; private set; } = "";
+    // Initializes continuous step storage in the specified directory.
     public ContinuousSteps(string directory) { this.directory = directory; }
+
+    // Resets the sensor step high-water baseline when switching sensor sources.
     public void BeginSensorSource() { highWater = 0; }
 
+    // Loads or creates the persistent continuous step record for an account owner.
     public Record Get(string owner)
     {
         owner = owner ?? "";
@@ -43,6 +47,7 @@ public sealed class ContinuousSteps
         return record;
     }
 
+    // Accumulates incremental sensor steps into the active owner's stream record and saves it.
     public void Observe(string owner, int sensorSteps, bool legacyWalk = false)
     {
         owner = owner ?? "";
@@ -63,6 +68,7 @@ public sealed class ContinuousSteps
         catch (Exception) { Error = "Step saving pending"; }
     }
 
+    // Forces a flush of the owner's current step record to disk.
     public void Flush(string owner)
     {
         try { Save(Get(owner)); Error = ""; }
@@ -70,6 +76,7 @@ public sealed class ContinuousSteps
     }
 
     // Persist before submission, so a server commit never outruns local durability.
+    // Creates a persisted snapshot of the owner's stream record ready for cloud upload.
     public Record Snapshot(string owner)
     {
         var record = Get(owner);
@@ -78,6 +85,7 @@ public sealed class ContinuousSteps
             total = record.total, acknowledged = record.acknowledged };
     }
 
+    // Updates the cloud-acknowledged step cursor after successful Firestore upload.
     public void Acknowledge(Record uploaded)
     {
         var record = Get(uploaded.owner);
@@ -86,12 +94,14 @@ public sealed class ContinuousSteps
         Save(record);
     }
 
+    // Computes a SHA-256 hashed JSON filename for the account owner.
     private string PathFor(string owner)
     {
         using (var hash = SHA256.Create())
             return Path.Combine(directory, BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(owner))).Replace("-", "") + ".json");
     }
 
+    // Reads and validates continuous step record JSON from disk.
     private static Record Read(string path, string owner)
     {
         if (!File.Exists(path)) return null;
@@ -106,6 +116,7 @@ public sealed class ContinuousSteps
         catch (Exception) { return null; }
     }
 
+    // Atomically writes continuous step record JSON with temporary files and backups.
     private void Save(Record record)
     {
         Directory.CreateDirectory(directory);

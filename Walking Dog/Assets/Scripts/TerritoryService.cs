@@ -10,6 +10,7 @@ public sealed class TerritoryService
     private LocalTerritoryRepository repository;
     private string owner = "", generation = Guid.NewGuid().ToString("N");
     private static readonly TerritoryCapture.Tile[] Empty = new TerritoryCapture.Tile[0];
+    // Initializes territory service bound to the local walk repository.
     public TerritoryService(LocalWalkRepository walks) { this.walks = walks; }
     public string Owner => owner;
     public string Error { get; private set; } = "";
@@ -18,6 +19,7 @@ public sealed class TerritoryService
     public double AreaSquareMeters => repository?.AreaSquareMeters ?? 0;
     public string Revision => generation + ":" + (repository?.Revision ?? 0);
 
+    // Replays completed walks for the owner through the territory ledger to compute polygons and captured area.
     public void Refresh(string authenticatedOwner)
     {
         authenticatedOwner = authenticatedOwner ?? "";
@@ -38,6 +40,7 @@ public sealed class TerritoryService
         { Error = "Territory save pending. Your walk is safe; we'll retry automatically."; }
     }
 
+    // Produces a human-readable explanation of territory claim status for a walk session.
     public string Summary(string walkId, string walkOwner, bool unsaved)
     {
         if (unsaved) return "Save your walk first to check its territory.";

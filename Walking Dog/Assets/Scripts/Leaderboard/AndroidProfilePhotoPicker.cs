@@ -7,6 +7,7 @@ namespace WalkingDog.Leaderboards
 {
     internal static class AndroidProfilePhotoPicker
     {
+        // Invokes native Android photo picker activity and polls for base-64 encoded image result.
         internal static async Task<string> PickAsync(CancellationToken token)
         {
 #if UNITY_ANDROID && !UNITY_EDITOR

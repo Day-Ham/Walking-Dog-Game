@@ -13,6 +13,7 @@ public class UIMilestoneNotifier : MonoBehaviour
     public string singleRollText = "1 Free Roll!";
     public string multipleRollsText = "{0} Free Rolls!";
 
+    // Checks the wallet's milestone roll progress each frame and updates badge indicators and notifications.
     private void Update()
     {
         var manager = StepCountAndGpsManager.Instance;

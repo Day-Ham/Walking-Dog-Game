@@ -13,6 +13,7 @@ namespace WalkingDog.Racing
         public int speed = StartingValue, stamina = StartingValue, acceleration = StartingValue;
         public int trainingCount;
 
+        // Retrieves the numerical value for the specified dog attribute.
         public int Get(DogStat stat)
         {
             switch (stat)
@@ -24,9 +25,11 @@ namespace WalkingDog.Racing
             }
         }
 
+        // Creates a deep copy of current dog statistics.
         public DogStats Copy() => new DogStats { speed = speed, stamina = stamina,
             acceleration = acceleration, trainingCount = trainingCount };
 
+        // Increments the chosen attribute by training gain if sufficient points are available and stat is below maximum.
         public DogStats Train(DogStat stat, long points)
         {
             Validate();
@@ -44,6 +47,7 @@ namespace WalkingDog.Racing
             return next;
         }
 
+        // Validates that all attributes and training counts are within acceptable game bounds.
         public void Validate()
         {
             if (speed < 1 || speed > MaximumValue || stamina < 1 || stamina > MaximumValue
@@ -51,6 +55,7 @@ namespace WalkingDog.Racing
                 throw new InvalidOperationException("Invalid dog stats.");
         }
 
+        // Deserializes and validates dog stats from a Firestore dictionary.
         internal static DogStats Parse(IDictionary<string, object> data)
         {
             int Read(string field)
@@ -66,6 +71,7 @@ namespace WalkingDog.Racing
             return stats;
         }
 
+        // Maps a DogStat enum member to its Firestore field key string.
         internal static string Key(DogStat stat)
         {
             switch (stat)

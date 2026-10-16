@@ -11,7 +11,8 @@ namespace WalkingDog.Leaderboards
         [SerializeField] private TMP_Text details;
         [SerializeField] private ProfilePhotoUI profilePhoto;
 
-        public void Bind(LeaderboardEntry entry, int position, bool isCurrentPlayer, LeaderboardMetric metric) // connects the leaderboard entry data to the UI elements
+        // Binds a leaderboard entry and ranking position to the card's labels and profile photo.
+        public void Bind(LeaderboardEntry entry, int position, bool isCurrentPlayer, LeaderboardMetric metric)
         {
             if (profilePhoto == null)
             {

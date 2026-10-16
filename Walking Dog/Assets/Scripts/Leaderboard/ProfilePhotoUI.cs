@@ -10,13 +10,16 @@ namespace WalkingDog.Leaderboards
     internal static class ProfilePhotos
     {
         internal const string UploadPrefix = "data:image/jpeg;base64,";
+
+        // Checks whether a string represents a valid base-64 encoded JPEG data URL.
         internal static bool IsUpload(string value)
         {
             if (value == null || value.Length > 32768 || !value.StartsWith(UploadPrefix + "/9j/", StringComparison.Ordinal)) return false;
             try { Convert.FromBase64String(value.Substring(UploadPrefix.Length)); return true; }
             catch (FormatException) { return false; }
         }
-        // Google account photos only. Never request arbitrary URLs from public profile data.
+
+        // Sanitizes a photo URL to only allow valid JPEG data URLs or trusted Google user content links.
         internal static string Normalize(string value)
             => IsUpload(value) ? value : value != null && value.Length <= 2048
                 && Uri.TryCreate(value, UriKind.Absolute, out var uri)
@@ -24,6 +27,7 @@ namespace WalkingDog.Leaderboards
                 && uri.Host.EndsWith(".googleusercontent.com", StringComparison.OrdinalIgnoreCase)
                 ? value : "";
 
+        // Generates up to two capital initials from a player's display name.
         internal static string Initials(string name)
         {
             var words = (name ?? "").Split(new[] { ' ', '-', '_' }, StringSplitOptions.RemoveEmptyEntries);
@@ -45,6 +49,7 @@ namespace WalkingDog.Leaderboards
         private Texture2D texture;
         private Color fallbackColor;
 
+        // Binds player ID, display name, and photo URL to render initials or load photo.
         public void Bind(string playerId, string displayName, string photoUrl, TMP_FontAsset font)
         {
             Release();
@@ -76,7 +81,10 @@ namespace WalkingDog.Leaderboards
             if (isActiveAndEnabled) Load();
         }
 
+        // Triggers texture decoding or remote download when enabled.
         private void OnEnable() => Load();
+
+        // Initiates image decoding from data URL or downloads remote photo URL via coroutine.
         private void Load()
         {
             if (portrait != null && texture == null && ProfilePhotos.IsUpload(url))
@@ -90,6 +98,8 @@ namespace WalkingDog.Leaderboards
             if (Application.isPlaying && portrait != null && loading == null && url.Length > 0)
                 loading = StartCoroutine(Download());
         }
+
+        // Downloads texture bytes over HTTP and displays texture on success.
         private IEnumerator Download()
         {
             request = UnityWebRequestTexture.GetTexture(url, true);
@@ -105,6 +115,8 @@ namespace WalkingDog.Leaderboards
             request = null;
             loading = null;
         }
+
+        // Applies texture to image component and hides fallback initials.
         private void ShowTexture()
         {
             sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(.5f, .5f));
@@ -112,7 +124,11 @@ namespace WalkingDog.Leaderboards
             portrait.color = Color.white;
             initials.gameObject.SetActive(false);
         }
+
+        // Releases textures and cancels downloads when disabled.
         private void OnDisable() => Release();
+
+        // Cancels active web requests and destroys allocated texture and sprite instances.
         private void Release()
         {
             if (loading != null) StopCoroutine(loading);
@@ -125,6 +141,8 @@ namespace WalkingDog.Leaderboards
             texture = null;
             if (initials != null) initials.gameObject.SetActive(true);
         }
+
+        // Destroys a Unity texture or sprite object cleanly.
         private static void DisposeImage(UnityEngine.Object image)
         {
             if (Application.isPlaying) Destroy(image); else DestroyImmediate(image);

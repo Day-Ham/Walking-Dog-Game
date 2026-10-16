@@ -2,10 +2,8 @@ using UnityEngine;
 
 namespace WalkingDog.Runtime
 {
-    /// <summary>
-    /// Keeps the walk-screen action buttons aligned to the 1080-wide design area
-    /// while the Canvas expands for tablets and other wide displays.
-    /// </summary>
+    // Keeps the walk-screen action buttons aligned to the 1080-wide design area
+    // while the Canvas expands for tablets and other wide displays.
     [ExecuteAlways]
     [RequireComponent(typeof(RectTransform))]
     public sealed class ResponsiveButtonGroupLayout : MonoBehaviour
@@ -25,10 +23,16 @@ namespace WalkingDog.Runtime
         private const float ButtonHeight = 74f;
         private const float ButtonSpacing = 18f;
 
+        // Applies responsive button positioning when enabled.
         private void OnEnable() => ApplyLayout();
+
+        // Updates button layout when Inspector values change.
         private void OnValidate() => ApplyLayout();
+
+        // Updates layout whenever child hierarchy changes.
         private void OnTransformChildrenChanged() => ApplyLayout();
 
+        // Positions and sizes child action buttons in a vertical stack relative to the design anchor edge.
         private void ApplyLayout()
         {
             var group = (RectTransform)transform;

@@ -30,12 +30,13 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
     private float nextRouteSync;
     private bool routeSyncing;
 
+    // Begins asynchronous Firebase initialization when the component starts.
     private async void Start()
     {
         await InitializeAsync();
     }
 
-    // A future login/retry UI can call this on Unity's main thread.
+    // Ensures Firebase dependencies and stores are initialized once.
     public Task InitializeAsync()
     {
         if (destroyed || IsReady) return Task.CompletedTask;
@@ -44,6 +45,7 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
         return initialization;
     }
 
+    // Resolves Google Play services / Firebase dependencies, creates cloud stores, and binds auth events.
     private async Task InitializeCoreAsync()
     {
         Status = "Checking Firebase dependencies";
@@ -92,6 +94,7 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
         }
     }
 
+    // Schedules periodic background sync for step activity, shared routes, and wallet point balances.
     private void Update()
     {
         if (!IsReady || Wallet == null) return;
@@ -105,6 +108,7 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
         _ = Wallet.RefreshAsync();
     }
 
+    // Checks whether unacknowledged physical steps are waiting for cloud synchronization.
     private bool HasPendingActivity()
     {
         if (string.IsNullOrEmpty(Wallet?.Owner)) return false;
@@ -112,6 +116,7 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
         catch { return true; }
     }
 
+    // Uploads unacknowledged step increments to Firestore continuous steps document.
     private async Task SyncActivityAsync()
     {
         nextActivitySync = Time.realtimeSinceStartup + 15f;
@@ -138,13 +143,14 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
         finally { activitySyncing = false; }
     }
 
+    // Awaits background activity upload task without throwing into caller context.
     private static async void ObserveActivityUpload(Task upload)
     { try { await upload; } catch (Exception) { } }
 
-    // The profile toggle requests an immediate pass; periodic passes also repair
-    // older ON accounts, newly synced walks and uploads interrupted by app exit.
+    // Schedules an immediate synchronization pass for publicly shared walk routes.
     public void RequestRouteSharingSync() { nextRouteSync = 0; }
 
+    // Synchronizes locally stored routes with social public routes on Firestore.
     private async Task SyncSharedRoutesAsync()
     {
         nextRouteSync = Time.realtimeSinceStartup + 15f;
@@ -156,8 +162,10 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
         finally { routeSyncing = false; }
     }
 
+    // Resets sync timers on app unpause to trigger rapid synchronization.
     private void OnApplicationPause(bool paused) { if (!paused) { nextWalletRefresh = 0; nextActivitySync = 0; nextRouteSync = 0; } }
 
+    // Resets token sources and wallet caches when user signs in, signs out, or switches accounts.
     private void OnWalletAccountChanged(object sender, EventArgs args)
     {
         activityLifetime.Cancel();
@@ -169,6 +177,7 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
         nextWalletRefresh = 0;
     }
 
+    // Notifies the bootstrap that a new walk was saved to trigger immediate wallet and route updates.
     internal void WalkSaved()
     {
         if (Wallet != null) { Wallet.SynchronizeAccount(); Wallet.HasPendingWalks = true; }
@@ -176,6 +185,7 @@ public sealed class FirebaseWalkBootstrap : MonoBehaviour
         nextRouteSync = 0;
     }
 
+    // Disposes cloud stores, unregisters auth listeners, and releases synchronization resources.
     private void OnDestroy()
     {
         destroyed = true;

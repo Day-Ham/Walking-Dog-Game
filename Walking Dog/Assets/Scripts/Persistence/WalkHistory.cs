@@ -12,6 +12,7 @@ internal sealed class WalkHistoryEntry
     public double DistanceMeters { get; }
     public double DurationSeconds { get; }
 
+    // Constructs a historical walk entry record.
     private WalkHistoryEntry(string id, DateTimeOffset startedAt, int steps, double distance, double duration)
     {
         Id = id;
@@ -21,8 +22,7 @@ internal sealed class WalkHistoryEntry
         DurationSeconds = duration;
     }
 
-    // Documents can also be edited through the console. Skip malformed records
-    // without losing the rest of the page or modifying the original data.
+    // Parses a Firestore document dictionary into a strongly typed walk history entry.
     public static bool TryParse(string documentId, IDictionary<string, object> fields, out WalkHistoryEntry entry)
     {
         entry = null;
@@ -37,6 +37,7 @@ internal sealed class WalkHistoryEntry
         return true;
     }
 
+    // Helper to safely parse non-negative numeric fields (distance/duration) from Firestore dictionary.
     private static bool TryMeasurement(IDictionary<string, object> fields, string key, out double number)
     {
         number = 0;
@@ -66,6 +67,7 @@ internal sealed class WalkHistoryCursor
 {
     public string Owner { get; }
     public object Position { get; }
+    // Constructs a pagination cursor for walking history queries.
     public WalkHistoryCursor(string owner, object position) { Owner = owner; Position = position; }
 }
 
@@ -74,6 +76,7 @@ internal sealed class WalkHistoryPage
     public IReadOnlyList<WalkHistoryEntry> Entries { get; }
     public WalkHistoryCursor NextCursor { get; }
     public int SkippedCount { get; }
+    // Constructs a page of walk history entries and optional continuation cursor.
     public WalkHistoryPage(IReadOnlyList<WalkHistoryEntry> entries, WalkHistoryCursor nextCursor, int skippedCount = 0)
     {
         Entries = entries;
@@ -106,8 +109,10 @@ internal sealed class WalkHistorySession : IDisposable
     public int SkippedCount { get; private set; }
     public string Error { get; private set; } = "";
 
+    // Creates a paginated walk history session for the active user account.
     public WalkHistorySession(IWalkHistoryStore store) { this.store = store; Reset(); }
 
+    // Reconciles session ownership with current auth user and resets pagination if changed.
     public bool SynchronizeAccount()
     {
         if (Owner == (store.AuthenticatedUserId ?? "")) return false;
@@ -115,6 +120,7 @@ internal sealed class WalkHistorySession : IDisposable
         return true;
     }
 
+    // Clears stored walk entries, cancels pending requests, and resets pagination cursors.
     public void Reset()
     {
         generation++;
@@ -131,8 +137,10 @@ internal sealed class WalkHistorySession : IDisposable
         Error = "";
     }
 
+    // Resets pagination state and fetches the first page of walk records.
     public Task RefreshAsync() { Reset(); return LoadMoreAsync(); }
 
+    // Fetches the next page of walk entries using the current pagination cursor.
     public async Task LoadMoreAsync()
     {
         if (disposed) return;
@@ -167,5 +175,6 @@ internal sealed class WalkHistorySession : IDisposable
         }
     }
 
+    // Disposes the history session and releases background cancellation tokens.
     public void Dispose() { if (disposed) return; Reset(); disposed = true; }
 }

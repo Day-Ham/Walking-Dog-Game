@@ -11,11 +11,13 @@ public class CollarInventoryStore
 
     private readonly FirebaseFirestore db;
 
+    // Initializes collar inventory store with a Firestore database instance.
     public CollarInventoryStore(FirebaseFirestore db)
     {
         this.db = db;
     }
 
+    // Loads unlocked item IDs from local PlayerPrefs, handling legacy and new key formats.
     public static HashSet<string> GetLocalUnlockedItemIds()
     {
         var ids = new HashSet<string>(StringComparer.Ordinal);
@@ -28,6 +30,7 @@ public class CollarInventoryStore
         return ids;
     }
 
+    // Unlocks a new gacha item, writes local preferences, and commits to Firestore in a transaction.
     public async Task UnlockItemAsync(string uid, GachaItem item)
     {
         if (item == null || string.IsNullOrWhiteSpace(item.ItemId))
@@ -67,6 +70,7 @@ public class CollarInventoryStore
         });
     }
 
+    // Equips an already unlocked item in local storage and updates Firestore profile documents.
     public Task EquipItemAsync(string uid, GachaItem item)
     {
         if (item == null || string.IsNullOrWhiteSpace(item.ItemId))
@@ -99,6 +103,7 @@ public class CollarInventoryStore
         });
     }
 
+    // Pulls remote inventory document from Firestore and synchronizes to local PlayerPrefs.
     public async Task SyncFromCloudToLocalAsync(string uid)
     {
         var snapshot = await db.Document($"users/{uid}/inventory/main").GetSnapshotAsync();
@@ -114,6 +119,7 @@ public class CollarInventoryStore
         SaveLocal(unlockedIds, equippedId, PlayerPrefs.GetString("EquippedCollarColor", "#ee2b35"));
     }
 
+    // Extracts list of unlocked item IDs from a Firestore document snapshot.
     private static HashSet<string> ReadItemIds(DocumentSnapshot snapshot)
     {
         var ids = new HashSet<string>(StringComparer.Ordinal);
@@ -126,12 +132,14 @@ public class CollarInventoryStore
         return ids;
     }
 
+    // Splits delimited string of item IDs and adds migrated IDs to a set.
     private static void AddIds(HashSet<string> ids, string stored, char separator)
     {
         foreach (var id in stored.Split(new[] { separator }, StringSplitOptions.RemoveEmptyEntries))
             ids.Add(MigrateLegacyItemId(id.Trim()));
     }
 
+    // Maps old collar names to new standardized item IDs.
     private static string MigrateLegacyItemId(string itemId)
     {
         // The original implementation saved display names. Convert its three
@@ -145,6 +153,7 @@ public class CollarInventoryStore
         }
     }
 
+    // Stores unlocked items, equipped item, and collar color hex into local PlayerPrefs.
     private static void SaveLocal(HashSet<string> ids, string equippedId, string colourHex)
     {
         PlayerPrefs.SetString(UnlockedItemIdsKey, string.Join("|", ids));

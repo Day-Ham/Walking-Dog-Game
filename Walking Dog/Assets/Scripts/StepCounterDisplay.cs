@@ -161,6 +161,7 @@ public class StepCounterDisplay : MonoBehaviour
         TryEnableMotionSensors();
     }
 
+    // Reads cumulative hardware step counter value and establishes session baseline.
     private void UpdateDelayedStepCounter()
     {
         if (stepCounter == null)
@@ -197,6 +198,7 @@ public class StepCounterDisplay : MonoBehaviour
         delayedCounterSessionSteps = Mathf.Max(0, rawStepCount - startingStepCount);
     }
 
+    // Detects and enables the device accelerometer for motion and cadence filtering.
     private void TryEnableMotionSensors()
     {
         accelerometer = Accelerometer.current ?? InputSystem.GetDevice<Accelerometer>();
@@ -218,6 +220,7 @@ public class StepCounterDisplay : MonoBehaviour
         accelerometer.MakeCurrent();
     }
 
+    // Filters accelerometer readings to calculate jerk, motion levels, and walking confidence.
     private void UpdateMotionFilter()
     {
         if (accelerometer == null)
@@ -277,6 +280,7 @@ public class StepCounterDisplay : MonoBehaviour
         motionFilterStatus = $"Low walking confidence ({walkingConfidence * 100f:0}%).";
     }
 
+    // Passes incoming step detector pulses to rhythm cadence validation.
     private void ProcessNewDetectorEvents(int rawDetectorEvents)
     {
         var newEvents = rawDetectorEvents - processedDetectorEvents;
@@ -293,6 +297,7 @@ public class StepCounterDisplay : MonoBehaviour
         }
     }
 
+    // Evaluates step candidate timing and rhythm, rejecting false triggers from phone shaking or cars.
     private void TryAcceptDetectorStep(float now)
     {
         if (lastCandidateStepTime < 0f)
@@ -356,6 +361,7 @@ public class StepCounterDisplay : MonoBehaviour
         detectorFilterStatus = $"Accepted step ({secondsSinceLastCandidate:0.00}s cadence).";
     }
 
+    // Validates whether accelerometer motion levels match physical walking.
     private bool MotionLooksLikeWalking()
     {
         if (!accelerometerAvailable)
@@ -366,6 +372,7 @@ public class StepCounterDisplay : MonoBehaviour
         return walkingConfidence >= MinWalkingConfidence && shakeLevel <= MaxShakeJerk;
     }
 
+    // Reconciles detector pulse estimates with delayed cumulative hardware step counts.
     private void ApplyStepCounterCorrection()
     {
         if (!hasFirstReading)
@@ -397,6 +404,7 @@ public class StepCounterDisplay : MonoBehaviour
         detectorFilterStatus = "Corrected downward: detector was far ahead of delayed StepCounter.";
     }
 
+    // Detects and enables the hardware step counter device via Unity Input System.
     private void TryEnableStepCounter()
     {
         stepCounter = StepCounter.current ?? InputSystem.GetDevice<StepCounter>();
@@ -416,6 +424,7 @@ public class StepCounterDisplay : MonoBehaviour
     }
 
 #if UNITY_ANDROID && !UNITY_EDITOR
+    // Registers Android native Sensor.TYPE_STEP_DETECTOR via JNI listener.
     private void StartStepDetectorIfPossible()
     {
         if (!hasPermission || stepDetectorRunning)
@@ -483,6 +492,7 @@ public class StepCounterDisplay : MonoBehaviour
         }
     }
 
+    // Unregisters the native Android step detector sensor listener.
     private void StopStepDetector()
     {
         try
@@ -500,11 +510,13 @@ public class StepCounterDisplay : MonoBehaviour
         stepDetectorRunning = false;
     }
 
+    // Thread-safe callback incrementing detected step count from native sensor event.
     private void OnAndroidStepDetected()
     {
         Interlocked.Increment(ref detectedStepEvents);
     }
 
+    // Thread-safe read of cumulative detected step events.
     private int ReadDetectedStepEvents()
     {
         return Interlocked.CompareExchange(ref detectedStepEvents, 0, 0);
@@ -547,6 +559,7 @@ public class StepCounterDisplay : MonoBehaviour
     }
 #endif
 
+    // Re-binds sensors when hardware devices are added or removed in Unity Input System.
     private void OnDeviceChange(InputDevice device, InputDeviceChange change)
     {
         if (device is StepCounter)
@@ -560,6 +573,7 @@ public class StepCounterDisplay : MonoBehaviour
         }
     }
 
+    // Prompts for Android runtime Activity Recognition permission if required.
     private void RequestPermissionIfNeeded()
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -606,6 +620,7 @@ public class StepCounterDisplay : MonoBehaviour
 #endif
     }
 
+    // Queries Android whether physical activity recognition permission is granted.
     private void RefreshPermissionState()
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -616,6 +631,7 @@ public class StepCounterDisplay : MonoBehaviour
 #endif
     }
 
+    // Returns true if device runs Android 10 (API 29) or higher, where permission is required.
     private bool NeedsActivityRecognitionPermission()
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -629,6 +645,7 @@ public class StepCounterDisplay : MonoBehaviour
     }
 
 
+    // Forwards the verified session step count to StepCountAndGpsManager.
     private void LateUpdate()
     {
         var manager = StepCountAndGpsManager.Instance;

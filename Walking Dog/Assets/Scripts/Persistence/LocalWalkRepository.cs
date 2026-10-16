@@ -15,12 +15,14 @@ public sealed class LocalWalkRepository
     public string DirectoryPath { get; }
     private readonly Action<string> reportWarning;
 
+    // Initializes the local walk storage repository with a target directory and warning reporter.
     public LocalWalkRepository(string directoryPath, Action<string> reportWarning = null)
     {
         DirectoryPath = Path.GetFullPath(directoryPath);
         this.reportWarning = reportWarning ?? (message => Debug.LogWarning(message));
     }
 
+    // Persists a completed walk session atomically to disk as JSON if not already saved.
     public string Save(Walk walk)
     {
         NormalizeAndValidate(walk);
@@ -42,8 +44,10 @@ public sealed class LocalWalkRepository
     }
 
     // The manager uses a separate Active directory; these never enter the upload queue.
+    // Writes an active walk progress checkpoint to disk.
     internal void SaveCheckpoint(Walk walk) => WriteAtomically(GetPath(walk.id), walk);
 
+    // Deletes an active walk checkpoint and any associated backup/temp files.
     internal void RemoveCheckpoint(string id)
     {
         var path = GetPath(id);
@@ -51,6 +55,7 @@ public sealed class LocalWalkRepository
             if (File.Exists(path + suffix)) File.Delete(path + suffix);
     }
 
+    // Returns sorted file paths of all saved walk JSON files and their backups in the repository directory.
     public List<string> GetFilePaths()
     {
         try
@@ -68,6 +73,7 @@ public sealed class LocalWalkRepository
         }
     }
 
+    // Loads and validates all walk records found in the repository, ordered newest first.
     public List<Walk> LoadAll()
     {
         var byId = new Dictionary<string, Walk>(StringComparer.Ordinal);
@@ -84,6 +90,7 @@ public sealed class LocalWalkRepository
         return byId.Values.OrderByDescending(walk => ParseUtc(walk.startedAtUtc)).ToList();
     }
 
+    // Attempts to load and deserialize a walk from a file path, falling back to backup if corrupted.
     public bool TryLoad(string path, out Walk walk)
     {
         walk = null;
@@ -110,10 +117,12 @@ public sealed class LocalWalkRepository
         return false;
     }
 
+    // Finds a single walk by its unique identifier.
     public Walk Find(string id) => LoadAll().Find(walk => walk.id == id);
 
     // The future account UI calls this only for a specific local walk that the
     // player chose to import. Sign-in by itself must never claim unowned data.
+    // Assigns an authenticated user ID to a locally stored walk.
     public void AssignOwner(string id, string ownerUserId)
     {
         if (string.IsNullOrWhiteSpace(ownerUserId)) throw new ArgumentException("An authenticated owner is required.");
@@ -124,6 +133,7 @@ public sealed class LocalWalkRepository
         WriteAtomically(GetPath(id), walk);
     }
 
+    // Updates synchronization metadata (upload state, attempt count, next retry) on a walk.
     public void UpdateSync(string id, string ownerUserId, WalkSyncMetadata sync)
     {
         var walk = Find(id) ?? throw new InvalidOperationException("Walk not found.");
@@ -133,6 +143,7 @@ public sealed class LocalWalkRepository
         WriteAtomically(GetPath(id), walk);
     }
 
+    // Parses an ISO-8601 UTC timestamp string and verifies UTC offset zero.
     public static DateTimeOffset ParseUtc(string value)
     {
         if (!DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture,
@@ -141,17 +152,20 @@ public sealed class LocalWalkRepository
         return date;
     }
 
+    // Constructs full filesystem path for a walk file from its unique ID.
     private string GetPath(string id)
     {
         ValidateId(id);
         return Path.Combine(DirectoryPath, "walk_" + id + ".json");
     }
 
+    // Overload attempting to read a walk file without checking for unsupported version.
     private bool TryRead(string path, out Walk walk)
     {
         return TryRead(path, out walk, out _);
     }
 
+    // Reads and deserializes a JSON walk file, verifying schema version compatibility.
     private bool TryRead(string path, out Walk walk, out bool unsupportedVersion)
     {
         walk = null;
@@ -172,6 +186,7 @@ public sealed class LocalWalkRepository
         }
     }
 
+    // Safely writes walk data using a temporary file and replaces the destination with backup.
     private void WriteAtomically(string path, Walk walk)
     {
         NormalizeAndValidate(walk);
@@ -194,6 +209,7 @@ public sealed class LocalWalkRepository
         else File.Move(temporaryPath, path);
     }
 
+    // Verifies integrity and constraints on walk timing, step count, distance, GPS route, and sync state.
     private static void NormalizeAndValidate(Walk walk)
     {
         if (walk == null) throw new ArgumentException("Missing walk record.");
@@ -235,6 +251,7 @@ public sealed class LocalWalkRepository
         }
     }
 
+    // Asserts that the walk ID contains only alphanumeric characters, dashes, and underscores.
     private static void ValidateId(string id)
     {
         if (string.IsNullOrEmpty(id) || id.Length > 128 || id.Any(c =>
@@ -242,10 +259,16 @@ public sealed class LocalWalkRepository
             throw new ArgumentException("Invalid walk ID.");
     }
 
+    // Checks whether a float is non-negative and finite.
     private static bool Nonnegative(float value) => !float.IsNaN(value) && !float.IsInfinity(value) && value >= 0;
+
+    // Checks whether a coordinate float is finite and within the specified angular limit.
     private static bool Coordinate(float value, float limit) => !float.IsNaN(value) && !float.IsInfinity(value) && Math.Abs(value) <= limit;
+
+    // Identifies IO and permission exceptions during filesystem access.
     private static bool IsFileError(Exception exception) => exception is IOException || exception is UnauthorizedAccessException || exception is NotSupportedException;
 
+    // Generates a canonical JSON representation stripped of owner and sync state to detect content mutations.
     private static string PayloadJson(Walk walk)
     {
         var copy = JsonUtility.FromJson<Walk>(JsonUtility.ToJson(walk));

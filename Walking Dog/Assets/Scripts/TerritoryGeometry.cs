@@ -9,14 +9,19 @@ public static class TerritoryGeometry
     [Serializable] public struct Point
     {
         public double x, y;
+        // Constructs a 2D projected coordinate point.
         public Point(double x, double y) { this.x = x; this.y = y; }
     }
     [Serializable] public sealed class Ring { public List<Point> points = new List<Point>(); }
     [Serializable] public sealed class Polygon { public List<Ring> rings = new List<Ring>(); }
 
+    // Merges two polygon sets into a unified geometry.
     public static List<Polygon> Union(List<Polygon> a, List<Polygon> b) => Clip(a, b, ClipType.Union);
+
+    // Subtracts polygon set b from polygon set a.
     public static List<Polygon> Difference(List<Polygon> a, List<Polygon> b) => Clip(a, b, ClipType.Difference);
     
+    // Inflates a polyline by a given radius in meters to produce a buffered polygon ribbon.
     public static List<Polygon> BufferLine(List<Point> linePoints, double radiusMeters)
     {
         var path = new Path64();
@@ -40,6 +45,7 @@ public static class TerritoryGeometry
         return polygons;
     }
 
+    // Executes a boolean polygon clipping operation (Union, Difference, Intersection) via Clipper2.
     private static List<Polygon> Clip(List<Polygon> a, List<Polygon> b, ClipType operation)
     {
         var engine = new Clipper64(); engine.AddSubject(Paths(a)); engine.AddClip(Paths(b));
@@ -49,6 +55,8 @@ public static class TerritoryGeometry
         AddChildren(tree, polygons);
         return polygons;
     }
+
+    // Converts polygon objects into integer-scaled Clipper64 path collections with correct winding order.
     private static Paths64 Paths(List<Polygon> polygons)
     {
         var paths = new Paths64();
@@ -62,6 +70,8 @@ public static class TerritoryGeometry
             }
         return paths;
     }
+
+    // Recursively extracts polygons and holes from the Clipper PolyTree hierarchy.
     private static void AddChildren(PolyPath64 parent, List<Polygon> polygons)
     {
         for (int i = 0; i < parent.Count; i++)
@@ -73,10 +83,14 @@ public static class TerritoryGeometry
             polygons.Add(polygon);
         }
     }
+
+    // Converts an integer-scaled Clipper path back to a floating-point meter Ring.
     private static Ring ToRing(Path64 path)
     {
         var ring = new Ring(); foreach (var p in path) ring.points.Add(new Point(p.X / 100d, p.Y / 100d)); return ring;
     }
+
+    // Computes real-world geographic surface area in square meters accounting for Mercator distortion.
     public static double Area(List<Polygon> polygons)
     {
         double total = 0;
@@ -95,6 +109,8 @@ public static class TerritoryGeometry
             }
         return Math.Max(0, total);
     }
+
+    // Converts a list of 50m grid tiles into square polygon geometries.
     public static List<Polygon> FromTiles(List<TerritoryCapture.Tile> tiles)
     {
         var polygons = new List<Polygon>();
@@ -106,6 +122,8 @@ public static class TerritoryGeometry
         }
         return polygons;
     }
+
+    // Validates that polygon boundaries are non-empty, have valid point counts, and lie within coordinate bounds.
     public static void Validate(List<Polygon> polygons)
     {
         if (polygons == null) throw new ArgumentException("Missing territory geometry.");

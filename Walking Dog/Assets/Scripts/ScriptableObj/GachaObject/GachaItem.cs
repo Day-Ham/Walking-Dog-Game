@@ -26,6 +26,7 @@ public class GachaItem : ScriptableObject
     // Falls back to the asset name so old assets still have a readable label.
     public string DisplayName => string.IsNullOrWhiteSpace(displayName) ? name : displayName;
 
+    // Ensures the item has a valid, deterministic collar identifier based on its asset name.
     private void OnValidate()
     {
         // An empty ID would make different items indistinguishable in Firebase.
@@ -34,27 +35,28 @@ public class GachaItem : ScriptableObject
     }
 }
 
-/// <summary>
-/// Converts the equipped item's Sprite into a WebView-safe PNG data URL.
-/// The conversion happens only when equipment changes, never on each GPS update.
-/// </summary>
+// Converts the equipped item's Sprite into a WebView-safe PNG data URL.
+// The conversion happens only when equipment changes, never on each GPS update.
 public static class EquippedGachaMarkerIcon
 {
     public const string PlayerPrefsKey = "EquippedGachaMarkerIconDataUrl";
     private const int MaximumIconPixels = 128;
 
+    // Encodes the item's sprite as a base-64 PNG data URL and saves it to PlayerPrefs.
     public static void Save(GachaItem item)
     {
         PlayerPrefs.SetString(PlayerPrefsKey, item == null ? "" : EncodeSprite(item.Icon_img));
         PlayerPrefs.Save();
     }
 
+    // Removes the cached marker icon data URL from PlayerPrefs.
     public static void Clear()
     {
         PlayerPrefs.DeleteKey(PlayerPrefsKey);
         PlayerPrefs.Save();
     }
 
+    // Renders the sprite to a temporary RenderTexture and encodes the pixel data to a base-64 PNG data URL.
     private static string EncodeSprite(Sprite sprite)
     {
         if (sprite == null || sprite.texture == null) return "";

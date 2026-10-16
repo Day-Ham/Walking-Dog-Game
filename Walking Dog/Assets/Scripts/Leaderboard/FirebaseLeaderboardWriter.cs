@@ -23,6 +23,7 @@ namespace WalkingDog.Leaderboards
             public bool Complete;
         }
 
+        // Atomically credits a completed walk's distance/steps to the player's leaderboard totals with idempotent receipt checking.
         public static Task CountWalkAsync(FirebaseFirestore db, string uid, string walkId)
         {
             var receiptRef = db.Document($"leaderboardReceipts/{uid}/walks/{walkId}");
@@ -72,9 +73,7 @@ namespace WalkingDog.Leaderboards
             }), CancellationToken.None);
         }
 
-        // Call this after any future wallet spending transaction succeeds. It keeps
-        // the leaderboard card bound to the Firebase currency balance
-        // important to use this for gacha implementation
+        // Copies the user's current wallet balance into their public leaderboard record.
         internal static Task SynchronizePointsBalanceAsync(FirebaseFirestore db, string uid)
         {
             var playerRef = db.Document($"{Players}/{uid}");
@@ -91,6 +90,7 @@ namespace WalkingDog.Leaderboards
             });
         }
 
+        // Updates display name across leaderboard profile, friend code entry, and public leaderboard document.
         public static Task SaveNameAsync(FirebaseFirestore db, string uid, string name)
         {
             var playerRef = db.Document($"{Players}/{uid}");
@@ -109,8 +109,7 @@ namespace WalkingDog.Leaderboards
             });
         }
 
-        // Recover old summaries and interrupted updates. Page in bounded reads;
-        // receipts skip already-counted walks. Cancellation stops further pages.
+        // Iterates through historical cloud walks in pages to count uncounted walks towards leaderboard totals.
         public static async Task ReconcileAsync(FirebaseFirestore db, string uid, ReconciliationProgress progress, CancellationToken token)
         {
             if (progress.Complete) return;
@@ -132,6 +131,7 @@ namespace WalkingDog.Leaderboards
             }
         }
 
+        // Generates a deterministic default display name from the first bytes of SHA-256 user ID.
         internal static string DefaultName(string uid)
         {
             using (var sha = SHA256.Create())

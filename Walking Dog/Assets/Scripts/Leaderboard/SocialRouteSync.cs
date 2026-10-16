@@ -18,6 +18,7 @@ namespace WalkingDog.Leaderboards
         private string owner = "";
         private bool running;
 
+        // Initializes a new route sync coordinator with delegates for user state, local walks, and Firestore upload.
         internal SocialRouteSync(Func<string> currentUser,
             Func<List<StepCountAndGpsManager.SavedWalkSession>> walks,
             Func<string, Task<bool>> sharingEnabled,
@@ -27,6 +28,7 @@ namespace WalkingDog.Leaderboards
             this.sharingEnabled = sharingEnabled; this.upload = upload;
         }
 
+        // Factory method configuring SocialRouteSync against live Firestore and local walk repository.
         internal static SocialRouteSync Create(FirebaseFirestore db, Func<string> currentUser, LocalWalkRepository repository)
             => new SocialRouteSync(currentUser, repository.LoadAll,
                 async uid => {
@@ -51,6 +53,7 @@ namespace WalkingDog.Leaderboards
                     return true;
                 }));
 
+        // Synchronizes unshared local walk routes with Firestore if activity sharing is enabled.
         internal async Task SyncAsync(CancellationToken token)
         {
             if (running || string.IsNullOrEmpty(currentUser())) return;
@@ -83,12 +86,14 @@ namespace WalkingDog.Leaderboards
             finally { running = false; }
         }
 
+        // Checks cancellation status and verifies that the current user ID matches expected owner.
         private void Check(string uid, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             if (currentUser() != uid) throw new OperationCanceledException();
         }
 
+        // Enforces a 30-second timeout on asynchronous operations during route sharing sync.
         private static async Task<T> WaitAsync<T>(Task<T> operation, CancellationToken token)
         {
             using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(token))
@@ -107,6 +112,7 @@ namespace WalkingDog.Leaderboards
             }
         }
 
+        // Observes a background task to suppress unhandled task exceptions after timeout.
         private static async void Observe(Task task) { try { await task; } catch (Exception) { } }
     }
 }

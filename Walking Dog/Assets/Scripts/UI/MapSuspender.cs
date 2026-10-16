@@ -5,6 +5,7 @@ public class MapSuspender : MonoBehaviour
 {
     private readonly List<OpenFreeMapWebViewMap> hiddenMaps = new List<OpenFreeMapWebViewMap>();
 
+    // Suspends all active map webviews in the scene while this component is enabled.
     private void OnEnable()
     {
         hiddenMaps.Clear();
@@ -19,6 +20,7 @@ public class MapSuspender : MonoBehaviour
         }
     }
 
+    // Resumes all previously suspended map webviews when disabled.
     private void OnDisable()
     {
         foreach (var map in hiddenMaps)

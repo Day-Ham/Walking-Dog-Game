@@ -22,11 +22,13 @@ public class GPSTracker : MonoBehaviour
     public float UpdateInterval => updateInterval;
     public bool IsRunning => gpsRunning;
 
+    // Initiates the GPS coroutine when the tracker becomes active.
     private void Start()
     {
         StartGpsRoutine();
     }
 
+    // Restarts GPS polling when the app regains system focus.
     private void OnApplicationFocus(bool hasFocus)
     {
         if (hasFocus)
@@ -35,6 +37,7 @@ public class GPSTracker : MonoBehaviour
         }
     }
 
+    // Halts GPS polling on background pause and resumes it when unpaused.
     private void OnApplicationPause(bool isPaused)
     {
         if (isPaused)
@@ -48,6 +51,7 @@ public class GPSTracker : MonoBehaviour
         StartGpsRoutine();
     }
 
+    // Requests Android fine location permissions, initializes Unity location service, and polls fixes.
     private IEnumerator StartGPS()
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -143,6 +147,7 @@ public class GPSTracker : MonoBehaviour
 #endif
     }
 
+    // Forwards raw Unity location data to StepCountAndGpsManager if GPS is running.
     private void UpdateGPSData()
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -175,16 +180,19 @@ public class GPSTracker : MonoBehaviour
 #endif
     }
 
+    // Stops GPS updates when this component is disabled.
     private void OnDisable()
     {
         StopGpsRoutine();
     }
 
+    // Stops GPS updates when this component is destroyed.
     private void OnDestroy()
     {
         StopGpsRoutine();
     }
 
+    // Launches the GPS runner coroutine if not already running.
     private void StartGpsRoutine()
     {
         if (gpsRoutine != null)
@@ -195,6 +203,7 @@ public class GPSTracker : MonoBehaviour
         gpsRoutine = StartCoroutine(RunGPS());
     }
 
+    // Coroutine lifecycle wrapper that runs StartGPS and handles cleanup.
     private IEnumerator RunGPS()
     {
         // Yield first so the coroutine handle is assigned even on immediate failure.
@@ -204,6 +213,7 @@ public class GPSTracker : MonoBehaviour
         gpsRoutine = null;
     }
 
+    // Stops the GPS polling coroutine and disables hardware location updates.
     private void StopGpsRoutine()
     {
         if (gpsRoutine != null)
@@ -215,6 +225,7 @@ public class GPSTracker : MonoBehaviour
         StopGPS();
     }
 
+    // Stops the Android native location service.
     private void StopGPS()
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -223,6 +234,7 @@ public class GPSTracker : MonoBehaviour
 #endif
     }
 
+    // Updates the GPS status message on StepCountAndGpsManager.
     private static void SetGpsStatus(string status)
     {
         var manager = StepCountAndGpsManager.Instance;

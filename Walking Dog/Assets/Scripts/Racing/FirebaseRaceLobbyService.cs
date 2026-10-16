@@ -21,12 +21,14 @@ namespace WalkingDog.Racing
     {
         private readonly FirebaseFirestore db;
         private string CurrentUser => FirebaseAuth.DefaultInstance.CurrentUser?.UserId ?? "";
+        // Verifies caller identity and cancellation state before lobby actions.
         private void Check(string uid, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             if (string.IsNullOrEmpty(uid) || CurrentUser != uid) throw new OperationCanceledException();
         }
 
+        // Reads entrant dog stats, display name, and equipped collar from Firestore.
         private async Task<RaceEntrant> ReadEntrantAsync(Transaction tx, string uid, string name, bool host, CancellationToken token)
         {
             var dog = await tx.GetSnapshotAsync(db.Document($"users/{uid}/dog/main"));
@@ -41,11 +43,13 @@ namespace WalkingDog.Racing
             return new RaceEntrant(uid, name, DogStats.Parse(dog.ToDictionary()), equipment, host);
         }
 
+        // Initializes race lobby service with Firestore database instance.
         public FirebaseRaceLobbyService(FirebaseFirestore db)
         {
             this.db = db ?? throw new ArgumentNullException(nameof(db));
         }
 
+        // Generates a room code and creates a new waiting multiplayer race room document in Firestore.
         public async Task<RaceRoom> CreateRoomAsync(string hostUid, string hostName, DogStats stats, string equippedItemId, CancellationToken token)
         {
             if (string.IsNullOrWhiteSpace(hostUid)) throw new ArgumentException("A host needs an authenticated user ID.", nameof(hostUid));
@@ -90,6 +94,7 @@ namespace WalkingDog.Racing
             throw new InvalidOperationException("Could not generate a unique room code. Please try again.");
         }
 
+        // Adds a player to an open waiting race room or updates their existing stats in the room.
         public async Task<RaceRoom> JoinRoomAsync(string roomCode, string playerUid, string playerName, DogStats stats, string equippedItemId, CancellationToken token)
         {
             string normalized = RaceRoomCodes.Normalize(roomCode);
@@ -141,6 +146,7 @@ namespace WalkingDog.Racing
             return joined;
         }
 
+        // Removes a player from the room or closes the room if the host departs.
         public async Task LeaveRoomAsync(string roomCode, string playerUid, CancellationToken token)
         {
             string normalized = RaceRoomCodes.Normalize(roomCode);
@@ -187,6 +193,7 @@ namespace WalkingDog.Racing
             }
         }
 
+        // Retries Firestore transactions on transient permission denied errors.
         private async Task<T> RunTransactionAsync<T>(Func<Transaction, Task<T>> operation, CancellationToken token)
         {
             for (int attempt = 0; ; attempt++)
@@ -198,6 +205,7 @@ namespace WalkingDog.Racing
             }
         }
 
+        // Transitions room status to racing and sets the shared random seed for synchronous simulation.
         public async Task StartRaceAsync(string roomCode, string hostUid, int seed, CancellationToken token)
         {
             string normalized = RaceRoomCodes.Normalize(roomCode);
@@ -226,6 +234,7 @@ namespace WalkingDog.Racing
             });
         }
 
+        // Subscribes to real-time snapshot updates on a Firestore race room document.
         public IDisposable ListenRoom(string roomCode, Action<RaceRoom> onUpdate, Action<Exception> onError)
         {
             string normalized = RaceRoomCodes.Normalize(roomCode);
@@ -261,6 +270,7 @@ namespace WalkingDog.Racing
             return subscription;
         }
 
+        // Monitors the underlying listener background task and routes errors to the callback.
         private static async void ObserveListener(Task task, ListenerSubscription subscription, Action<Exception> onError)
         {
             try { await task; }
@@ -271,7 +281,9 @@ namespace WalkingDog.Racing
         {
             private ListenerRegistration reg;
             public bool Stopped { get; private set; }
+            // Binds an active Firestore registration to this subscription tracker.
             public void Attach(ListenerRegistration registration) { reg = registration; if (Stopped) reg.Stop(); }
+            // Stops listening to document updates and releases Firestore listener resources.
             public void Dispose()
             {
                 Stopped = true;

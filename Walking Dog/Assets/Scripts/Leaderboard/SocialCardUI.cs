@@ -11,6 +11,7 @@ namespace WalkingDog.Leaderboards
         [SerializeField] private ProfilePhotoUI photo;
         [SerializeField] private Button follow, view;
 
+        // Binds a social player or walk activity to the card's labels, photo, follow toggle, and view button.
         internal void Bind(SocialPlayer player, string viewer, SocialActivity activity,
             Action<SocialPlayer> changeFollow, Action<SocialPlayer> openProfile,
             Action<SocialActivity> openWalk, bool viewingProfile)

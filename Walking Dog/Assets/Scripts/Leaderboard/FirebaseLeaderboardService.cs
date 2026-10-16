@@ -27,6 +27,7 @@ namespace WalkingDog.Leaderboards
         private FirebaseLeaderboardWriter.ReconciliationProgress reconciliation = new FirebaseLeaderboardWriter.ReconciliationProgress();
         public string AuthenticatedUserId => disposed ? "" : currentUser() ?? "";
 
+        // Creates a new leaderboard service using default Firebase Auth and Firestore instances.
         public FirebaseLeaderboardService(FirebaseAuth auth, FirebaseFirestore firestore)
             : this(() => auth.CurrentUser?.UserId,
                 (uid, metric) => FetchAsync(firestore, uid, metric),
@@ -39,9 +40,10 @@ namespace WalkingDog.Leaderboards
             auth.StateChanged += OnAuthChanged;
         }
 
+        // Internal constructor supporting custom user delegates and fetch implementations for testing.
         internal FirebaseLeaderboardService(Func<string> currentUser,
             Func<string, LeaderboardMetric, Task<LeaderboardSnapshot>> read,
-            Func<string, string, Task> saveName, TimeSpan? timeout = null) // constructor for leaderboard service
+            Func<string, string, Task> saveName, TimeSpan? timeout = null)
         {
             this.currentUser = currentUser ?? throw new ArgumentNullException(nameof(currentUser));
             this.read = read ?? throw new ArgumentNullException(nameof(read));
@@ -49,7 +51,8 @@ namespace WalkingDog.Leaderboards
             this.timeout = timeout ?? TimeSpan.FromSeconds(20);
         }
 
-        public static async Task<FirebaseLeaderboardService> CreateAsync(FirebaseWalkBootstrap bootstrap) //create async task when loading the leaderboard service, check if firebase is ready and initialized
+        // Asynchronously initializes Firebase and instantiates the leaderboard service.
+        public static async Task<FirebaseLeaderboardService> CreateAsync(FirebaseWalkBootstrap bootstrap)
         {
             if (bootstrap == null) throw new ArgumentNullException(nameof(bootstrap));
             await bootstrap.InitializeAsync();
@@ -57,9 +60,11 @@ namespace WalkingDog.Leaderboards
             return new FirebaseLeaderboardService(FirebaseAuth.DefaultInstance, FirebaseFirestore.DefaultInstance);
         }
 
-        public async Task<LeaderboardSnapshot> LoadAsync(LeaderboardMetric metric, CancellationToken cancellationToken) // the load async itslef 
+        // Loads the global leaderboard snapshot for the specified metric.
+        public async Task<LeaderboardSnapshot> LoadAsync(LeaderboardMetric metric, CancellationToken cancellationToken)
             => await LoadAsync(metric, LeaderboardScope.Global, cancellationToken);
 
+        // Loads either global or friends leaderboard rankings for the specified metric with account verification.
         public async Task<LeaderboardSnapshot> LoadAsync(LeaderboardMetric metric, LeaderboardScope scope, CancellationToken cancellationToken)
         {
             if (metric != LeaderboardMetric.Distance && metric != LeaderboardMetric.Steps)
@@ -76,6 +81,7 @@ namespace WalkingDog.Leaderboards
             return result;
         }
 
+        // Reconciles local walks and reads the current leaderboard snapshot for the player.
         private async Task<LeaderboardSnapshot> LoadWithReconciliationAsync(string uid, LeaderboardMetric metric, LeaderboardScope scope, CancellationToken token)
         {
             using (var linked = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token))
@@ -94,7 +100,8 @@ namespace WalkingDog.Leaderboards
             }
         }
 
-        public async Task SaveDisplayNameAsync(string displayName, CancellationToken cancellationToken) //save the display name no not stored to firestore
+        // Validates and saves the player's display name to Firestore.
+        public async Task SaveDisplayNameAsync(string displayName, CancellationToken cancellationToken)
         {
             var uid = RequireUser(cancellationToken);
             if (!LeaderboardNames.IsValid(displayName))
@@ -104,7 +111,8 @@ namespace WalkingDog.Leaderboards
             CheckAccount(uid, revision, cancellationToken);
         }
 
-        private string RequireUser(CancellationToken cancellationToken) // need to be authenticated to view the leaderboard, if not throw an exception
+        // Ensures the service is active and the user is authenticated, returning the user ID.
+        private string RequireUser(CancellationToken cancellationToken)
         {
             if (disposed) throw new ObjectDisposedException(nameof(FirebaseLeaderboardService));
             cancellationToken.ThrowIfCancellationRequested();
@@ -113,13 +121,15 @@ namespace WalkingDog.Leaderboards
             return uid;
         }
 
-        private void CheckAccount(string uid, int revision, CancellationToken token) //
+        // Verifies that the authenticated account has not changed during an asynchronous operation.
+        private void CheckAccount(string uid, int revision, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             if (disposed || uid != AuthenticatedUserId || revision != authRevision)
                 throw new OperationCanceledException("The leaderboard account changed.");
         }
 
+        // Awaits a task while enforcing timeout and cancellation token constraints.
         private async Task<T> WaitAsync<T>(Task<T> task, CancellationToken token)
         {
             using (var wait = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token))
@@ -138,7 +148,8 @@ namespace WalkingDog.Leaderboards
             }
         }
 
-        private static async Task<LeaderboardSnapshot> FetchAsync(FirebaseFirestore firestore, string uid, LeaderboardMetric metric) //fetch function async from database
+        // Queries the top leaderboard records from Firestore and retrieves the player's own rank entry if not in top list.
+        private static async Task<LeaderboardSnapshot> FetchAsync(FirebaseFirestore firestore, string uid, LeaderboardMetric metric)
         {
             var field = metric == LeaderboardMetric.Distance ? "totalDistanceMeters" : "totalSteps";
             // Firestore's implicit document-ID tie breaker follows this descending
@@ -162,14 +173,20 @@ namespace WalkingDog.Leaderboards
             return new LeaderboardSnapshot(metric, uid, entries.AsReadOnly(), own);
         }
 
-        private void OnAuthChanged(object sender, EventArgs args) // update auth condition depending on user
+        // Resets reconciliation progress and increments auth revision when Firebase Auth state changes.
+        private void OnAuthChanged(object sender, EventArgs args)
         {
             authRevision++;
             reconciliation = new FirebaseLeaderboardWriter.ReconciliationProgress();
         }
+
+        // Adapts a non-generic Task into a Task<bool> for unified timeout handling.
         private static async Task<bool> AsResult(Task task) { await task; return true; }
+
+        // Observes a background task to suppress unobserved task exceptions when timed out.
         private static async void Observe(Task task) { try { await task; } catch (Exception) { } }
 
+        // Cleans up event subscriptions and cancels ongoing operations.
         public void Dispose()
         {
             if (disposed) return;

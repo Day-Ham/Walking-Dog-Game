@@ -7,6 +7,7 @@ public class UIStepController : MonoBehaviour
     [SerializeField] private string prefix = "";
     [SerializeField] private bool showWalkingSessionSteps = false;
 
+    // Caches TextMeshProUGUI component if not assigned via Inspector.
     private void Awake()
     {
         if (stepText == null)
@@ -15,6 +16,7 @@ public class UIStepController : MonoBehaviour
         }
     }
 
+    // Updates step or points text display each frame based on active session or wallet state.
     private void LateUpdate()
     {
         if (stepText == null)

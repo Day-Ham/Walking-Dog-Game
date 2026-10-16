@@ -7,11 +7,7 @@ public static class LocalPhoneNotifications
     private const string MilestonePreferencePrefix = "localNotification.lastMilestone.v2.";
     private static bool permissionWasRequested;
 
-    /// <summary>
-    /// Prepares Android notifications and asks for permission early. Calling this when the game
-    /// starts prevents a territory alert from being missed because Android had not yet shown its
-    /// notification-permission prompt.
-    /// </summary>
+    // Prepares Android notifications and asks for permission early to prevent missed territory alerts.
     public static void Initialize()
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -32,11 +28,7 @@ public static class LocalPhoneNotifications
 #endif
     }
 
-    /// <summary>
-    /// Shows one Android notification when an account reaches a new 10,000-step milestone.
-    /// It saves the largest milestone already alerted, so claiming a roll never causes an old
-    /// milestone to alert again.
-    /// </summary>
+    // Displays a native Android notification when the account reaches a new 10,000-step milestone.
     public static void NotifyNewMilestone(string accountId, long totalFreeRolls, long availableRolls)
     {
         if (string.IsNullOrEmpty(accountId) || totalFreeRolls <= 0 || availableRolls <= 0) return;
@@ -64,7 +56,7 @@ public static class LocalPhoneNotifications
     }
 
 #if UNITY_ANDROID && !UNITY_EDITOR
-    /// <summary>Returns false until Android 13+ notification permission is granted.</summary>
+    // Prompts for Android 13+ POST_NOTIFICATIONS runtime permission if not yet granted.
     private static bool RequestPermissionIfNeeded()
     {
         const string notificationPermission = "android.permission.POST_NOTIFICATIONS";

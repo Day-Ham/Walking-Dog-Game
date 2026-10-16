@@ -95,9 +95,13 @@ namespace WalkingDog.Racing
             || (raceScreen != null && raceScreen.activeSelf)
             || (lobbyScreen != null && lobbyScreen.activeSelf);
 
+        // Opens the Dog Training screen, loading dog stats and suspending the map.
         public void OpenTraining() => ShowScreen(ScreenMode.Training);
+        // Opens the singleplayer dog racing screen, preparing practice lanes and suspending the map.
         public void OpenRace() => ShowScreen(ScreenMode.Race);
+        // Opens the multiplayer race lobby screen and suspends the map.
         public void OpenLobby() => ShowScreen(ScreenMode.Lobby);
+        // Switches between Training, Race, and Lobby screens, managing map suspension.
         private void ShowScreen(ScreenMode mode, bool fromLobby = false)
         {
             if (mode != ScreenMode.Lobby && !fromLobby) LeaveRoomInternal();
@@ -117,6 +121,7 @@ namespace WalkingDog.Racing
             if (!fromLobby) _ = RefreshAsync();
         }
 
+        // Begins screen close transition, playing close animations or hiding immediately.
         public void Close()
         {
             if (closing) return;
@@ -125,8 +130,7 @@ namespace WalkingDog.Racing
             FinishCloseAnimation();
         }
 
-        // Called after the exit clip. DisableanimatedObject calls this via
-        // NotifyScreenDisabled when its target is the closing dog screen.
+        // Completes screen close sequence, disables panels, and resumes the background map.
         public void FinishCloseAnimation()
         {
             if (!closing) return;
@@ -139,16 +143,13 @@ namespace WalkingDog.Racing
             maps.Clear();
         }
 
-        // Safe for the universal DisableanimatedObject helper: it does
-        // nothing unless this exact dog screen is currently closing.
+        // Callback from screen animators notifying that exit animation has completed.
         public void NotifyScreenDisabled(GameObject screen)
         {
             if (closing && screen == closingScreen) FinishCloseAnimation();
         }
 
-        // Preserves the required non-visual work from the old Close method.
-        // It runs before the animation so no late network/race update can
-        // modify a panel while it is animating out.
+        // Cancels pending network operations and prepares screen closing state.
         private void BeginClose()
         {
             generation++; lifetime.Cancel(); lifetime.Dispose(); lifetime = new CancellationTokenSource();
@@ -158,6 +159,7 @@ namespace WalkingDog.Racing
             closing = true;
         }
 
+        // Triggers exit animation clip on the active screen's Animator if present.
         private bool TryPlayCloseAnimation()
         {
             if (closingScreen == null) return false;
@@ -168,6 +170,7 @@ namespace WalkingDog.Racing
             return true;
         }
 
+        // Returns the currently active screen GameObject.
         private GameObject ActiveScreen()
         {
             if (trainingScreen != null && trainingScreen.activeSelf) return trainingScreen;
@@ -176,8 +179,7 @@ namespace WalkingDog.Racing
             return null;
         }
 
-        // The three screens can use different animator controllers/triggers.
-        // Empty animator fields automatically use the Animator on the screen root.
+        // Locates the Animator component and trigger name for a given screen.
         private Animator AnimatorFor(GameObject screen, out string trigger)
         {
             if (screen == trainingScreen)
@@ -193,6 +195,8 @@ namespace WalkingDog.Racing
             trigger = lobbyCloseTrigger;
             return lobbyAnimator != null ? lobbyAnimator : lobbyScreen != null ? lobbyScreen.GetComponent<Animator>() : null;
         }
+
+        // Clears cached dog stats and room state when the user account changes.
         private void ResetAccount()
         {
             generation++; lifetime.Cancel(); lifetime.Dispose(); lifetime = new CancellationTokenSource();
@@ -210,6 +214,7 @@ namespace WalkingDog.Racing
             RenderStats(); RenderRace();
         }
         private string PendingKey => "dogTraining.pending." + owner;
+        // Persists pending stat training transaction ID to PlayerPrefs for idempotency.
         private void SavePending()
         {
             if (!Application.isPlaying || string.IsNullOrEmpty(owner)) return;
@@ -218,7 +223,9 @@ namespace WalkingDog.Racing
             PlayerPrefs.Save();
         }
 
+        // Reloads dog stats and wallet balance from Firebase.
         public void RefreshTraining() { _ = RefreshAsync(); }
+        // Asynchronously loads dog stats from Firestore and refreshes UI values.
         internal async Task RefreshAsync()
         {
             if (busy) return;
@@ -277,9 +284,13 @@ namespace WalkingDog.Racing
             finally { if (Current(request)) { busy = false; RenderStats(); RenderRace(); RenderLobby(); } }
         }
 
+        // Spends wallet points to train and increase dog Speed.
         public void TrainSpeed() { _ = TrainAsync(DogStat.Speed); }
+        // Spends wallet points to train and increase dog Stamina.
         public void TrainStamina() { _ = TrainAsync(DogStat.Stamina); }
+        // Spends wallet points to train and increase dog Acceleration.
         public void TrainAcceleration() { _ = TrainAsync(DogStat.Acceleration); }
+        // Submits a stat upgrade transaction to Firestore and refreshes local wallet.
         internal async Task TrainAsync(DogStat stat)
         {
             if (busy || snapshot == null || string.IsNullOrEmpty(owner) || owner != CurrentOwner || pendingTraining != null) return;
@@ -312,12 +323,14 @@ namespace WalkingDog.Racing
             }
             finally { if (Current(request)) { busy = false; RenderStats(); } }
         }
+        // Syncs updated points balance to leaderboard records.
         private static async Task RefreshLeaderboardBalanceAsync(string uid)
         {
             try { await WalkingDog.Leaderboards.FirebaseLeaderboardWriter.SynchronizePointsBalanceAsync(FirebaseFirestore.DefaultInstance, uid); }
             catch (Exception error) { Debug.LogWarning("Training leaderboard balance pending: " + error.GetType().Name); }
         }
 
+        // Generates AI practice competitors and launches a practice race simulation.
         public void StartRace()
         {
             if (busy || snapshot == null || owner != CurrentOwner || (race != null && !race.Completed)) return;
@@ -326,11 +339,16 @@ namespace WalkingDog.Racing
             RenderRace();
         }
 
+        // Creates a new multiplayer race room in Firestore.
         public void CreateRoom() { _ = CreateRoomAsync(); }
+        // Connects to an existing race room using the entered room code.
         public void JoinRoom() { _ = JoinRoomAsync(); }
+        // Disconnects from current race room and returns to lobby browse view.
         public void LeaveRoom() { LeaveRoomInternal(); SetLobbyMessage("You left the room. Create or join another race."); RenderLobby(); RenderStats(); RenderRace(); }
+        // Host triggers start of multiplayer race across all entrants.
         public void StartLobbyRace() { _ = StartLobbyRaceAsync(); }
 
+        // Initializes the race lobby service adapter if not already connected.
         private async Task EnsureLobbyServiceAsync()
         {
             if (lobbyService != null) return;
@@ -344,6 +362,7 @@ namespace WalkingDog.Racing
             if (lobbyStatus != null) lobbyStatus.text = message;
         }
 
+        // Asynchronously creates a Firestore race room with current player dog stats.
         internal Task CreateRoomAsync() => RunLobbyAsync("Creating room…", async (uid, token, current) =>
         {
             var created = await lobbyService.CreateRoomAsync(uid, CurrentPlayerName, snapshot, CurrentEquippedItemId, token);
@@ -352,6 +371,7 @@ namespace WalkingDog.Racing
             SetLobbyMessage("Room created! Share the code to invite friends.");
         });
 
+        // Asynchronously joins an existing Firestore room with current player dog stats.
         internal Task JoinRoomAsync()
         {
             string code = RaceRoomCodes.Normalize(roomCodeInput != null ? roomCodeInput.text : "");
@@ -366,10 +386,12 @@ namespace WalkingDog.Racing
             });
         }
 
+        // Cleans up a room if the player cancelled during room creation.
         private Task LeaveLateRoomAsync(RaceRoom room, string uid)
             => this != null && owner == uid && CurrentOwner == uid && lobbyService != null
                 ? lobbyService.LeaveRoomAsync(room.RoomCode, uid, CancellationToken.None) : Task.CompletedTask;
 
+        // Wraps lobby async actions with busy states, timeouts, and error handling.
         private async Task RunLobbyAsync(string progress, Func<string, CancellationToken, Func<bool>, Task> operation)
         {
             if (busy) return;
@@ -417,11 +439,13 @@ namespace WalkingDog.Racing
             return "Couldn't update the race room. Check your connection and try again.";
         }
 
+        // Unsubscribes from active Firestore room document snapshot listener.
         private void StopRoomSubscription()
         {
             roomRevision++;
             var old = roomSubscription; roomSubscription = null; old?.Dispose();
         }
+        // Attaches real-time Firestore listener to room document updates.
         private void SubscribeToRoom(RaceRoom room)
         {
             StopRoomSubscription(); currentRoom = room; RenderLobby();
@@ -435,6 +459,7 @@ namespace WalkingDog.Racing
             else subscription.Dispose(); // The initial callback may already have started the race.
         }
 
+        // Handles real-time room changes, starting race simulation when room enters racing state.
         private void OnRoomUpdated(RaceRoom updated)
         {
             if (updated == null || updated.IsClosed)
@@ -452,6 +477,7 @@ namespace WalkingDog.Racing
             RenderLobby();
         }
 
+        // Cleans up room subscriptions and notifies Firestore that player left.
         private void LeaveRoomInternal(bool notifyServer = true)
         {
             ++lobbyCommandVersion;
@@ -463,6 +489,7 @@ namespace WalkingDog.Racing
                 Observe(lobbyService.LeaveRoomAsync(old.RoomCode, owner, CancellationToken.None));
         }
 
+        // Dispatches start race command to Firestore with randomized seed.
         internal Task StartLobbyRaceAsync()
         {
             if (currentRoom == null || !currentRoom.CanStart(owner)) return Task.CompletedTask;
@@ -474,6 +501,7 @@ namespace WalkingDog.Racing
             });
         }
 
+        // Updates entrant rows, room code, and button states on lobby screen.
         internal void RenderLobby()
         {
             if (lobbyScreen == null) return;
@@ -507,10 +535,11 @@ namespace WalkingDog.Racing
             if (leaveRoomButton != null) leaveRoomButton.interactable = !busy;
         }
 
+        // Resolves gacha collar item definition by item ID from catalog.
         internal static GachaItem ResolveGachaItem(string itemId)
         {
             if (string.IsNullOrEmpty(itemId)) return null;
-            var manager = FindFirstObjectByType<GachaManager>();
+            var manager = FindAnyObjectByType<GachaManager>();
             if (manager != null && manager.itemCatalog != null)
             {
                 return manager.itemCatalog.FirstOrDefault(i => i != null && i.ItemId == itemId);
@@ -518,6 +547,7 @@ namespace WalkingDog.Racing
             return null;
         }
 
+        // Refreshes stat progress bars and training buttons on training screen.
         internal void RenderStats()
         {
             dogSummary.text = snapshot == null ? "Your dog is loading" : $"Your dog  ·  {snapshot.trainingCount} training sessions";
@@ -535,6 +565,7 @@ namespace WalkingDog.Racing
             else points.text = "Wallet  " + (Bootstrap?.Wallet?.DisplayText ?? "loading") + " points";
         }
 
+        // Updates runner markers along track lanes and updates live standings.
         internal void RenderRace()
         {
             raceSummary.text = snapshot == null ? "Load your dog to race."

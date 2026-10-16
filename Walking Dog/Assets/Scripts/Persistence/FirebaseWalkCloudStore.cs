@@ -16,6 +16,7 @@ public sealed class FirebaseWalkCloudStore : IWalkCloudStore, IDisposable
     private bool disposed;
     public event Action PointsChanged;
 
+    // Initializes walk cloud store with Firebase Auth and Firestore dependencies.
     public FirebaseWalkCloudStore(FirebaseAuth auth, FirebaseFirestore firestore)
     {
         if (auth == null) throw new ArgumentNullException(nameof(auth));
@@ -34,7 +35,7 @@ public sealed class FirebaseWalkCloudStore : IWalkCloudStore, IDisposable
         serverTimestamp = FieldValue.ServerTimestamp;
     }
 
-    // Test seam: exercise the actual adapter without contacting Firebase.
+    // Test seam constructor: allows mock injection of user ID and document writer without network calls.
     internal FirebaseWalkCloudStore(Func<string> currentUserId,
         Func<string, IDictionary<string, object>, Task> setDocument, object serverTimestamp,
         TimeSpan? acknowledgementTimeout = null)
@@ -47,6 +48,7 @@ public sealed class FirebaseWalkCloudStore : IWalkCloudStore, IDisposable
 
     public string AuthenticatedUserId => disposed ? "" : currentUserId() ?? "";
 
+    // Uploads lightweight walk metadata (steps, distance, duration) to the player's cloud profile.
     public async Task UploadSummaryAsync(string ownerUserId, WalkSummary summary,
         CancellationToken cancellationToken)
     {
@@ -95,6 +97,7 @@ public sealed class FirebaseWalkCloudStore : IWalkCloudStore, IDisposable
         }
     }
 
+    // Disposes the store and cancels all in-flight upload timeout tokens.
     public void Dispose()
     {
         if (disposed) return;
@@ -103,12 +106,14 @@ public sealed class FirebaseWalkCloudStore : IWalkCloudStore, IDisposable
         lifetime.Dispose();
     }
 
+    // Suppresses exceptions from background upload tasks that exceeded the UI timeout.
     private static async void ObserveCompletion(Task write)
     {
         try { await write; }
         catch (Exception) { } // The durable queue already records this attempt as retryable.
     }
 
+    // Ensures document IDs are non-empty and free of illegal path characters.
     private static void ValidateDocumentId(string value)
     {
         if (string.IsNullOrWhiteSpace(value) || value.Length > 128 || value.Contains("/")

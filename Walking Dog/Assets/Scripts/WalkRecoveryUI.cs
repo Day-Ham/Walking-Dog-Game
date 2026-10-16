@@ -16,6 +16,7 @@ public sealed class WalkRecoveryUI : MonoBehaviour
     private float nextCheck;
     private bool summary;
 
+    // Checks periodically for unsaved or recoverable walks and keeps dialog bounds within the safe area.
     private void Update()
     {
         var manager = StepCountAndGpsManager.Instance;
@@ -38,6 +39,7 @@ public sealed class WalkRecoveryUI : MonoBehaviour
         safeArea.offsetMin = safeArea.offsetMax = Vector2.zero;
     }
 
+    // Configures the recovery dialog to present summary stats for a completed walk.
     public void ShowSummary()
     {
         pending = null;
@@ -45,6 +47,7 @@ public sealed class WalkRecoveryUI : MonoBehaviour
         Show();
     }
 
+    // Displays the recovery or completed walk summary dialog and suspends background map webviews.
     private void Show()
     {
         if (canvasObject == null) Build();
@@ -70,12 +73,14 @@ public sealed class WalkRecoveryUI : MonoBehaviour
         secondary.gameObject.SetActive(!summary || string.IsNullOrEmpty(manager.LastSavedWalkFilePath));
     }
 
+    // Handles click on primary action button to resume active walk or close summary.
     private void Primary()
     {
         if (summary) { Close(); return; }
         if (StepCountAndGpsManager.Instance.RecoverWalk(true)) Close();
     }
 
+    // Handles click on secondary action button to save and finalize walk recording.
     private void Secondary()
     {
         var manager = StepCountAndGpsManager.Instance;
@@ -83,6 +88,7 @@ public sealed class WalkRecoveryUI : MonoBehaviour
         else if (manager.RecoverWalk(false)) ShowSummary();
     }
 
+    // Hides recovery canvas and resumes suspended map webviews.
     private void Close()
     {
         pending = null;
@@ -92,8 +98,10 @@ public sealed class WalkRecoveryUI : MonoBehaviour
         hiddenMaps.Clear();
     }
 
+    // Cleans up dialog resources and canvas upon destruction.
     private void OnDestroy() { Close(); if (canvasObject != null) Destroy(canvasObject); }
 
+    // Dynamically builds the recovery dialog UI canvas hierarchy in code.
     private void Build()
     {
         canvasObject = new GameObject("Walk Recovery Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
@@ -124,6 +132,7 @@ public sealed class WalkRecoveryUI : MonoBehaviour
         canvasObject.SetActive(false);
     }
 
+    // Creates an expanded UI RectTransform child element.
     private static RectTransform Rect(string name, Transform parent)
     {
         var rect = new GameObject(name, typeof(RectTransform)).GetComponent<RectTransform>();
@@ -132,6 +141,8 @@ public sealed class WalkRecoveryUI : MonoBehaviour
         rect.offsetMin = rect.offsetMax = Vector2.zero;
         return rect;
     }
+
+    // Creates and formats a TextMeshProUGUI text element for dialog content.
     private static TMP_Text Label(string name, Transform parent, float size, float height)
     {
         var rect = Rect(name, parent);
@@ -145,6 +156,8 @@ public sealed class WalkRecoveryUI : MonoBehaviour
         layout.preferredHeight = height;
         return text;
     }
+
+    // Creates and configures a styled UI action button.
     private static Button MakeButton(string text, Transform parent, UnityEngine.Events.UnityAction action)
     {
         var rect = Rect(text, parent);

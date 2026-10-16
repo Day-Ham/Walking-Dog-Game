@@ -20,6 +20,7 @@ namespace WalkingDog.Leaderboards
         public long PointsBalance { get; }
         public long CompletedWalkCount { get; }
 
+        // Initializes an immutable leaderboard record with score, steps, walks, and points balance.
         public LeaderboardEntry(string playerId, string displayName, double distanceMeters, long steps, long walkCount,
             string photoUrl = "", long pointsBalance = 0)
         {
@@ -32,7 +33,8 @@ namespace WalkingDog.Leaderboards
             CompletedWalkCount = walkCount;
         }
 
-        internal static bool TryParse(string id, IDictionary<string, object> fields, out LeaderboardEntry entry) //parse function from the entry
+        // Parses and validates a raw Firestore dictionary into a LeaderboardEntry instance.
+        internal static bool TryParse(string id, IDictionary<string, object> fields, out LeaderboardEntry entry)
         {
             entry = null;
             if (fields == null || !fields.TryGetValue("schemaVersion", out var version) || !(version is long v) || v != 1
@@ -44,7 +46,7 @@ namespace WalkingDog.Leaderboards
             if (distance is double floating) d = floating;
             else if (distance is long integer) d = integer;
             else return false;
-            if (double.IsNaN(d) || double.IsInfinity(d) || d < 0) return false; // return a false if its an errorr value
+            if (double.IsNaN(d) || double.IsInfinity(d) || d < 0) return false;
             // Old documents have no balance until their owner next syncs. Never
             // estimate it from steps because spending can lower the real balance.
             long points = 0;
@@ -66,6 +68,7 @@ namespace WalkingDog.Leaderboards
         public LeaderboardEntry CurrentPlayer { get; }
         public string CurrentPlayerPhotoUrl { get; }
 
+        // Initializes a read snapshot of the leaderboard for a specific metric and scope.
         public LeaderboardSnapshot(LeaderboardMetric metric, string currentPlayerId,
             IReadOnlyList<LeaderboardEntry> entries, LeaderboardEntry currentPlayer,
             LeaderboardScope scope = LeaderboardScope.Global, string currentPlayerPhotoUrl = "")
@@ -79,9 +82,9 @@ namespace WalkingDog.Leaderboards
         }
     }
 
-    public static class LeaderboardNames // for character display names type
+    public static class LeaderboardNames
     {
-        // Same ASCII policy as backend and rules. Never derive names from email.
+        // Validates whether a proposed display name satisfies alphanumeric and character length rules.
         public static bool IsValid(string value) => value != null
             && Regex.IsMatch(value, @"\A[A-Za-z0-9][A-Za-z0-9 _-]{2,23}\z");
     }
