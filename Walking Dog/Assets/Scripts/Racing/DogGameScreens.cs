@@ -40,6 +40,12 @@ namespace WalkingDog.Racing
         [SerializeField] private TMP_Text[] lobbyEntrantRows;
         [SerializeField] private StatRow[] stats;
         [SerializeField] private RaceLane[] lanes;
+        [Header("Close animation")]
+        [Tooltip("Optional explicit animator. If empty, the Animator on each screen root is used.")]
+        [SerializeField] private Animator trainingAnimator, raceAnimator, lobbyAnimator;
+        [SerializeField] private string trainingCloseTrigger = "onClose";
+        [SerializeField] private string raceCloseTrigger = "onClose";
+        [SerializeField] private string lobbyCloseTrigger = "onClose";
         private readonly List<OpenFreeMapWebViewMap> maps = new List<OpenFreeMapWebViewMap>();
         private CancellationTokenSource lifetime = new CancellationTokenSource();
         private IDogTrainingStore store;
@@ -53,6 +59,8 @@ namespace WalkingDog.Racing
         private PendingTraining pendingTraining;
         private string owner = "";
         private bool busy, initialized;
+        private bool closing;
+        private GameObject closingScreen;
         private int generation, raceNumber;
         private DogRaceSimulation race;
         private DogStats snapshot;
@@ -74,6 +82,7 @@ namespace WalkingDog.Racing
         private void Update()
         {
             if (!Visible) return;
+            if (closing) return; // Keep the exit animation visually stable.
             if (initialized && owner != CurrentOwner) { ResetAccount(); _ = RefreshAsync(); }
             if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) { Close(); return; }
             if (raceScreen.activeSelf && race != null && !race.Completed)
@@ -110,14 +119,79 @@ namespace WalkingDog.Racing
 
         public void Close()
         {
-            generation++; lifetime.Cancel(); lifetime.Dispose(); lifetime = new CancellationTokenSource();
-            busy = false; race = null;
-            LeaveRoomInternal();
+            if (closing) return;
+            BeginClose();
+            if (TryPlayCloseAnimation()) return;
+            FinishCloseAnimation();
+        }
+
+        // Called after the exit clip. DisableanimatedObject calls this via
+        // NotifyScreenDisabled when its target is the closing dog screen.
+        public void FinishCloseAnimation()
+        {
+            if (!closing) return;
+            closing = false;
+            closingScreen = null;
             if (trainingScreen != null) trainingScreen.SetActive(false);
             if (raceScreen != null) raceScreen.SetActive(false);
             if (lobbyScreen != null) lobbyScreen.SetActive(false);
             foreach (var map in maps) if (map != null) map.Resume(this);
             maps.Clear();
+        }
+
+        // Safe for the universal DisableanimatedObject helper: it does
+        // nothing unless this exact dog screen is currently closing.
+        public void NotifyScreenDisabled(GameObject screen)
+        {
+            if (closing && screen == closingScreen) FinishCloseAnimation();
+        }
+
+        // Preserves the required non-visual work from the old Close method.
+        // It runs before the animation so no late network/race update can
+        // modify a panel while it is animating out.
+        private void BeginClose()
+        {
+            generation++; lifetime.Cancel(); lifetime.Dispose(); lifetime = new CancellationTokenSource();
+            busy = false; race = null;
+            LeaveRoomInternal();
+            closingScreen = ActiveScreen();
+            closing = true;
+        }
+
+        private bool TryPlayCloseAnimation()
+        {
+            if (closingScreen == null) return false;
+            var animator = AnimatorFor(closingScreen, out var trigger);
+            if (animator == null || animator.runtimeAnimatorController == null || string.IsNullOrWhiteSpace(trigger))
+                return false;
+            animator.SetTrigger(trigger);
+            return true;
+        }
+
+        private GameObject ActiveScreen()
+        {
+            if (trainingScreen != null && trainingScreen.activeSelf) return trainingScreen;
+            if (raceScreen != null && raceScreen.activeSelf) return raceScreen;
+            if (lobbyScreen != null && lobbyScreen.activeSelf) return lobbyScreen;
+            return null;
+        }
+
+        // The three screens can use different animator controllers/triggers.
+        // Empty animator fields automatically use the Animator on the screen root.
+        private Animator AnimatorFor(GameObject screen, out string trigger)
+        {
+            if (screen == trainingScreen)
+            {
+                trigger = trainingCloseTrigger;
+                return trainingAnimator != null ? trainingAnimator : trainingScreen.GetComponent<Animator>();
+            }
+            if (screen == raceScreen)
+            {
+                trigger = raceCloseTrigger;
+                return raceAnimator != null ? raceAnimator : raceScreen.GetComponent<Animator>();
+            }
+            trigger = lobbyCloseTrigger;
+            return lobbyAnimator != null ? lobbyAnimator : lobbyScreen != null ? lobbyScreen.GetComponent<Animator>() : null;
         }
         private void ResetAccount()
         {

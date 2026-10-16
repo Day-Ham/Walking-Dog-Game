@@ -19,7 +19,13 @@ public class DisableanimatedObject : MonoBehaviour
     private IEnumerator DisableNextFrame()
     {
         yield return null;
-        (disableTarget != null ? disableTarget : gameObject).SetActive(false);
+        var target = disableTarget != null ? disableTarget : gameObject;
+        // The optional receiver lives on a parent Canvas. SendMessageUpwards
+        // avoids tying this reusable helper to the dog-game assembly. It runs
+        // immediately before deactivation so parent cleanup is guaranteed even
+        // when this component is disabled along with its target.
+        target.SendMessageUpwards("NotifyScreenDisabled", target, SendMessageOptions.DontRequireReceiver);
+        target.SetActive(false);
         disableScheduled = false;
     }
 }
