@@ -2383,7 +2383,7 @@ MonoBehaviour:
   googleSignInButton: {fileID: 166991873}
   rememberMeToggle: {fileID: 376153629}
   statusText: {fileID: 1108571929}
-  gameSceneName: StepCounterTestAmar
+  gameSceneName: MainScreen
   sceneTransistionAnimator: {fileID: 231225826}
 --- !u!1 &1277268503
 GameObject:
